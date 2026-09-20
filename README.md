@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# New Home Finder
 
-## Getting Started
+A progressive web app to help our family compare and shortlist the places we
+might move to next. Installable to a phone or desktop home screen and works
+offline for previously visited pages.
 
-First, run the development server:
+## Stack
+
+- [Next.js 16](https://nextjs.org) (App Router, Turbopack), React 19, TypeScript
+- Tailwind CSS 4
+- [Serwist](https://serwist.pages.dev) for the service worker (precaching + runtime caching + offline fallback)
+
+## Getting started
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev      # Next dev server + service-worker watcher
+npm run build    # Production build, then builds public/sw.js
+npm run start    # Serve the production build
+npm run lint
+npm run typecheck
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The service worker is disabled during `next dev` to avoid stale caches; use
+`npm run build && npm run start` to test install/offline behaviour.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## PWA pieces
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| File | Purpose |
+| --- | --- |
+| `src/app/manifest.ts` | Web app manifest (name, icons, colours, standalone display) |
+| `src/app/layout.tsx` | `metadata` / `viewport` exports for theme colour + iOS install support |
+| `src/app/sw.ts` | Service worker source (Serwist) |
+| `serwist.config.mjs` | Serwist CLI config; `serwist build` runs after `next build` |
+| `src/components/pwa-provider.tsx` | Registers `/sw.js` on the client |
+| `src/app/~offline/page.tsx` | Fallback page shown for uncached navigations while offline |
+| `public/icons/` | App icons (SVG sources + generated PNGs) |
+| `next.config.ts` | `no-cache` headers for `/sw.js` |
 
-## Learn More
+`public/sw.js` is generated and git-ignored.
 
-To learn more about Next.js, take a look at the following resources:
+### Regenerating icons
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The PNGs are rendered from `public/icons/icon.svg` and `icon-maskable.svg`.
+On macOS:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+cd public/icons
+qlmanage -t -s 512 -o . icon.svg && mv icon.svg.png icon-512.png
+qlmanage -t -s 192 -o . icon.svg && mv icon.svg.png icon-192.png
+qlmanage -t -s 180 -o . icon.svg && mv icon.svg.png apple-touch-icon.png
+qlmanage -t -s 512 -o . icon-maskable.svg && mv icon-maskable.svg.png icon-512-maskable.png
+```
