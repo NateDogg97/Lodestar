@@ -17,6 +17,22 @@
 >   price over housing price index), replaced with `price_to_rent` and `real_income`. RPP has
 >   **four** components, not three — utilities split out in BEA's Dec 2021 methodology revision.
 >   Confirmed BEA does not publish county-level RPPs, so the CBSA crosswalk stays.
+> - 2026-09-20 — **Phase 1 complete.** `python -m etl.build` exits 0 with 0 FAIL / 0 WARN;
+>   3,144 counties × 33 columns published to `public/data/counties.json`. Live-run findings:
+>   SEDA 6.0 is long on subgroup (filter `subgroup=all`, `gap=0`; using `cs_mn_avg_eb`);
+>   NOAA inventory moved to a fixed-width file; CoCoRaHS (`US1`) rain gauges had to be excluded
+>   from the station search or metros lost their climate; SF's Gazetteer internal point is in
+>   the Pacific. Connecticut school gap confirmed. Published JSON is 2.7 MB — over Serwist's
+>   2 MB precache cap; decide in Phase 2/6.
+> - 2026-09-20 — First live run. BEA publishes no per-state non-metro RPP (API and bulk both
+>   checked), so rule 2 is now "statewide" and `rpp_geo_level` is `metro` | `state`. Recorded
+>   as a known gap. BEA line-code mapping verified: 1 All items, 2 Goods, 3 Rents, 4 Utilities,
+>   5 Other services.
+> - 2026-09-20 — ETL audit before first live run. Connecticut's 2022 switch to planning
+>   regions means SEDA (legacy county FIPS) will leave all of CT null for school
+>   achievement — recorded as a known gap below and in `etl/README.md`. Spot-check county
+>   changed from `09001` to `09190`. Validator now FAILs on a zero-join optional source and
+>   on an implausible RPP assignment mix.
 
 ---
 
@@ -193,13 +209,28 @@ re-architect to add tracts later."
 
 ### County-level RPP assignment
 
-**Checked 2026-09-20: BEA does not publish county-level RPPs.** Only state, metro area, and the
-non-metro portion of each state. Latest release was 2026-02-19 (2024 data); next is 2026-12-10.
-The crosswalk step below is required.
+**Checked 2026-09-20: BEA does not publish county-level RPPs.** Latest release was 2026-02-19
+(2024 data); next is 2026-12-10. The crosswalk step below is required.
 
-1. Look up each county's CBSA (metro area) via a Census crosswalk file
-2. Assign that metro's RPP components to every county in it
-3. For rural counties in no CBSA, fall back to the state's non-metro portion value
+**Also checked 2026-09-20, on the first live run: BEA does not publish a per-state non-metro
+portion either** — not through the Regional API (GeoFips lists for SARPP and MARPP probed) and
+not in the bulk downloads. The only portion row anywhere is a single *national* non-metro
+figure. The interactive tables suggest otherwise; they are wrong for our purposes.
+
+So the assignment is two rules, not three:
+
+1. Look up each county's CBSA via the Census delineation file (OMB 23-01, same vintage BEA uses)
+2. County in a **metropolitan** CBSA → that metro's RPP components (`rpp_geo_level = metro`, ~38%)
+3. Otherwise → the **statewide** RPP components (`rpp_geo_level = state`, ~62%)
+
+Micropolitan CBSAs fall through to the state rule; BEA's footnote confirms its non-metro
+figures include them.
+
+**Cost of this:** the statewide RPP is a blend that includes the state's metros, so rural
+counties read somewhat high — worst in states dominated by an expensive metro. For relative
+ranking it's lost resolution, not wrong ordering. Options if it matters later: derive a state
+non-metro value as statewide-minus-metros using BEA's expenditure weights (constructed data,
+must be labelled), or the county-level working-paper method in the note below.
 
 **For the tract path (Phase 5+):** county-level RPP estimates *are* produced internally as part of
 BEA's methodology but aren't published pending reliability work. A Commerce Department working
@@ -365,17 +396,21 @@ structured. Think SQL, not LLM.
 Strictly sequential. The temptation is to start with the map because it's the fun part — resist it.
 The map is meaningless until the scoring works.
 
-### Phase 1 — Prove the join ⬅️ **START HERE**
-- [ ] Set up ETL project (Python, `pandas`, `geopandas`)
-- [ ] Pull Census county list — FIPS, name, state, population — as the spine
-- [ ] Pull ACS: median home value, median household income, median gross rent
-- [ ] Pull SEDA county-level achievement
-- [ ] Pull BEA RPP **components** (all / rents / utilities / goods / other services) + published
-      expenditure weights + CBSA→county crosswalk
-- [ ] Pull NOAA 1991–2020 monthly normals, spatial-join stations to county centroids
-- [ ] Compute derived columns
-- [ ] Write single CSV, one row per county
-- [ ] Sanity-check against places we know (Travis TX, San Francisco CA, Cuyahoga OH)
+### Phase 1 — Prove the join ✅ **DONE 2026-09-20**
+- [x] Set up ETL project (Python, `pandas`; `geopandas` not needed — haversine on Gazetteer points)
+- [x] Pull Census county list — FIPS, name, state, population — as the spine
+- [x] Pull ACS: median home value, median household income, median gross rent
+- [x] Pull SEDA county-level achievement
+- [x] Pull BEA RPP **components** (all / rents / utilities / goods / other services) + CBSA→county
+      crosswalk *(expenditure weights deferred — not needed until tract recombination)*
+- [x] Pull NOAA 1991–2020 monthly normals, spatial-join stations to county centroids
+- [x] Compute derived columns
+- [x] Write single CSV, one row per county
+- [x] Sanity-check against places we know (Travis TX, San Francisco CA, Cuyahoga OH)
+
+**The join holds.** Every future metric is one more column. See `etl/README.md` for the
+run log and known gaps (CT schools, rural RPP resolution, SF climate provenance, 7 counties
+with no station within 60 mi).
 
 **This phase proves the hardest part of the project.** Four agencies that describe geography four
 different ways, reconciled onto one spine. If the join works, every future metric is just another
@@ -387,7 +422,9 @@ Known rough edges to expect:
 - Counties with no nearby NOAA station need a fallback (nearest station, or state average)
 - Keep FIPS as a string everywhere or pandas will eat the leading zeros
 
-### Phase 2 — Scoring engine
+### Phase 2 — Scoring engine ⬅️ **NEXT**
+- [ ] Decide how the app loads `public/data/counties.json` (2.7 MB; over Serwist's 2 MB
+      precache cap — raise the cap, or emit a columnar/rounded JSON from the ETL)
 - [ ] Pure TypeScript module, no UI
 - [ ] Percentile normalization with direction flags
 - [ ] Weighted scoring function
@@ -456,10 +493,20 @@ Not in MVP. Do not build these until the above ships.
 - [ ] Do we need a second boundary LOD for zoomed-out views, or is one simplified file enough?
 - [ ] At tract level, does the RPP recombination need re-weighting, or do BEA's national weights
       hold well enough?
+- [ ] **Rural cost of living.** ~62% of counties carry their state's blended RPP because BEA
+      publishes no state non-metro portion. Is that acceptable for ranking, or is it worth
+      deriving a state non-metro value (statewide minus its metros, expenditure-weighted)? If
+      derived, it must be labelled as such in `rpp_geo_level`. Decide before Phase 3's list
+      view is trusted for rural counties.
 - [ ] Which ACS vintage? 5-year estimates are almost certainly right — the 1-year release only
       covers areas above 65,000 population, which would drop roughly two-thirds of counties.
       Confirm the latest available 5-year release when hitting the API.
 - [ ] Is a non-housing `real_income` variant worth computing alongside the standard one?
+- [ ] **Connecticut school data.** Census switched CT to nine planning regions in 2022
+      (`09110`–`09190`); SEDA still keys on the eight legacy counties (`09001`–`09015`).
+      *Confirmed 2026-09-20: all nine CT rows null for `school_achievement`.* Fix options: a legacy-county → planning-region crosswalk with population-weighted
+      averaging (an afternoon), or accept the gap and have the UI show CT schools as
+      "unavailable" rather than scoring them. Decide before Phase 3 ships a ranked list.
 
 **Resolved**
 - ~~Exclude counties under 10,000 population?~~ No. Keep them, store `population`, filter at
