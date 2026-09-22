@@ -7,7 +7,7 @@ WHAT THIS PRODUCES
     climate_station_dist_mi, climate_station_count
 
     Plus a SEPARATE wide file, data/interim/noaa_monthly.csv, holding all 12
-    monthly values per county. Phase 1 does not use it; the Phase 7 climate
+    monthly values per county. Phase 1 does not use it; the Phase 6 climate
     tab does. It costs nothing to keep since we already fetched it.
 
 WHY THIS SOURCE IS IN PHASE 1 AT ALL
@@ -24,12 +24,23 @@ HOW THE SPATIAL JOIN WORKS
     1. Download NOAA's station inventory (station id, lat, lon).
     2. For each county internal point, find the K_CANDIDATES nearest stations
        within MAX_STATION_DISTANCE_MI and fetch their normals.
-    3. Keep the nearest STATIONS_PER_COUNTY stations that actually have
-       TEMPERATURE normals. (First-run finding, 2026-09-20: ~42% of NOAA
-       stations are precipitation-only. Picking the 3 nearest BEFORE knowing
-       that left Maricopa, Madison AL and Pulaski AR with no climate at all
-       while a full airport station sat a few miles further out.)
-    4. Average their normals, weighting by inverse distance.
+    3. SELECT STATIONS PER VARIABLE GROUP (temperature, precipitation,
+       snowfall): for each group, keep the nearest STATIONS_PER_COUNTY
+       stations that actually report it. Stations are not uniform — ~42% are
+       precipitation-only, and many temperature stations do not report
+       snowfall. (First run, 2026-09-20: picking the 3 nearest regardless of
+       variables left Maricopa, Madison AL and Pulaski AR with no climate.
+       Review, 2026-09-22: selecting on temperature only, and discarding
+       every other station, left 214 counties — snowy ND and MN ones among
+       them — with null snowfall although a nearby station reported it.)
+    4. FALLBACK SEARCH: any county still short of STATIONS_PER_COUNTY for
+       some group gets a wider candidate search (K_EXPANDED nearest, same
+       radius) and the extra stations are fetched. Same source, same
+       methodology — just further down the nearest-station list. Livingston
+       Parish LA (next to Baton Rouge) had no climate at all because its 10
+       nearest stations were all rain gauges.
+    5. Average each group's normals, weighting by inverse distance.
+       `climate_station_*` provenance describes the TEMPERATURE stations.
 
     Averaging several nearby stations rather than taking the single closest
     smooths out station-specific quirks — an airport station on a runway apron
@@ -94,6 +105,28 @@ MAX_STATION_DISTANCE_MI = 60.0
 # distinct stations, K=10 -> 13,268 of 15,615. Since most of the catalog gets
 # fetched either way, 10 buys robustness for little extra.
 K_CANDIDATES = 10
+
+# Second-pass search width for counties that come up short on some variable
+# group after the first pass. Still bounded by MAX_STATION_DISTANCE_MI, so this
+# only reaches further down the list — it never accepts a more distant station.
+K_EXPANDED = 40
+
+# Stations are chosen independently for each group. Columns within a group
+# travel together (a temperature station usually reports all three).
+VARIABLE_GROUPS = {
+    "temperature": ("tmax", "tmin", "tavg"),
+    "precipitation": ("prcp",),
+    "snowfall": ("snow",),
+}
+
+# Station-file column -> output column in the monthly table.
+MONTHLY_COLUMNS = {
+    "tmax": "tmax_f",
+    "tmin": "tmin_f",
+    "tavg": "tavg_f",
+    "prcp": "precip_in",
+    "snow": "snow_in",
+}
 
 # Parallel station fetches. NCEI is a public file server; 6 workers with the
 # per-request delay works out to roughly 15-20 requests/second.
@@ -236,8 +269,9 @@ def _parse_station_csv(text: str, station: str) -> pd.DataFrame | None:
     """
     Parse one station's monthly normals into a tidy 12-row frame.
 
-    Returns None if the file has no usable temperature data, which happens for
-    precipitation-only stations.
+    Returns None only if the file has none of the five variables. A
+    precipitation- or snow-only station is still useful: station selection
+    happens per variable group in fetch().
     """
     try:
         df = pd.read_csv(io.StringIO(text), dtype=str)
@@ -269,14 +303,14 @@ def _parse_station_csv(text: str, station: str) -> pd.DataFrame | None:
         "snow": _num(VAR_SNOW),
     }).dropna(subset=["month"])
 
-    if out[["tmax", "tmin", "tavg"]].notna().sum().sum() == 0:
+    if out[list(MONTHLY_COLUMNS)].notna().sum().sum() == 0:
         return None
 
     out["month"] = out["month"].astype(int)
     return out
 
 
-def fetch_station_normals(stations: list[str]) -> pd.DataFrame:
+def fetch_station_normals(stations: list[str], require_any: bool = True) -> pd.DataFrame:
     """
     Fetch monthly normals for the given stations, skipping ones that 404.
 
@@ -285,7 +319,7 @@ def fetch_station_normals(stations: list[str]) -> pd.DataFrame:
     """
     frames: list[pd.DataFrame] = []
     n_404 = 0        # station has no monthly file — expected, harmless
-    n_unusable = 0   # file exists but has no temperature data (precip-only)
+    n_unusable = 0   # file exists but has none of the variables we use
     n_transport = 0  # timeouts, 5xx, connection errors — NOT harmless
     transport_examples: list[str] = []
     lock = threading.Lock()
@@ -345,6 +379,8 @@ def fetch_station_normals(stations: list[str]) -> pd.DataFrame:
                          i, len(stations), n_404, n_unusable, n_transport)
 
     if not frames:
+        if not require_any:
+            return pd.DataFrame(columns=["station", "month", *MONTHLY_COLUMNS])
         raise RuntimeError(
             "No usable station normals were fetched. Check that "
             f"{config.NOAA_NORMALS_BASE}/<STATION>.csv is still the correct "
@@ -357,6 +393,49 @@ def fetch_station_normals(stations: list[str]) -> pd.DataFrame:
         log.warning("%d stations failed on transport errors and are absent: %s",
                     n_transport, transport_examples[:5])
     return pd.concat(frames, ignore_index=True)
+
+
+def _candidate_pairs(spine: pd.DataFrame, inventory: pd.DataFrame, k: int) -> pd.DataFrame:
+    """Long (fips, station, dist_mi) table of the k nearest stations within the radius."""
+    idx, dist = nearest_points(
+        spine["lat"].to_numpy(dtype=float),
+        spine["lon"].to_numpy(dtype=float),
+        inventory["lat"].to_numpy(dtype=float),
+        inventory["lon"].to_numpy(dtype=float),
+        k=k,
+    )
+    pairs = []
+    station_ids = inventory["station"].to_numpy()
+    for row, fips in enumerate(spine["fips"].tolist()):
+        for slot in range(idx.shape[1]):
+            d = float(dist[row, slot])
+            if d <= MAX_STATION_DISTANCE_MI:
+                pairs.append((fips, station_ids[idx[row, slot]], d))
+    return pd.DataFrame(pairs, columns=["fips", "station", "dist_mi"])
+
+
+def _stations_with(normals: pd.DataFrame, cols: tuple[str, ...]) -> set[str]:
+    """Stations reporting at least one of `cols` in at least one month."""
+    return set(normals.loc[normals[list(cols)].notna().any(axis=1), "station"])
+
+
+def _nearest_with(candidates: pd.DataFrame, stations: set[str]) -> pd.DataFrame:
+    """Per county, the nearest STATIONS_PER_COUNTY candidates drawn from `stations`."""
+    return (
+        candidates[candidates["station"].isin(stations)]
+        .sort_values(["fips", "dist_mi"])
+        .groupby("fips", as_index=False)
+        .head(STATIONS_PER_COUNTY)
+        .reset_index(drop=True)
+    )
+
+
+def _wmean(group: pd.DataFrame, col: str) -> float:
+    """Inverse-distance weighted mean of `col` over the rows that have it."""
+    valid = group[group[col].notna()]
+    if valid.empty:
+        return float("nan")
+    return float(np.average(valid[col], weights=valid["w"]))
 
 
 def fetch(limit: int | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -373,27 +452,10 @@ def fetch(limit: int | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     inventory = fetch_station_inventory()
 
-    # --- candidate stations per county -------------------------------------
+    # --- first pass: K_CANDIDATES nearest stations per county ---------------
     log.info("computing nearest %d candidate stations for %d counties",
              K_CANDIDATES, len(spine))
-    idx, dist = nearest_points(
-        spine["lat"].to_numpy(dtype=float),
-        spine["lon"].to_numpy(dtype=float),
-        inventory["lat"].to_numpy(dtype=float),
-        inventory["lon"].to_numpy(dtype=float),
-        k=K_CANDIDATES,
-    )
-
-    # Long county-station-distance table of candidates, filtered by radius.
-    pairs = []
-    station_ids = inventory["station"].to_numpy()
-    for row, fips in enumerate(spine["fips"].tolist()):
-        for slot in range(idx.shape[1]):
-            d = float(dist[row, slot])
-            if d <= MAX_STATION_DISTANCE_MI:
-                pairs.append((fips, station_ids[idx[row, slot]], d))
-
-    candidates = pd.DataFrame(pairs, columns=["fips", "station", "dist_mi"])
+    candidates = _candidate_pairs(spine, inventory, K_CANDIDATES)
     needed = sorted(candidates["station"].unique())
     log.info("%d counties have candidates; %d distinct stations to fetch (within %.0f mi)",
              candidates["fips"].nunique(), len(needed), MAX_STATION_DISTANCE_MI)
@@ -403,54 +465,61 @@ def fetch(limit: int | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
         log.warning("%d counties have no station within %.0f mi and will be null",
                     len(orphans), MAX_STATION_DISTANCE_MI)
 
-    # --- fetch, then keep the nearest USABLE stations -----------------------
     normals = fetch_station_normals(needed)
-    usable = set(normals["station"].unique())
 
-    links = (
-        candidates[candidates["station"].isin(usable)]
-        .sort_values(["fips", "dist_mi"])
-        .groupby("fips", as_index=False)
-        .head(STATIONS_PER_COUNTY)
-        .reset_index(drop=True)
-    )
-    per_county = links.groupby("fips").size()
-    n_zero = int((~spine["fips"].isin(per_county.index)).sum())
-    n_short = int((per_county < STATIONS_PER_COUNTY).sum())
-    log.info("usable stations per county: %d counties with %d, %d with fewer, %d with none "
-             "(of %d)", int((per_county == STATIONS_PER_COUNTY).sum()), STATIONS_PER_COUNTY,
-             n_short, n_zero, len(spine))
-    if n_zero:
-        log.warning("%d counties have candidates within %.0f mi but none with temperature "
-                    "normals; they will be null", n_zero - len(orphans), MAX_STATION_DISTANCE_MI)
+    # --- fallback: widen the search for counties short on any group ----------
+    short: set[str] = set()
+    for group, cols in VARIABLE_GROUPS.items():
+        counts = _nearest_with(candidates, _stations_with(normals, cols)).groupby("fips").size()
+        lacking = set(spine["fips"]) - set(counts[counts >= STATIONS_PER_COUNTY].index)
+        log.info("first pass, %s: %d counties short of %d stations",
+                 group, len(lacking), STATIONS_PER_COUNTY)
+        short |= lacking
+    short -= orphans
 
-    merged = links.merge(normals, on="station", how="inner")
-    if merged.empty:
+    if short:
+        expanded = _candidate_pairs(spine[spine["fips"].isin(short)], inventory, K_EXPANDED)
+        extra = sorted(set(expanded["station"]) - set(needed))
+        log.info("fallback search: %d counties, %d more stations to fetch (K=%d)",
+                 len(short), len(extra), K_EXPANDED)
+        if extra:
+            more = fetch_station_normals(extra, require_any=False)
+            normals = pd.concat([normals, more], ignore_index=True)
+        candidates = (
+            pd.concat([candidates, expanded], ignore_index=True)
+            .drop_duplicates(subset=["fips", "station"])
+        )
+
+    # --- per-group station selection and inverse-distance averaging ----------
+    monthly = None
+    links_by_group: dict[str, pd.DataFrame] = {}
+    for group, cols in VARIABLE_GROUPS.items():
+        links = _nearest_with(candidates, _stations_with(normals, cols))
+        links_by_group[group] = links
+        per_county = links.groupby("fips").size()
+        log.info("%s: %d counties with %d stations, %d with fewer, %d with none (of %d)",
+                 group, int((per_county == STATIONS_PER_COUNTY).sum()), STATIONS_PER_COUNTY,
+                 int((per_county < STATIONS_PER_COUNTY).sum()),
+                 int((~spine["fips"].isin(per_county.index)).sum()), len(spine))
+
+        merged = links.merge(normals[["station", "month", *cols]], on="station", how="inner")
+        # Inverse-distance weight. +1 mile guards against divide-by-zero for a
+        # station sitting exactly on the internal point.
+        merged["w"] = 1.0 / (merged["dist_mi"] + 1.0)
+
+        rows = []
+        for (fips, month), grp in merged.groupby(["fips", "month"]):
+            row = {"fips": fips, "month": int(month)}
+            for col in cols:
+                row[MONTHLY_COLUMNS[col]] = _wmean(grp, col)
+            rows.append(row)
+        frame = pd.DataFrame(rows, columns=["fips", "month", *(MONTHLY_COLUMNS[c] for c in cols)])
+        monthly = frame if monthly is None else monthly.merge(frame, on=["fips", "month"],
+                                                              how="outer")
+
+    if monthly is None or monthly.empty:
         raise RuntimeError("No county-station matches survived the normals join")
-
-    # Inverse-distance weight. +1 mile guards against divide-by-zero for a
-    # station sitting exactly on the internal point.
-    merged["w"] = 1.0 / (merged["dist_mi"] + 1.0)
-
-    def _wmean(group: pd.DataFrame, col: str) -> float:
-        valid = group[group[col].notna()]
-        if valid.empty:
-            return float("nan")
-        return float(np.average(valid[col], weights=valid["w"]))
-
-    monthly_rows = []
-    for (fips, month), group in merged.groupby(["fips", "month"]):
-        monthly_rows.append({
-            "fips": fips,
-            "month": int(month),
-            "tmax_f": _wmean(group, "tmax"),
-            "tmin_f": _wmean(group, "tmin"),
-            "tavg_f": _wmean(group, "tavg"),
-            "precip_in": _wmean(group, "prcp"),
-            "snow_in": _wmean(group, "snow"),
-        })
-
-    monthly = pd.DataFrame(monthly_rows).sort_values(["fips", "month"])
+    monthly = monthly.sort_values(["fips", "month"]).reset_index(drop=True)
 
     # Fill tavg where absent but tmax/tmin present.
     missing_avg = monthly["tavg_f"].isna() & monthly["tmax_f"].notna() & monthly["tmin_f"].notna()
@@ -462,6 +531,11 @@ def fetch(limit: int | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     def _season(fips_group: pd.DataFrame, months: list[int], col: str, how: str) -> float:
         sub = fips_group[fips_group["month"].isin(months)][col].dropna()
         if sub.empty:
+            return float("nan")
+        # An annual total with a month missing would be silently low. None
+        # were partial on 2026-09-22, but per-group station selection makes
+        # it possible, so refuse rather than undercount.
+        if how == "sum" and len(sub) < len(months):
             return float("nan")
         return float(sub.mean() if how == "mean" else sub.sum())
 
@@ -482,10 +556,11 @@ def fetch(limit: int | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     summary = pd.DataFrame(summary_rows)
 
-    # Attach provenance: which station, how far, how many contributed.
-    # `links` already holds only usable stations, so these are exact.
+    # Attach provenance: which station, how far, how many contributed. This
+    # describes the TEMPERATURE stations; precipitation and snowfall may come
+    # from different (nearby) stations.
     prov = (
-        links.sort_values("dist_mi")
+        links_by_group["temperature"].sort_values("dist_mi")
         .groupby("fips")
         .agg(climate_station_id=("station", "first"),
              climate_station_dist_mi=("dist_mi", "first"),

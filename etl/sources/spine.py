@@ -29,7 +29,13 @@ COVERAGE NOTES
     sources — notably BEA RPP and SEDA — do not cover it, so PR rows would be
     mostly-null noise. Flip the flag if that changes.
 
-    Expect ~3,144 rows for the 50 states + DC.
+    Alaska is also dropped (see EXCLUDED_STATES): out of scope for this app
+    by decision, 2026-09-22. That also retires the Alaska-specific data
+    problems — remote census areas with no weather station, the 2019
+    Valdez-Cordova split that SEDA has not caught up with, and the Aleutians
+    crossing the antimeridian.
+
+    Expect ~3,114 rows for the 49 remaining states + DC.
 
 RUN STANDALONE
     python -m etl.sources.spine
@@ -51,6 +57,12 @@ log = get_logger("source.spine")
 # 66 = Guam, 69 = Northern Mariana Islands, 78 = US Virgin Islands.
 TERRITORY_PREFIXES = {"60", "66", "69", "72", "78"}
 DROP_TERRITORIES = True
+
+# States left out of the dataset entirely, by product decision rather than
+# data availability. Dropping them at the spine removes them everywhere,
+# because every other source is LEFT joined onto it.
+#   02 = Alaska — not a place we are looking to move (decided 2026-09-22).
+EXCLUDED_STATES = {"02"}
 
 
 # The tell for mojibake: a UTF-8 multibyte sequence read as latin-1 turns
@@ -123,6 +135,12 @@ def fetch(year: int | None = None) -> pd.DataFrame:
         if dropped:
             log.info("dropped %d territory rows (see DROP_TERRITORIES)", dropped)
 
+    if EXCLUDED_STATES:
+        before = len(out)
+        out = out[~out["fips"].str[:2].isin(EXCLUDED_STATES)]
+        log.info("dropped %d rows in excluded states %s (see EXCLUDED_STATES)",
+                 before - len(out), sorted(EXCLUDED_STATES))
+
     # A county with no coordinates would silently get no climate data, so make
     # that loud rather than letting it slide.
     no_coords = out["lat"].isna() | out["lon"].isna()
@@ -153,7 +171,7 @@ def main() -> None:
     print("\nSample rows:")
     print(df.head(5).to_string(index=False))
     print(f"\nStates present: {df['state'].nunique()} "
-          f"(expect 51 for 50 states + DC)")
+          f"(expect 50: 49 states + DC, Alaska excluded)")
 
 
 if __name__ == "__main__":

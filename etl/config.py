@@ -179,7 +179,6 @@ SPOT_CHECK_FIPS = {
     "06075": "San Francisco County, CA (extreme high cost)",
     "39035": "Cuyahoga County, OH (rust belt, low cost)",
     "48507": "Zavala County, TX (small, poor, rural)",
-    "02016": "Aleutians West Census Area, AK (tests AK geography handling)",
     "22071": "Orleans Parish, LA (tests LA parish handling)",
     # Connecticut replaced its 8 legacy counties with 9 planning regions;
     # Census products from 2022 on (Gazetteer, ACS) use the new codes and the

@@ -2,7 +2,10 @@
 
 > **Status: first live run completed 2026-09-20.** All four sources fetched,
 > joined, validated with 0 FAIL / 0 WARN, and published to
-> `public/data/counties.json` (3,144 rows × 33 columns). Vintages: ACS 2023
+> `public/data/counties.json` (3,144 rows × 33 columns). **Rebuilt 2026-09-22:**
+> Alaska excluded (3,114 rows) and NOAA stations selected per variable — every
+> county now has temperature and precipitation; one (Nye NV) lacks snowfall.
+> Vintages: ACS 2023
 > (2019–2023), BEA RPP 2024, SEDA 6.0, NOAA 1991–2020 normals. See
 > [Known gaps](#known-gaps) for what the data does *not* cover.
 
@@ -137,7 +140,7 @@ questions faster than reading the join.
 
 ## Output schema
 
-One row per county, ~3,144 rows.
+One row per county, 3,114 rows (Alaska excluded).
 
 ### Identity
 | Column | Type | Notes |
@@ -184,7 +187,7 @@ One row per county, ~3,144 rows.
 | `climate_station_count` | How many stations were averaged |
 
 Monthly values (12 per county) are kept separately in
-`data/interim/noaa_monthly.csv` for the Phase 7 climate tab.
+`data/interim/noaa_monthly.csv` for the Phase 6 climate tab.
 
 ### Derived
 | Column | Formula | Reading |
@@ -307,8 +310,12 @@ belongs in the phase whose job is proving the join works.
 **How the join works:** drop the CoCoRaHS network (`US1…` ids — volunteer
 rain gauges, no temperature, 5,440 of 15,615 stations) from the inventory;
 find the 10 nearest remaining stations within 60 miles of each county's
-internal point; fetch them; keep the nearest 3 that actually carry
-temperature normals; average those weighted by inverse distance. Averaging
+internal point; fetch them; then, **separately for each variable group**
+(temperature, precipitation, snowfall), keep the nearest 3 stations that
+actually report it and average those weighted by inverse distance. Any
+county still short of 3 stations for some group gets a **fallback search**:
+the 40 nearest within the same 60 miles, fetched and re-selected.
+`climate_station_*` columns describe the temperature stations. Averaging
 several stations smooths out station-specific quirks (an airport station on
 a runway apron reads differently from one in a park two miles away) while
 inverse-distance weighting keeps the nearest dominant.
@@ -320,9 +327,18 @@ inverse-distance weighting keeps the nearest dominant.
 > ten of them closer than its airport station and came out **null**, as did
 > Maricopa (Phoenix) and Pulaski (Little Rock). Candidates-then-usable plus
 > the `US1` exclusion fixed all three. Keep both.
+>
+> **Why selection is per variable (review, 2026-09-22).** The first-run fix
+> kept only stations with temperature and threw the rest away. Many
+> temperature stations don't report snowfall, so 214 counties — snowy ND and
+> MN ones included — had null snow while a nearby station reported it. And
+> Livingston Parish LA (next to Baton Rouge) had *no* climate because all
+> 10 candidates were rain gauges. Per-group selection plus the K=40
+> fallback addresses both without leaving NOAA.
 
-The full run fetches ~9,000 station files once (threaded, ~10 minutes) and
-caches them; re-runs are seconds.
+The full run fetches ~9,100 station files, plus ~225 more in the fallback
+search, once (threaded, ~10 minutes) and caches them; re-runs from cache take
+about three minutes.
 
 > ⚠️ **What this does not do:** elevation adjustment, or interpolation that
 > respects terrain. In a mountainous county the nearest station may be at a
@@ -431,11 +447,12 @@ python -m etl.build --skip-fetch
 
 ### Known rough edges
 
-- **Alaska** uses boroughs and census areas, **Louisiana** uses parishes. Both
-  have FIPS so the join works, but spot-check them. Five remote Alaska areas
-  (Aleutians West, Dillingham, Kusilvak, North Slope, Northwest Arctic) have
-  no NOAA station within 60 miles and carry null climate — a real gap, not a
-  bug. Alpine County CA (pop. ~1,200) is the same.
+- **Alaska is excluded** (product decision, 2026-09-22) — dropped at the
+  spine via `EXCLUDED_STATES` in `sources/spine.py`, so it is absent from
+  every column. That retired its remote no-station census areas and the
+  2019 Valdez-Cordova split SEDA hadn't caught up with.
+- **Louisiana** uses parishes. They have FIPS so the join works, but
+  spot-check them.
 - **Connecticut** replaced its 8 legacy counties with 9 planning regions.
   Census products from 2022 on (Gazetteer, ACS) use the new codes
   (`09110`–`09190`); legacy `09001` Fairfield no longer exists in them.
@@ -460,9 +477,13 @@ Deliberate Phase 1 omissions, not oversights:
 - **No non-housing `real_income` variant.** `rpp_all` includes rents, so scoring
   on both `real_income` and a housing metric double-counts housing. The fix
   needs BEA's expenditure weights. Tracked in `Working Master Plan.md`.
-- **No missing-data policy.** Counties with nulls currently just have nulls. The
-  scoring engine needs to decide: exclude, impute, or gray out. Open question
-  in `Working Master Plan.md`.
+- **Nulls stay null — by design.** The ETL never imputes. Decided
+  2026-09-22: the app treats a missing value as *unknown* — grey on the map,
+  with a toggle to show or hide unknown results (`Working Master Plan.md` §6).
+  So a null is always better than a guessed number here.
+- **Snowfall is the weakest climate column.** Fewer stations report it than
+  temperature or rain. It is a low-priority metric; remaining nulls are
+  accepted and shown as unknown.
 - **No boundaries.** Phase 4 pulls TIGER and simplifies with `mapshaper`.
 - **No state-level non-metro cost of living.** BEA publishes none (API or
   bulk — verified 2026-09-20), so ~62% of counties carry their state's blended
@@ -473,7 +494,7 @@ Deliberate Phase 1 omissions, not oversights:
   because the county polygon includes the Farallon Islands. Its nearest
   stations are ~29 mi away on the coast. The resulting numbers (71°F / 45°F)
   are plausibly close to SF's real marine climate, but `climate_station_id`
-  is misleading. The only such case among 3,144; other >25 mi distances are
+  is misleading. The only such case among 3,114; other >25 mi distances are
   genuinely remote counties. Fix would be a land-only centroid from TIGER
   polygons in Phase 4 — not done in Phase 1.
 - **Connecticut has no `school_achievement`.** SEDA keys counties by the

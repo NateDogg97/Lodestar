@@ -582,6 +582,34 @@ def test_missing_source_degrades(fixtures: dict[str, pd.DataFrame]) -> None:
           "the absent source's column is simply missing, not null-filled")
 
 
+def test_noaa_per_variable_station_selection() -> None:
+    print("\nNOAA: stations are selected per variable group, not per county")
+    from .sources import noaa
+    csv_hdr = "STATION,DATE,MLY-TMAX-NORMAL,MLY-TMIN-NORMAL,MLY-PRCP-NORMAL,MLY-SNOW-NORMAL\n"
+    rain_only = csv_hdr + "".join(f"X,{m:02d},,,3.1,\n" for m in range(1, 13))
+    parsed = noaa._parse_station_csv(rain_only, "RAIN")
+    check(parsed is not None and parsed["prcp"].notna().all(),
+          "a precipitation-only station is kept, not discarded")
+
+    # The nearest station has temperature but no snow; a farther one has snow.
+    normals = pd.DataFrame({
+        "station": ["TEMP"] * 12 + ["SNOW"] * 12,
+        "month": list(range(1, 13)) * 2,
+        "tmax": [80.0] * 12 + [np.nan] * 12,
+        "tmin": [40.0] * 12 + [np.nan] * 12,
+        "tavg": [60.0] * 12 + [np.nan] * 12,
+        "prcp": [np.nan] * 24,
+        "snow": [np.nan] * 12 + [2.0] * 12,
+    })
+    candidates = pd.DataFrame({"fips": ["01001", "01001"], "station": ["TEMP", "SNOW"],
+                               "dist_mi": [1.0, 20.0]})
+    temp = noaa._nearest_with(candidates, noaa._stations_with(normals, ("tmax", "tmin", "tavg")))
+    snow = noaa._nearest_with(candidates, noaa._stations_with(normals, ("snow",)))
+    check(temp["station"].tolist() == ["TEMP"], "temperature uses the station with temperature")
+    check(snow["station"].tolist() == ["SNOW"],
+          "snowfall comes from a farther station when the nearest has none")
+
+
 def main() -> int:
     print("=" * 70)
     print("OFFLINE TEST SUITE — no network required")
@@ -603,6 +631,7 @@ def main() -> int:
         test_seda_county_fips_width_guard()
         test_seda_subgroup_and_gap_filter()
         test_noaa_inventory_parser()
+        test_noaa_per_variable_station_selection()
         test_gazetteer_encoding_guard()
 
         fixtures = _make_synthetic()

@@ -5,9 +5,19 @@
 > If something here conflicts with what you actually built, the code is right and this file is
 > stale — fix the file.
 >
-> Last updated: 2026-09-20
+> Last updated: 2026-09-22
 >
 > **Changelog**
+> - 2026-09-22 — Decisions after review: **Climate tab is now Phase 6; Polish moves to last
+>   (Phase 7).** **Alaska is out of scope** and dropped from the dataset (3,114 counties). Missing
+>   data is shown, not hidden — "unknown" counties render grey with a show/hide toggle (§6).
+>   Snowfall is a low-priority metric; an imperfect snow column is acceptable. NOAA station
+>   selection is now per variable, with a wider fallback search, before any second source.
+> - 2026-09-22 — Pre-Phase-2 review of the published dataset. Offline suite 71/71, lint and
+>   typecheck clean. Found three ETL data-quality issues (snow nulls, Livingston Parish climate
+>   gap, new AK census areas missing schools) and measured the payload fix: a row-array JSON
+>   at 3 decimals is ~785 KB raw / ~260 KB gzipped, well under Serwist's 2 MB cap. Added as
+>   Phase 2 prerequisites.
 > - 2026-09-20 — Initial plan.
 > - 2026-09-20 — Store cost of living as its three RPP components rather than one blended index
 >   (see "Making cost of living work below metro level"). Expanded the Phase 1 column set to
@@ -67,7 +77,7 @@ ETL pipeline (Python, run ~yearly)
    joins everything on county FIPS
         │
         ├──▶ counties.topo.json   (~800 KB, simplified boundaries)
-        └──▶ metrics.json         (3,144 rows × ~30 columns)
+        └──▶ metrics.json         (3,114 rows × ~30 columns)
                 │
                 ▼
         Browser (Next.js PWA)
@@ -80,7 +90,7 @@ ETL pipeline (Python, run ~yearly)
 - No database for v1
 - No per-query API cost
 - Works fully offline once cached
-- Re-scoring on a slider drag is sub-millisecond (3,144 rows is nothing)
+- Re-scoring on a slider drag is sub-millisecond (~3,100 rows is nothing)
 
 Payload math: 3,144 counties × 30 metrics × 4 bytes (Float32) ≈ 375 KB raw, much less gzipped.
 The entire national dataset fits comfortably in the browser.
@@ -93,8 +103,12 @@ The entire national dataset fits comfortably in the browser.
 
 Rationale:
 - Nearly every federal dataset publishes at county level → trivial joins
-- 3,144 units is granular enough to be useful, small enough to ship whole
+- ~3,100 units is granular enough to be useful, small enough to ship whole
 - Boundaries are stable and free from Census TIGER
+
+**Scope: the lower 48, Hawaii, and DC. Alaska is excluded** (decided 2026-09-22 — not a place
+we're considering). It is dropped at the county spine in the ETL, so it is absent from every
+metric, the map, and the rankings. 3,114 counties.
 
 **Known limitation:** school districts do not nest inside counties — they cross county lines
 constantly. SEDA publishes county-level rollups, so this is handled for MVP, but we are
@@ -163,6 +177,20 @@ shortcut.
 **"Distance to X" is not a runtime query.** Precompute in the ETL as ordinary columns:
 `dist_to_large_airport_mi`, `dist_to_coast_mi`, `dist_to_metro_500k_mi`. Haversine against a point
 file, or PostGIS. They then behave like any other metric.
+
+### Climate fallback sources
+
+Researched 2026-09-22, when some counties came out with null climate columns. In order of
+preference:
+
+| Option | Covers | Snowfall? | Verdict |
+|---|---|---|---|
+| **More NOAA stations** — select per variable, widen the search for short counties | Same as now | Yes | **Done first.** Same source and method, so no consistency questions. |
+| **PRISM 1991–2020 normals** (Oregon State) — gridded rasters, 800 m / 4 km | Lower 48; Hawaii in a separate normals set | **No** — temperature and precipitation only | Best upgrade *if* we ever need one. It's elevation-aware, which would also fix the "mountain county gets the valley station" caveat. Costs a raster dependency (`rasterio`) and a sampling step. Keep in reserve. |
+| **Open-Meteo Historical API** (ERA5 reanalysis) — free, no key | Global | Yes | Poor fit for 30-year normals. The free tier is non-commercial and bills long ranges as multiple calls: 30 years at one point ≈ 780 calls, against 10,000 a day — about a dozen counties a day. It's modeled data, not stations. OK for filling a handful of gaps; not a national source. |
+
+**Rule if a second source is ever used:** record it per county (e.g. `climate_source`) so the UI
+can say where a number came from. Never silently blend sources in one column.
 
 ### Making cost of living work below metro level
 
@@ -242,7 +270,7 @@ a published methodology we can borrow rather than invent.
 
 ## 5. Phase 1 CSV schema
 
-One row per county, ~3,144 rows.
+One row per county, 3,114 rows (Alaska excluded — see §3).
 
 **Identity**
 | Column | Source | Notes |
@@ -332,6 +360,14 @@ This is the actual product. Everything else is plumbing.
 5. **Hard filters eliminate a county entirely**, rather than penalizing its score.
 6. **Color ramp on score** — `d3-scale-chromatic` → `interpolateRdYlGn`. Green = strong match,
    red = weak.
+7. **Missing data is shown as unknown, never guessed** (decided 2026-09-22):
+   - A county with no value for a metric used in a **hard filter** is neither passed nor
+     eliminated — it is **unknown**. On the map it renders **grey**; in the list it is marked.
+   - A **toggle** shows or hides unknown results. Default: shown, so gaps are visible.
+   - For **weighted** metrics, a missing value drops out of that county's weighted average
+     (its weight is excluded from both sums) and the county is flagged as partially scored.
+     *Proposed default — confirm while building Phase 2.*
+   - No imputation. A grey county is honest; an invented number is not.
 
 ### "Why is this place here?" — no AI needed
 
@@ -409,22 +445,42 @@ The map is meaningless until the scoring works.
 - [x] Sanity-check against places we know (Travis TX, San Francisco CA, Cuyahoga OH)
 
 **The join holds.** Every future metric is one more column. See `etl/README.md` for the
-run log and known gaps (CT schools, rural RPP resolution, SF climate provenance, 7 counties
-with no station within 60 mi).
+run log and known gaps (CT schools, rural RPP resolution, SF climate provenance). The
+"7 counties with no station" gap was 5 Alaska areas (now excluded) plus Alpine CA and
+Livingston LA, both fixed 2026-09-22.
 
 **This phase proves the hardest part of the project.** Four agencies that describe geography four
 different ways, reconciled onto one spine. If the join works, every future metric is just another
 column.
 
 Known rough edges to expect:
-- Alaska uses boroughs and census areas, Louisiana uses parishes — both have FIPS, but check them
+- ~~Alaska uses boroughs and census areas~~ (Alaska now excluded); Louisiana uses parishes — has FIPS, but check it
 - Connecticut reorganized its county-equivalents recently; crosswalks may be stale
 - Counties with no nearby NOAA station need a fallback (nearest station, or state average)
 - Keep FIPS as a string everywhere or pandas will eat the leading zeros
 
 ### Phase 2 — Scoring engine ⬅️ **NEXT**
 - [ ] Decide how the app loads `public/data/counties.json` (2.7 MB; over Serwist's 2 MB
-      precache cap — raise the cap, or emit a columnar/rounded JSON from the ETL)
+      precache cap — raise the cap, or emit a columnar/rounded JSON from the ETL).
+      *Measured 2026-09-22:* rounding floats to 3 dp and emitting `{columns, rows}` arrays
+      instead of one object per county gives ~785 KB raw / ~260 KB gzipped. Rounding alone
+      only reaches 2.4 MB — the repeated keys are the bulk.
+- [ ] **ETL fixes found in the 2026-09-22 review** — do before scoring, since they change
+      percentiles:
+  - [x] **Snow was null for 214 counties that had temperature data**, including snowy ones
+        (Rolette ND, Beltrami MN, Price WI). Cause: stations without temperature normals were
+        discarded outright, so a nearby snow-reporting station never counted. **Fixed
+        2026-09-22:** stations are picked per variable group (temperature / precipitation /
+        snowfall), plus a K=40 fallback search. **Snow nulls 214 → 1** (Nye County NV, shown
+        as unknown). Rain and snow totals moved for most counties, since they now come from
+        the nearest stations that actually measure them. The median change is under half an
+        inch; the big swings are mountain and rain-shadow counties (e.g. Jefferson WA 40 → 94 in).
+  - [x] **Livingston Parish, LA (pop ~150k, next to Baton Rouge) had no climate data.**
+        Its 10 nearest stations were all rain gauges. Same fix. **Every county now has
+        temperature and precipitation** — including Alpine County CA, previously null.
+  - [x] ~~Chugach and Copper River AK have no school data.~~ Moot: Alaska is excluded.
+  - [x] ~~Fallback climate source for anything still null~~ Not needed: the NOAA-only fix
+        left one snow null. Options kept on file in §4 *Climate fallback sources*.
 - [ ] Pure TypeScript module, no UI
 - [ ] Percentile normalization with direction flags
 - [ ] Weighted scoring function
@@ -447,19 +503,20 @@ Known rough edges to expect:
 - [ ] Expand ETL: FEMA NRI, BLS unemployment, precomputed distances, state law CSV
 - [ ] Each new metric = one column + one slider
 
-### Phase 6 — Polish
-- [ ] URL-encoded filter state
-- [x] PWA shell + service worker
-- [ ] `localStorage` shortlist
-
-### Phase 7 — Climate tab
+### Phase 6 — Climate tab
 - [ ] Per-location panel with monthly temperature band chart (data already in the Phase 1 pull)
 - [ ] Precipitation and snowfall by month
 - [ ] Add `days_above_90f` / `days_below_32f`
 
+### Phase 7 — Polish *(always last)*
+- [ ] URL-encoded filter state
+- [x] PWA shell + service worker
+- [ ] `localStorage` shortlist
+
 > **Sequencing note:** the strict ordering above matters for Phases 1–4, where each phase depends
-> on the last. Phase 7 does not — the climate data lands in the Phase 1 pull, so the tab can slot
-> in any time after Phase 3 if a second useful view is wanted before Polish.
+> on the last. The Climate tab does not — its data lands in the Phase 1 pull, so it can slot in
+> any time after Phase 3. **Polish stays last** (decided 2026-09-22): new features and data go
+> in before finishing touches.
 
 ---
 
@@ -489,7 +546,6 @@ Not in MVP. Do not build these until the above ships.
 ## 11. Open questions
 
 - [ ] Which 6–8 state law attributes actually matter? (Needs a decision before Phase 5.)
-- [ ] How to handle counties with missing data for a given metric — exclude, impute, or gray out?
 - [ ] Do we need a second boundary LOD for zoomed-out views, or is one simplified file enough?
 - [ ] At tract level, does the RPP recombination need re-weighting, or do BEA's national weights
       hold well enough?
@@ -509,6 +565,9 @@ Not in MVP. Do not build these until the above ships.
       "unavailable" rather than scoring them. Decide before Phase 3 ships a ranked list.
 
 **Resolved**
+- ~~How to handle counties with missing data — exclude, impute, or gray out?~~ Grey out, with a
+  show/hide toggle for unknown results; never impute. See §6 item 7. (2026-09-22)
+- ~~Include Alaska?~~ No — out of scope, dropped at the spine. (2026-09-22)
 - ~~Exclude counties under 10,000 population?~~ No. Keep them, store `population`, filter at
   runtime with a slider.
 - ~~Which climate normals?~~ Four seasonal temperature aggregates plus annual precipitation and
