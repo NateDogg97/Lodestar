@@ -8,6 +8,10 @@
 > Last updated: 2026-09-22
 >
 > **Changelog**
+> - 2026-09-22 — **Phase 2 complete.** Scoring engine in `src/lib/scoring/` (pure TS, 36 Vitest
+>   tests incl. real-data sanity checks). ETL now publishes a compact columnar file: 704 KB,
+>   240 KB gzipped, precached by Serwist. Percentiles are national; any metric's direction can
+>   be flipped; missing data is unknown, never imputed.
 > - 2026-09-22 — Decisions after review: **Climate tab is now Phase 6; Polish moves to last
 >   (Phase 7).** **Alaska is out of scope** and dropped from the dataset (3,114 counties). Missing
 >   data is shown, not hidden — "unknown" counties render grey with a show/hide toggle (§6).
@@ -459,12 +463,13 @@ Known rough edges to expect:
 - Counties with no nearby NOAA station need a fallback (nearest station, or state average)
 - Keep FIPS as a string everywhere or pandas will eat the leading zeros
 
-### Phase 2 — Scoring engine ⬅️ **NEXT**
-- [ ] Decide how the app loads `public/data/counties.json` (2.7 MB; over Serwist's 2 MB
-      precache cap — raise the cap, or emit a columnar/rounded JSON from the ETL).
-      *Measured 2026-09-22:* rounding floats to 3 dp and emitting `{columns, rows}` arrays
-      instead of one object per county gives ~785 KB raw / ~260 KB gzipped. Rounding alone
-      only reaches 2.4 MB — the repeated keys are the bulk.
+### Phase 2 — Scoring engine ✅ **DONE 2026-09-22**
+- [x] Decide how the app loads `public/data/counties.json`. **Decided:** the ETL publishes a
+      compact columnar file — `{format: "counties-columnar-v1", columns, rows}`, floats rounded
+      per column (`etl/build.py`, `to_app_payload`). 2.6 MB → **704 KB, 240 KB gzipped**, so
+      Serwist precaches it and the app works offline. The browser fetches it once and parses
+      it with `parseCountyPayload`, which transposes it into one typed array per metric.
+      `etl/data/out/counties.json` stays the readable one-object-per-county version.
 - [ ] **ETL fixes found in the 2026-09-22 review** — do before scoring, since they change
       percentiles:
   - [x] **Snow was null for 214 counties that had temperature data**, including snowy ones
@@ -481,14 +486,31 @@ Known rough edges to expect:
   - [x] ~~Chugach and Copper River AK have no school data.~~ Moot: Alaska is excluded.
   - [x] ~~Fallback climate source for anything still null~~ Not needed: the NOAA-only fix
         left one snow null. Options kept on file in §4 *Climate fallback sources*.
-- [ ] Pure TypeScript module, no UI
-- [ ] Percentile normalization with direction flags
-- [ ] Weighted scoring function
-- [ ] Hard filter application
-- [ ] Score decomposition (top 3 / bottom 3 contributors)
-- [ ] Unit tests asserting sane rankings against known places
+- [x] Pure TypeScript module, no UI — `src/lib/scoring/` (`metrics`, `dataset`, `percentile`,
+      `score`)
+- [x] Percentile normalization with direction flags. Ties share an averaged percentile, which
+      matters because every county in a metro shares one cost-of-living figure. Each metric
+      has a default direction, and **any metric's direction can be flipped** per search
+      (someone may want hot summers).
+- [x] Weighted scoring function — weights clamped to 0–5; a missing weighted metric leaves
+      both sums, and the county is flagged as partially scored (`missingMetrics`)
+- [x] Hard filter application — inclusive min/max; a missing value makes the county
+      `unknown`, not excluded (§6 item 7); `rankCounties(..., {includeUnknown})` is the toggle
+- [x] Score decomposition (top 3 / bottom 3 contributors) — `explainScore`
+- [x] Unit tests asserting sane rankings against known places — `npm test`. Real-data checks:
+      the SF metro is the costliest, Howard County MD top for schools and Baltimore city near
+      the bottom, the top 15 warmest winters are all FL/HI, Connecticut shows as unknown for
+      schools. Full re-score takes well under a frame.
 
-### Phase 3 — Ranked list view
+**Phase 2 decisions**
+- **Percentiles are national**, computed once over all counties, not over the ones left after
+  filtering. Tightening a filter never changes the score of a county still on screen.
+- **Direction is per search, not fixed.** Defaults: cheaper, higher income, better schools,
+  milder summers, warmer winters, less rain and snow are "better". Flip any of them.
+- Data finding while testing: the **Miami metro is the second-costliest in BEA 2024**
+  (114.2), ahead of Los Angeles (113.6). Surprising but correct.
+
+### Phase 3 — Ranked list view ⬅️ **NEXT**
 - [ ] Table of top 50 counties with score breakdown
 - [ ] Weight sliders + hard filter inputs
 - [ ] *(This is already a useful product. May turn out to be more useful than the map.)*
@@ -563,6 +585,12 @@ Not in MVP. Do not build these until the above ships.
       *Confirmed 2026-09-20: all nine CT rows null for `school_achievement`.* Fix options: a legacy-county → planning-region crosswalk with population-weighted
       averaging (an afternoon), or accept the gap and have the UI show CT schools as
       "unavailable" rather than scoring them. Decide before Phase 3 ships a ranked list.
+      *2026-09-22:* the unknown-data handling from Phase 2 already does the second option by
+      default — CT is scored on its other metrics, flagged as partial, and shows as unknown
+      under a schools filter. The crosswalk is now optional polish.
+- [ ] **"Ideal value" scoring for climate.** Direction flags handle "warmer is better" but not
+      "summer highs around 80°F". A target-and-tolerance mode (percentile of distance from the
+      target) may fit climate better. Decide while tuning in Phase 3 — it's the §12 risk.
 
 **Resolved**
 - ~~How to handle counties with missing data — exclude, impute, or gray out?~~ Grey out, with a

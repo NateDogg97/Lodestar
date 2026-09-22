@@ -10,7 +10,7 @@ Full detail, decisions, and progress live in [`Working Master Plan.md`](Working%
 Phases run in order:
 
 1. **Prove the join** — Python ETL joins Census, BEA, SEDA and NOAA onto one row per county ✅
-2. **Scoring engine** — percentile normalization, weights, hard filters, score breakdown
+2. **Scoring engine** — percentile normalization, weights, hard filters, score breakdown ✅
 3. **Ranked list** — top counties with weight sliders and filters
 4. **Map** — MapLibre choropleth colored by score; unknown data shown grey
 5. **Full metric set** — hazard risk, unemployment, distances, state laws
@@ -34,6 +34,7 @@ npm run build    # Production build, then builds public/sw.js
 npm run start    # Serve the production build
 npm run lint
 npm run typecheck
+npm test         # Vitest: scoring engine tests
 ```
 
 The service worker is disabled during `next dev` to avoid stale caches; use

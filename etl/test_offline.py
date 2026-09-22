@@ -610,6 +610,28 @@ def test_noaa_per_variable_station_selection() -> None:
           "snowfall comes from a farther station when the nearest has none")
 
 
+def test_app_payload_is_compact_and_lossless_where_it_matters() -> None:
+    print("\nbuild: published app payload is columnar, rounded, null-safe")
+    import json
+    from . import build
+    df = pd.DataFrame({
+        "fips": ["06075", "01001"],
+        "population": [836321.0, 59285.0],
+        "school_achievement": [np.nan, 0.0824653642],
+        "summer_high_f": [70.98755437, 95.3203326],
+    })
+    payload = build.to_app_payload(df)
+    check(payload["columns"] == list(df.columns), "columns listed once, in order")
+    check(payload["rows"][0][0] == "06075", "fips stays a string with its leading zero")
+    check(payload["rows"][0][1] == 836321 and isinstance(payload["rows"][0][1], int),
+          "whole-number column published as int")
+    check(payload["rows"][0][2] is None, "NaN published as null, not 0 or NaN")
+    check(payload["rows"][1][2] == 0.082 and payload["rows"][1][3] == 95.32,
+          "floats rounded per column")
+    text = json.dumps(payload, allow_nan=False)
+    check("NaN" not in text, "payload is strict JSON")
+
+
 def main() -> int:
     print("=" * 70)
     print("OFFLINE TEST SUITE — no network required")
@@ -633,6 +655,7 @@ def main() -> int:
         test_noaa_inventory_parser()
         test_noaa_per_variable_station_selection()
         test_gazetteer_encoding_guard()
+        test_app_payload_is_compact_and_lossless_where_it_matters()
 
         fixtures = _make_synthetic()
         try:

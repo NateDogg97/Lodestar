@@ -9,11 +9,12 @@ USAGE
     python -m etl.build --no-publish       # skip copying to public/data/
 
 PUBLISH STEP
-    When validation passes, data/out/counties.json is copied to
-    config.PUBLISH_PATH (public/data/counties.json) for the Next.js app.
-    A build that fails validation never touches the published file, so what
-    the app ships is always a build that was green. data/out/ remains the
-    canonical output.
+    When validation passes, the table is written to config.PUBLISH_PATH
+    (public/data/counties.json) for the Next.js app, in a compact COLUMNAR
+    format — see to_app_payload(). A build that fails validation never
+    touches the published file, so what the app ships is always a build that
+    was green. data/out/ remains the canonical, human-readable output
+    (one JSON object per county).
 
 WHY THE SOURCES RUN INDEPENDENTLY
     Each source writes its own tidy file to data/interim/ before anything is
@@ -36,7 +37,8 @@ EXIT CODES
 from __future__ import annotations
 
 import argparse
-import shutil
+import json
+import math
 import sys
 import traceback
 
@@ -173,15 +175,76 @@ def main() -> int:
         print("BUILD OK (--no-publish: public/data/ not updated)")
         return 0
 
-    publish(out_json)
+    publish(df)
     print("BUILD OK")
     return 0
 
 
-def publish(out_json) -> None:
-    """Copy the validated JSON to where the app reads it."""
+# Published-file format. Bump when the shape changes; the app checks it.
+APP_PAYLOAD_FORMAT = "counties-columnar-v1"
+
+# Decimal places kept per column in the published file. Everything not listed
+# gets DEFAULT_DECIMALS. Chosen well below any difference that could matter
+# for ranking: dollars to the dollar, temperatures to 0.01 F, ratios to 4 dp.
+# Rounding is most of the size win after the columnar layout — pandas writes
+# 10+ significant digits by default.
+DEFAULT_DECIMALS = 3
+COLUMN_DECIMALS = {
+    "lat": 4, "lon": 4, "land_sq_mi": 1,
+    "population": 0, "median_home_value": 0, "median_household_income": 0,
+    "median_gross_rent": 0, "real_income": 0,
+    "summer_high_f": 2, "winter_low_f": 2, "spring_mean_f": 2, "fall_mean_f": 2,
+    "annual_precip_in": 2, "annual_snow_in": 2,
+    "climate_station_dist_mi": 1, "climate_station_count": 0,
+    "rent_to_income": 4,
+    "acs_vintage": 0, "rpp_vintage": 0,
+}
+
+
+def _compact(value: object, decimals: int) -> object:
+    """JSON-safe, rounded scalar. NaN/None -> None; whole-number columns -> int."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    try:
+        f = float(value)  # numpy scalars included
+    except (TypeError, ValueError):
+        return value
+    if math.isnan(f):
+        return None
+    return int(round(f)) if decimals == 0 else round(f, decimals)
+
+
+def to_app_payload(df: pd.DataFrame) -> dict:
+    """
+    Reshape the county table for the browser.
+
+    {"format": ..., "columns": [name, ...], "rows": [[value, ...], ...]}
+
+    WHY COLUMNAR: the records layout repeats all 33 column names in every one
+    of ~3,100 rows, which is most of the file. Measured 2026-09-22: records
+    2.6 MB; rounding alone 2.4 MB; columns + rows + rounding ~0.8 MB raw,
+    ~0.26 MB gzipped. That puts it under Serwist's 2 MB precache cap, so the
+    dataset is available offline.
+
+    Nulls are JSON null — the app treats them as "unknown", never as zero.
+    """
+    columns = list(df.columns)
+    decimals = [COLUMN_DECIMALS.get(c, DEFAULT_DECIMALS) for c in columns]
+    rows = [
+        [_compact(v, d) for v, d in zip(record, decimals)]
+        for record in df.itertuples(index=False, name=None)
+    ]
+    return {"format": APP_PAYLOAD_FORMAT, "columns": columns, "rows": rows}
+
+
+def publish(df: pd.DataFrame) -> None:
+    """Write the validated table, in the app's compact format, to where the app reads it."""
     config.PUBLISH_PATH.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(out_json, config.PUBLISH_PATH)
+    payload = to_app_payload(df)
+    with open(config.PUBLISH_PATH, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, separators=(",", ":"), allow_nan=False)
     size_kb = config.PUBLISH_PATH.stat().st_size / 1024
     log.info("published %s  (%.0f KB)", config.PUBLISH_PATH, size_kb)
     print(f"Published to {config.PUBLISH_PATH.relative_to(config.ETL_DIR.parent)} "

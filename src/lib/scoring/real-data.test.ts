@@ -1,0 +1,132 @@
+/**
+ * Sanity checks against the real published dataset: do the rankings agree
+ * with what anyone would say about these places? If one of these fails after
+ * an ETL rebuild, suspect the data before the test.
+ */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+import {
+  explainScore,
+  parseCountyPayload,
+  prepareDataset,
+  rankCounties,
+  scoreCounties,
+  type CountyScore,
+  type ScoringInput,
+} from ".";
+
+const data = parseCountyPayload(
+  JSON.parse(readFileSync(join(process.cwd(), "public/data/counties.json"), "utf8")),
+);
+const prepared = prepareDataset(data);
+
+const SAN_FRANCISCO = "06075";
+const CUYAHOGA = "39035"; // Cleveland
+const MIAMI_DADE = "12086";
+const TRAVIS = "48453"; // Austin
+const HOWARD_MD = "24027";
+const BALTIMORE_CITY = "24510";
+
+function run(input: ScoringInput) {
+  const scores = scoreCounties(prepared, input);
+  const ranked = rankCounties(scores);
+  const get = (fips: string): CountyScore => scores[data.indexByFips.get(fips)!];
+  const rankOf = (fips: string) => ranked.findIndex((r) => r.fips === fips) + 1;
+  return { scores, ranked, get, rankOf };
+}
+
+describe("the dataset", () => {
+  it("covers the lower 48, Hawaii and DC — and not Alaska", () => {
+    expect(data.n).toBeGreaterThan(3100);
+    expect(new Set(data.state).size).toBe(50);
+    expect(data.state).not.toContain("AK");
+  });
+});
+
+describe("rankings agree with common knowledge", () => {
+  it("cost of living: Cleveland beats San Francisco, and the SF metro is dead last", () => {
+    const { get, ranked } = run({ weights: { rpp_all: 5 } });
+    expect(get(CUYAHOGA).score!).toBeGreaterThan(get(SAN_FRANCISCO).score!);
+    expect(get(SAN_FRANCISCO).score!).toBeLessThan(5);
+    // BEA 2024: San Francisco-Oakland-Fremont is the priciest metro (its five
+    // counties tie), then Miami, then Los Angeles.
+    const bottom5 = ranked.slice(-5).map((r) => data.fips[r.index]).sort();
+    expect(bottom5).toEqual(["06001", "06013", "06041", "06075", "06081"]);
+  });
+
+  it("schools: Howard County MD is near the top, Baltimore city near the bottom", () => {
+    const { get } = run({ weights: { school_achievement: 5 } });
+    expect(get(HOWARD_MD).score!).toBeGreaterThan(95);
+    expect(get(BALTIMORE_CITY).score!).toBeLessThan(10);
+  });
+
+  it("warm winters: the top 15 are all Florida or Hawaii", () => {
+    const { ranked } = run({ weights: { winter_low_f: 5 } });
+    const states = new Set(ranked.slice(0, 15).map((r) => data.state[r.index]));
+    expect([...states].every((s) => s === "FL" || s === "HI")).toBe(true);
+  });
+
+  it("warm winters: Miami beats Austin beats Cleveland", () => {
+    const { rankOf } = run({ weights: { winter_low_f: 5 } });
+    expect(rankOf(MIAMI_DADE)).toBeLessThan(rankOf(TRAVIS));
+    expect(rankOf(TRAVIS)).toBeLessThan(rankOf(CUYAHOGA));
+  });
+
+  it("flipping a direction flips the ranking", () => {
+    const warm = run({ weights: { winter_low_f: 5 } });
+    const cold = run({ weights: { winter_low_f: 5 }, directions: { winter_low_f: "lower" } });
+    expect(cold.get(CUYAHOGA).score!).toBeGreaterThan(warm.get(CUYAHOGA).score!);
+    expect(cold.rankOf(MIAMI_DADE)).toBeGreaterThan(cold.ranked.length - 50);
+  });
+
+  it("cheap with good schools: San Francisco is nowhere near the top", () => {
+    const { rankOf, ranked } = run({ weights: { rpp_all: 3, school_achievement: 3 } });
+    expect(rankOf(SAN_FRANCISCO)).toBeGreaterThan(ranked.length / 2);
+  });
+});
+
+describe("filters and unknowns on real data", () => {
+  it("a no-snow filter keeps Miami, drops Cleveland, and grey-flags counties without snow data", () => {
+    const { get } = run({ weights: {}, filters: [{ metric: "annual_snow_in", max: 1 }] });
+    expect(get(MIAMI_DADE).status).toBe("match");
+    expect(get(CUYAHOGA).status).toBe("excluded");
+    expect(get("32023").status).toBe("unknown"); // Nye County NV — no station reports snowfall
+  });
+
+  it("Connecticut is unknown for schools, not excluded, and scored on what it has", () => {
+    const { scores } = run({
+      weights: { school_achievement: 5, rpp_all: 1 },
+      filters: [{ metric: "school_achievement", min: 0 }],
+    });
+    const ct = scores.filter((s) => data.state[s.index] === "CT");
+    expect(ct).toHaveLength(9);
+    expect(ct.every((s) => s.status === "unknown")).toBe(true);
+    expect(ct.every((s) => s.missingMetrics.includes("school_achievement"))).toBe(true);
+    expect(ct.every((s) => s.score !== null)).toBe(true);
+  });
+});
+
+describe("score decomposition on real data", () => {
+  it("explains a Miami ranking with warmth as a strength and cost as a weakness", () => {
+    const { get } = run({ weights: { winter_low_f: 3, rpp_all: 3, school_achievement: 1 } });
+    const { strengths, weaknesses } = explainScore(get(MIAMI_DADE));
+    expect(strengths[0].metric).toBe("winter_low_f");
+    expect(weaknesses.map((w) => w.metric)).toContain("rpp_all");
+  });
+});
+
+describe("performance", () => {
+  it("re-scores the whole country fast enough for a slider drag", () => {
+    const input: ScoringInput = {
+      weights: { rpp_all: 3, school_achievement: 4, winter_low_f: 2, annual_snow_in: 1, median_home_value: 2 },
+      filters: [{ metric: "population", min: 20_000 }],
+    };
+    const t0 = performance.now();
+    for (let i = 0; i < 20; i++) rankCounties(scoreCounties(prepared, input));
+    const perRun = (performance.now() - t0) / 20;
+    expect(perRun).toBeLessThan(16); // one frame
+  });
+});
