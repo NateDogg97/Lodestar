@@ -8,6 +8,10 @@
 > Last updated: 2026-09-22
 >
 > **Changelog**
+> - 2026-09-22 — **Climate preference model decided** (§6 *Climate preferences*): describe
+>   the year by its two ends — hottest-month high and coldest-month low — plus counts of
+>   uncomfortable days. No single year-round band, no annual averages. Built with existing
+>   direction flags and filters; no new scoring mode. Month-by-month envelope deferred to Phase 6.
 > - 2026-09-22 — **Phase 2 complete.** Scoring engine in `src/lib/scoring/` (pure TS, 36 Vitest
 >   tests incl. real-data sanity checks). ETL now publishes a compact columnar file: 704 KB,
 >   240 KB gzipped, precached by Serwist. Percentiles are national; any metric's direction can
@@ -383,6 +387,59 @@ Score decomposition beats an LLM blurb. For any county, sort its metrics by
 
 Deterministic, accurate, and trustworthy in a way generated text isn't.
 
+### Climate preferences
+
+Decided 2026-09-22. Climate doesn't fit "higher is better" — people want "not too hot, not too
+cold" — and it varies by season, so **no single temperature band can apply to the whole year**,
+and an annual average is meaningless for this.
+
+**The model: describe the year by its two ends, plus how long the extremes last.**
+
+- Across almost all of the US, temperature follows one smooth annual wave. Its **peak** and
+  **trough** pin down nearly the whole curve. A ceiling on the peak and a floor on the trough
+  are two independent constraints — one per end of the year — and if both hold, every month
+  between them fits. That handles seasonality without a year-round band.
+- **Use the hottest and coldest month, not fixed seasons.** A June–August average dilutes the
+  peak, and it's the wrong window where the hottest month isn't in summer (San Francisco's
+  is September). Computed from the monthly normals we already hold.
+- **Count uncomfortable days.** "Days above 90°F" sums over the whole year by itself — those
+  days only happen in summer, freezing nights only in winter — and it captures *duration*,
+  which averages miss: two places with the same July average can have 10 or 60 days over 90.
+  Fewer is better for essentially everyone, so these fit the existing direction flags.
+
+**New ETL columns** (all from NOAA 1991–2020 station files already cached — no new source):
+
+| Column | NOAA variable | Use |
+|---|---|---|
+| `hottest_month_high_f` | max of 12 `MLY-TMAX-NORMAL` | Filter: summer ceiling |
+| `coldest_month_low_f` | min of 12 `MLY-TMIN-NORMAL` | Filter: winter floor |
+| `days_above_90f` | Σ `MLY-TMAX-AVGNDS-GRTH090` | Rank: fewer is better |
+| `nights_below_32f` | Σ `MLY-TMIN-AVGNDS-LSTH032` | Rank: fewer is better |
+| `rainy_days` | Σ `MLY-PRCP-AVGNDS-GE001HI` (≥ 0.01 in) | Rank: fewer is better |
+| `snow_days` | Σ `MLY-SNOW-AVGNDS-GE010TI` (≥ 1.0 in) | Rank: fewer is better |
+
+`summer_high_f` / `winter_low_f` (3-month averages) stay in the data for display, but the
+hottest/coldest-month columns replace them in the metric list the user filters on.
+*Verify each NOAA variable's coverage on the first run* — threshold day-counts may be
+reported by fewer stations than plain temperature, the same trap snowfall fell into.
+
+**Typical use:** filter on hottest-month high and coldest-month low to rule out the extremes,
+then rank by day-counts to reward mild places. No new scoring mode is needed.
+
+**Considered and not chosen** (for now):
+- *Comfort band* (ideal range with a soft falloff) — only meaningful per season, and the
+  two-end model covers the need with existing tools.
+- *Distance-from-ideal percentile* — always crowns someone, even when nothing is close.
+- *Month-by-month envelope* — an acceptable range for each month, and a county's monthly curve
+  must fit inside all twelve. The fullest form of the idea; pairs with **"climate like a place
+  I know"** (the envelope is a chosen county's curve ± a margin). Needs monthly data in the
+  browser and a chart-based control, so it lands with the Phase 6 Climate tab.
+- *Köppen climate type* — cheap categorical label; Phase 6.
+
+**Known gap: humidity.** 95°F in Phoenix and 95°F in Houston produce identical numbers here.
+Dew point normals exist in PRISM (lower 48 only; Hawaii would be unknown) — Phase 5 candidate,
+moved earlier if muggy heat turns out to be a dealbreaker.
+
 ---
 
 ## 7. Where AI belongs (neither is required for v1)
@@ -511,6 +568,10 @@ Known rough edges to expect:
   (114.2), ahead of Los Angeles (113.6). Surprising but correct.
 
 ### Phase 3 — Ranked list view ⬅️ **NEXT**
+- [ ] **First: climate columns** (§6 *Climate preferences*) — add `hottest_month_high_f`,
+      `coldest_month_low_f`, `days_above_90f`, `nights_below_32f`, `rainy_days`, `snow_days`
+      to the NOAA source; check per-variable station coverage; add them to
+      `src/lib/scoring/metrics.ts` and the real-data tests
 - [ ] Table of top 50 counties with score breakdown
 - [ ] Weight sliders + hard filter inputs
 - [ ] *(This is already a useful product. May turn out to be more useful than the map.)*
@@ -528,7 +589,13 @@ Known rough edges to expect:
 ### Phase 6 — Climate tab
 - [ ] Per-location panel with monthly temperature band chart (data already in the Phase 1 pull)
 - [ ] Precipitation and snowfall by month
-- [ ] Add `days_above_90f` / `days_below_32f`
+- [x] ~~Add `days_above_90f` / `days_below_32f`~~ Moved to Phase 3 (§6 *Climate preferences*)
+- [ ] **Month-by-month climate envelope** — an acceptable range per month; a county passes if
+      its monthly curve fits inside. Ships monthly normals to the browser as a separate,
+      lazily loaded file (the tab needs it anyway).
+- [ ] **"Climate like a place I know"** — pick a county; score others by similarity of their
+      monthly high/low/precipitation curves
+- [ ] Köppen climate type as a label and categorical filter
 
 ### Phase 7 — Polish *(always last)*
 - [ ] URL-encoded filter state
@@ -588,11 +655,11 @@ Not in MVP. Do not build these until the above ships.
       *2026-09-22:* the unknown-data handling from Phase 2 already does the second option by
       default — CT is scored on its other metrics, flagged as partial, and shows as unknown
       under a schools filter. The crosswalk is now optional polish.
-- [ ] **"Ideal value" scoring for climate.** Direction flags handle "warmer is better" but not
-      "summer highs around 80°F". A target-and-tolerance mode (percentile of distance from the
-      target) may fit climate better. Decide while tuning in Phase 3 — it's the §12 risk.
 
 **Resolved**
+- ~~"Ideal value" scoring for climate?~~ Not as a year-round band. Hottest-month ceiling +
+  coldest-month floor + uncomfortable-day counts, on existing filters and direction flags.
+  See §6 *Climate preferences*. (2026-09-22)
 - ~~How to handle counties with missing data — exclude, impute, or gray out?~~ Grey out, with a
   show/hide toggle for unknown results; never impute. See §6 item 7. (2026-09-22)
 - ~~Include Alaska?~~ No — out of scope, dropped at the spine. (2026-09-22)
