@@ -2,9 +2,10 @@
 
 > **Status: first live run completed 2026-09-20.** All four sources fetched,
 > joined, validated with 0 FAIL / 0 WARN, and published to
-> `public/data/counties.json` (3,144 rows × 33 columns). **Rebuilt 2026-09-22:**
-> Alaska excluded (3,114 rows) and NOAA stations selected per variable — every
-> county now has temperature and precipitation; one (Nye NV) lacks snowfall.
+> `public/data/counties.json` (3,144 rows × 33 columns). **Rebuilt 2026-09-26:**
+> all 50 states + DC (3,144 rows; Alaska and Hawaii are opt-in in the app).
+> Climate is measured from population centers; every county outside Alaska has
+> every climate column, and 4 remote Alaska areas have none.
 > Vintages: ACS 2023
 > (2019–2023), BEA RPP 2024, SEDA 6.0, NOAA 1991–2020 normals. See
 > [Known gaps](#known-gaps) for what the data does *not* cover.
@@ -146,7 +147,7 @@ questions faster than reading the join.
 
 ## Output schema
 
-One row per county, 3,114 rows (Alaska excluded).
+One row per county, 3,144 rows (50 states + DC).
 
 ### Identity
 | Column | Type | Notes |
@@ -454,6 +455,7 @@ python -m etl.sources.acs       # needs Census key
 python -m etl.sources.bea       # needs BEA key; CHECK THE LINE-CODE MAPPING
 python -m etl.sources.seda      # needs the manual file
 python -m etl.sources.popcenter # no key; must run before noaa
+python -m etl.sources.boundaries # map shapes; needs Node (runs npx mapshaper)
 python -m etl.sources.noaa --limit 200
 python -m etl.sources.noaa      # full run
 python -m etl.build --skip-fetch
@@ -461,10 +463,12 @@ python -m etl.build --skip-fetch
 
 ### Known rough edges
 
-- **Alaska is excluded** (product decision, 2026-09-22) — dropped at the
-  spine via `EXCLUDED_STATES` in `sources/spine.py`, so it is absent from
-  every column. That retired its remote no-station census areas and the
-  2019 Valdez-Cordova split SEDA hadn't caught up with.
+- **Alaska** uses boroughs and census areas. It is in the data again since
+  2026-09-26 (it was excluded 2026-09-22 → 09-26 via `EXCLUDED_STATES` in
+  `sources/spine.py`, now empty); whether it is scored is an app toggle.
+  Known gaps, shown as unknown: 4 remote areas have no weather station within
+  60 mi, and Chugach / Copper River (the 2019 Valdez-Cordova split) have no
+  SEDA school data.
 - **Louisiana** uses parishes. They have FIPS so the join works, but
   spot-check them.
 - **Connecticut** replaced its 8 legacy counties with 9 planning regions.

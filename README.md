@@ -12,12 +12,13 @@ Phases run in order:
 1. **Prove the join** — Python ETL joins Census, BEA, SEDA and NOAA onto one row per county ✅
 2. **Scoring engine** — percentile normalization, weights, hard filters, score breakdown ✅
 3. **Ranked list** — top counties with weight sliders and filters ✅
-4. **Map** — MapLibre choropleth colored by score; unknown data shown grey
+4. **Map** — MapLibre map of the top 50 results, colored relative to each other (in progress)
 5. **Full metric set** — hazard risk, unemployment, distances, state laws
 6. **Climate tab** — monthly temperature, precipitation and snowfall per county
 7. **Polish** — shareable URL state, shortlist (always last)
 
-Coverage: the lower 48, Hawaii and DC. Alaska is deliberately excluded.
+Coverage: all 50 states and DC. Alaska and Hawaii are opt-in toggles, off by default — when
+off they're left out of scoring entirely.
 
 ## Stack
 

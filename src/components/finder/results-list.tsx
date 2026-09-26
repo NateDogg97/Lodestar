@@ -13,16 +13,21 @@ import {
   type MetricKey,
 } from "@/lib/scoring";
 
+import { scoreColor, UNKNOWN_COLOR } from "./score-colors";
+
 const PAGE_SIZE = 50;
 
-/** Red → yellow → green by score; the map (Phase 4) will use the same idea. */
-function scoreColor(score: number): string {
-  return `hsl(${(score / 100) * 120} 65% 42%)`;
+interface ListProps {
+  ranked: CountyScore[];
+  data: CountyDataset;
+  /** The map's top results, colored relative to each other (same colors as the map). */
+  relative: Map<string, number | null>;
+  selectedFips: string | null;
+  onSelect: (fips: string) => void;
 }
 
-export function ResultsList({ ranked, data }: { ranked: CountyScore[]; data: CountyDataset }) {
+export function ResultsList({ ranked, data, relative, selectedFips, onSelect }: ListProps) {
   const [visible, setVisible] = useState(PAGE_SIZE);
-  const [expanded, setExpanded] = useState<string | null>(null);
 
   if (ranked.length === 0) {
     return (
@@ -42,8 +47,9 @@ export function ResultsList({ ranked, data }: { ranked: CountyScore[]; data: Cou
             rank={i + 1}
             score={s}
             data={data}
-            open={expanded === s.fips}
-            onToggle={() => setExpanded((cur) => (cur === s.fips ? null : s.fips))}
+            rel={relative.get(s.fips)}
+            selected={selectedFips === s.fips}
+            onSelect={() => onSelect(s.fips)}
           />
         ))}
       </ol>
@@ -64,26 +70,32 @@ function ResultRow({
   rank,
   score: s,
   data,
-  open,
-  onToggle,
+  rel,
+  selected,
+  onSelect,
 }: {
   rank: number;
   score: CountyScore;
   data: CountyDataset;
-  open: boolean;
-  onToggle: () => void;
+  rel: number | null | undefined;
+  selected: boolean;
+  onSelect: () => void;
 }) {
-  const { strengths, weaknesses } = explainScore(s);
-  const detailsId = `details-${s.fips}`;
-
   return (
-    <li className={s.status === "unknown" ? "bg-neutral-50 dark:bg-neutral-900/50" : ""}>
+    <li
+      className={
+        selected
+          ? "bg-emerald-50 dark:bg-emerald-950/40"
+          : s.status === "unknown"
+            ? "bg-neutral-50 dark:bg-neutral-900/50"
+            : ""
+      }
+    >
       <button
         type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        aria-controls={detailsId}
-        className="grid w-full grid-cols-[2.5rem_1fr_auto] items-start gap-3 px-2 py-3 text-left hover:bg-neutral-100 dark:hover:bg-neutral-900"
+        onClick={onSelect}
+        aria-pressed={selected}
+        className="grid w-full grid-cols-[2rem_1fr_auto] items-start gap-2 px-2 py-3 text-left hover:bg-neutral-100 dark:hover:bg-neutral-900"
       >
         <span className="pt-0.5 text-sm tabular-nums text-neutral-500">{rank}</span>
 
@@ -92,27 +104,31 @@ function ResultRow({
             {data.countyName[s.index]}, {data.state[s.index]}
             <StatusBadges score={s} />
           </span>
-          {(strengths.length > 0 || weaknesses.length > 0) && (
-            <span className="mt-1 flex flex-wrap gap-1.5 text-xs">
-              {strengths.map((c) => (
-                <Reason key={c.metric} c={c} good />
-              ))}
-              {weaknesses.map((c) => (
-                <Reason key={c.metric} c={c} good={false} />
-              ))}
-            </span>
-          )}
+          <Reasons score={s} />
         </span>
 
-        <ScoreBadge score={s.score} />
+        <ScoreBadge score={s.score} rel={rel} />
       </button>
-
-      {open && <Breakdown id={detailsId} score={s} />}
     </li>
   );
 }
 
-function StatusBadges({ score: s }: { score: CountyScore }) {
+export function Reasons({ score }: { score: CountyScore }) {
+  const { strengths, weaknesses } = explainScore(score);
+  if (strengths.length === 0 && weaknesses.length === 0) return null;
+  return (
+    <span className="mt-1 flex flex-wrap gap-1.5 text-xs">
+      {strengths.map((c) => (
+        <Reason key={c.metric} c={c} good />
+      ))}
+      {weaknesses.map((c) => (
+        <Reason key={c.metric} c={c} good={false} />
+      ))}
+    </span>
+  );
+}
+
+export function StatusBadges({ score: s }: { score: CountyScore }) {
   const names = (keys: readonly MetricKey[]) => keys.map((k) => getMetric(k).label).join(", ");
   return (
     <>
@@ -151,7 +167,12 @@ function Reason({ c, good }: { c: MetricContribution; good: boolean }) {
   );
 }
 
-function ScoreBadge({ score }: { score: number | null }) {
+/**
+ * Bar length = the absolute score; bar color = the county's position among the
+ * map's top results (`rel`), so a county is the same color here as on the map.
+ * Outside the top results the bar is grey — it isn't colored on the map either.
+ */
+export function ScoreBadge({ score, rel }: { score: number | null; rel: number | null | undefined }) {
   if (score === null) {
     return <span className="pt-0.5 text-xs text-neutral-400">—</span>;
   }
@@ -160,7 +181,7 @@ function ScoreBadge({ score }: { score: number | null }) {
       <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
         <span
           className="block h-full rounded-full"
-          style={{ width: `${score}%`, backgroundColor: scoreColor(score) }}
+          style={{ width: `${score}%`, backgroundColor: typeof rel === "number" ? scoreColor(rel) : UNKNOWN_COLOR }}
         />
       </span>
       <span className="w-7 text-right text-sm font-semibold tabular-nums">{Math.round(score)}</span>
@@ -168,17 +189,17 @@ function ScoreBadge({ score }: { score: number | null }) {
   );
 }
 
-function Breakdown({ id, score: s }: { id: string; score: CountyScore }) {
+export function Breakdown({ score: s }: { score: CountyScore }) {
   if (s.contributions.length === 0) {
     return (
-      <p id={id} className="px-2 pb-4 pl-[3.25rem] text-sm text-neutral-500">
+      <p className="text-sm text-neutral-500">
         Nothing is weighted yet, so there is no score to break down.
       </p>
     );
   }
   const rows = [...s.contributions].sort((a, b) => (b.impact ?? -Infinity) - (a.impact ?? -Infinity));
   return (
-    <div id={id} className="overflow-x-auto px-2 pb-4 pl-[3.25rem]">
+    <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <caption className="sr-only">Score breakdown</caption>
         <thead>

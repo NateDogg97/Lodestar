@@ -89,3 +89,28 @@ export function parseCountyPayload(payload: unknown): CountyDataset {
     indexByFips: new Map(fips.map((f, i) => [f, i])),
   };
 }
+
+/**
+ * A copy of the dataset with only the counties `keep` accepts, re-indexed.
+ *
+ * Used for the Alaska / Hawaii toggles (plan §6): excluded places are cut
+ * BEFORE `prepareDataset`, so they take no part in percentiles, "typical
+ * county" medians, ranks or counts — not merely hidden from the results.
+ */
+export function subsetDataset(data: CountyDataset, keep: (index: number) => boolean): CountyDataset {
+  const idx: number[] = [];
+  for (let i = 0; i < data.n; i++) if (keep(i)) idx.push(i);
+  const pick = <T,>(arr: T[]) => idx.map((i) => arr[i]);
+  const values = {} as Record<MetricKey, Float64Array>;
+  for (const key of METRIC_KEYS) values[key] = Float64Array.from(idx, (i) => data.values[key][i]);
+  const fips = pick(data.fips);
+  return {
+    n: idx.length,
+    fips,
+    countyName: pick(data.countyName),
+    state: pick(data.state),
+    rppGeoLevel: pick(data.rppGeoLevel),
+    values,
+    indexByFips: new Map(fips.map((f, i) => [f, i])),
+  };
+}

@@ -45,6 +45,7 @@ for _d in (RAW_DIR, INTERIM_DIR, OUT_DIR):
 # (it is what validate.py reads and what gets diffed between runs); this is a
 # published copy, nothing more.
 PUBLISH_PATH = ETL_DIR.parent / "public" / "data" / "counties.json"
+BOUNDARY_PUBLISH_PATH = ETL_DIR.parent / "public" / "data" / "counties.topo.json"
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +124,15 @@ POPCENTER_URL = (
     "https://www2.census.gov/geo/docs/reference/cenpop2020/county/CenPop2020_Mean_CO.txt"
 )
 
+# County shapes for the map: Census cartographic boundaries (shoreline-clipped).
+# 2024 vintage uses Connecticut's planning regions, matching the spine. The
+# 500k file is the most detailed; mapshaper simplifies it (sources/boundaries.py).
+BOUNDARY_URL = (
+    "https://www2.census.gov/geo/tiger/GENZ2024/shp/cb_2024_us_county_500k.zip"
+)
+BOUNDARY_SIMPLIFY = "5%"      # of vertices kept; ~810 KB TopoJSON with state outlines
+MAPSHAPER_VERSION = "0.7.68"  # pinned: build output should not drift between runs
+
 # NOAA 1991-2020 monthly normals, one CSV per station (~15,600 of them).
 # Station inventory lives alongside the data files.
 #
@@ -187,6 +197,7 @@ SPOT_CHECK_FIPS = {
     "39035": "Cuyahoga County, OH (rust belt, low cost)",
     "48507": "Zavala County, TX (small, poor, rural)",
     "22071": "Orleans Parish, LA (tests LA parish handling)",
+    "02020": "Anchorage Municipality, AK (Alaska is back in the data; toggle in the app)",
     # Connecticut replaced its 8 legacy counties with 9 planning regions;
     # Census products from 2022 on (Gazetteer, ACS) use the new codes and the
     # legacy "09001" Fairfield no longer exists in them. 09190 Western

@@ -14,13 +14,19 @@ import {
   prepareDataset,
   rankCounties,
   scoreCounties,
+  subsetDataset,
+  type CountyDataset,
   type CountyScore,
   type ScoringInput,
 } from ".";
 
-const data = parseCountyPayload(
+const all = parseCountyPayload(
   JSON.parse(readFileSync(join(process.cwd(), "public/data/counties.json"), "utf8")),
 );
+const scope = (excluded: string[]) => subsetDataset(all, (i) => !excluded.includes(all.state[i]));
+// The app's default scope: Alaska and Hawaii off. Every test below uses it
+// unless it says otherwise.
+const data = scope(["AK", "HI"]);
 const prepared = prepareDataset(data);
 
 const SAN_FRANCISCO = "06075";
@@ -38,11 +44,35 @@ function run(input: ScoringInput) {
   return { scores, ranked, get, rankOf };
 }
 
-describe("the dataset", () => {
-  it("covers the lower 48, Hawaii and DC — and not Alaska", () => {
-    expect(data.n).toBeGreaterThan(3100);
-    expect(new Set(data.state).size).toBe(50);
+describe("the dataset and the Alaska / Hawaii toggles", () => {
+  it("the published data covers all 50 states and DC", () => {
+    expect(new Set(all.state).size).toBe(51);
+    expect(all.state).toContain("AK");
+    expect(all.state).toContain("HI");
+  });
+
+  it("the default scope is the lower 48 and DC only", () => {
+    expect(new Set(data.state).size).toBe(49);
     expect(data.state).not.toContain("AK");
+    expect(data.state).not.toContain("HI");
+  });
+
+  it("turning Hawaii on puts it at the top for warm winters; off, it's absent", () => {
+    const withHawaii = scope(["AK"]);
+    const ranked = rankCounties(scoreCounties(prepareDataset(withHawaii), { weights: { coldest_month_low_f: 5 } }));
+    expect(ranked.slice(0, 5).some((r) => withHawaii.state[r.index] === "HI")).toBe(true);
+  });
+
+  it("an excluded state does not move anyone else's percentile", () => {
+    // Hawaii's winters are the warmest in the country. With it included,
+    // every other county slips down the warm-winter percentiles; with it
+    // excluded, they must not — that's what 'doesn't count' means.
+    const pct = (d: CountyDataset) => {
+      const s = scoreCounties(prepareDataset(d), { weights: { coldest_month_low_f: 1 } });
+      return s[d.indexByFips.get(MIAMI_DADE)!].contributions[0].rawPercentile!;
+    };
+    expect(pct(data)).toBe(pct(scope(["AK", "HI", "ZZ"]))); // same scope, same answer
+    expect(pct(scope(["AK"]))).toBeLessThan(pct(data)); // Hawaii in: Miami slips down
   });
 });
 
@@ -63,10 +93,10 @@ describe("rankings agree with common knowledge", () => {
     expect(get(BALTIMORE_CITY).score!).toBeLessThan(10);
   });
 
-  it("warm winters: the top 15 are all Florida or Hawaii", () => {
+  it("warm winters: the top 15 are all Florida or South Texas", () => {
     const { ranked } = run({ weights: { coldest_month_low_f: 5 } });
     const states = new Set(ranked.slice(0, 15).map((r) => data.state[r.index]));
-    expect([...states].every((s) => s === "FL" || s === "HI")).toBe(true);
+    expect([...states].every((s) => s === "FL" || s === "TX")).toBe(true);
   });
 
   it("warm winters: Miami beats Austin beats Cleveland", () => {
@@ -149,7 +179,14 @@ describe("climate: the two ends of the year plus uncomfortable days", () => {
     expect(get(CUYAHOGA).score!).toBeLessThan(50);
   });
 
-  it("every county has every climate column", () => {
+  it("Alaska's climate gaps are only its known remote areas", () => {
+    const ak = scope([]);
+    const missing = ak.fips.filter((_, i) => Number.isNaN(ak.values.hottest_month_high_f[i]));
+    expect(missing.every((f) => f.startsWith("02"))).toBe(true);
+    expect(missing.length).toBeLessThanOrEqual(5);
+  });
+
+  it("every county in the default scope has every climate column", () => {
     // Nye County NV lacked snowfall until the search started from its
     // population center (Pahrump), which has snow-reporting stations nearby.
     for (const key of [

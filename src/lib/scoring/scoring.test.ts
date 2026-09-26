@@ -9,6 +9,7 @@ import {
   percentileRanks,
   prepareDataset,
   rankCounties,
+  subsetDataset,
   scoreCounties,
   type MetricKey,
 } from ".";
@@ -261,5 +262,28 @@ describe("explainScore", () => {
     const [s] = scoreCounties(data, { weights: { school_achievement: 5, coldest_month_low_f: 1 } });
     const { strengths, weaknesses } = explainScore(s);
     expect([...strengths, ...weaknesses].map((c) => c.metric)).toEqual(["coldest_month_low_f"]);
+  });
+});
+
+describe("subsetDataset (Alaska / Hawaii toggles)", () => {
+  const data = parseCountyPayload(payload([
+    { fips: "01001", coldest_month_low_f: 20 },
+    { fips: "15001", coldest_month_low_f: 65 }, // an excluded state's county, warmest of all
+    { fips: "01003", coldest_month_low_f: 40 },
+    { fips: "01005", coldest_month_low_f: 30 },
+  ]));
+  const without15 = subsetDataset(data, (i) => !data.fips[i].startsWith("15"));
+
+  it("drops the excluded counties and re-indexes the rest", () => {
+    expect(without15.fips).toEqual(["01001", "01003", "01005"]);
+    expect(without15.indexByFips.get("01005")).toBe(2);
+    expect(Array.from(without15.values.coldest_month_low_f)).toEqual([20, 40, 30]);
+  });
+
+  it("computes percentiles without the excluded counties", () => {
+    const s = scoreCounties(prepareDataset(without15), { weights: { coldest_month_low_f: 1 } });
+    // Among 20, 40, 30 alone: 0th, 100th, 50th. With the 65 included, the
+    // 40 would only be at 67th — the excluded county would have leaked in.
+    expect(s.map((x) => x.score)).toEqual([0, 100, 50]);
   });
 });

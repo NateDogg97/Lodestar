@@ -322,6 +322,28 @@ def _check_derived_sanity(df: pd.DataFrame) -> list[Finding]:
     return findings
 
 
+def _check_boundaries(df: pd.DataFrame) -> list[Finding]:
+    """
+    The map joins shapes to scores by GEOID in the browser. A county with data
+    but no shape silently vanishes from the map; a shape with no data paints
+    as unknown forever. Either means the two files have drifted — FAIL.
+    """
+    from .sources import boundaries
+
+    if not boundaries.output_path().exists():
+        return [Finding("WARN", "No county boundaries built (run `python -m etl.sources.boundaries`); "
+                                "the map will have no shapes to draw")]
+    shapes = boundaries.topo_geoids()
+    data = set(df["fips"].astype(str))
+    missing_shape = sorted(data - shapes)
+    missing_data = sorted(shapes - data)
+    if missing_shape or missing_data:
+        return [Finding("FAIL", f"Boundaries and data disagree: {len(missing_shape)} counties have no "
+                                f"shape (e.g. {missing_shape[:5]}), {len(missing_data)} shapes have no "
+                                f"data (e.g. {missing_data[:5]})")]
+    return [Finding("INFO", f"Boundaries cover exactly the {len(shapes)} counties in the data")]
+
+
 def validate(df: pd.DataFrame) -> tuple[list[Finding], bool]:
     """Run all checks. Returns (findings, passed)."""
     findings: list[Finding] = []
@@ -334,6 +356,7 @@ def validate(df: pd.DataFrame) -> tuple[list[Finding], bool]:
     findings += _check_coverage(df)
     findings += _check_plausible_ranges(df)
     findings += _check_derived_sanity(df)
+    findings += _check_boundaries(df)
 
     passed = not any(f.severity == "FAIL" for f in findings)
     return findings, passed

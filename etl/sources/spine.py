@@ -29,13 +29,14 @@ COVERAGE NOTES
     sources — notably BEA RPP and SEDA — do not cover it, so PR rows would be
     mostly-null noise. Flip the flag if that changes.
 
-    Alaska is also dropped (see EXCLUDED_STATES): out of scope for this app
-    by decision, 2026-09-22. That also retires the Alaska-specific data
-    problems — remote census areas with no weather station, the 2019
-    Valdez-Cordova split that SEDA has not caught up with, and the Aleutians
-    crossing the antimeridian.
+    Alaska and Hawaii are KEPT in the data (2026-09-26). Whether they take
+    part in a search is a toggle in the app, applied before scoring so they
+    do not affect anyone's percentiles when off (both off by default). Alaska
+    was dropped here from 2026-09-22 to 2026-09-26; that is why EXCLUDED_STATES
+    exists. Its known gaps (remote census areas with no weather station; the
+    2019 Valdez-Cordova split SEDA hasn't caught up with) show as unknown.
 
-    Expect ~3,114 rows for the 49 remaining states + DC.
+    Expect ~3,144 rows for the 50 states + DC.
 
 RUN STANDALONE
     python -m etl.sources.spine
@@ -60,9 +61,9 @@ DROP_TERRITORIES = True
 
 # States left out of the dataset entirely, by product decision rather than
 # data availability. Dropping them at the spine removes them everywhere,
-# because every other source is LEFT joined onto it.
-#   02 = Alaska — not a place we are looking to move (decided 2026-09-22).
-EXCLUDED_STATES = {"02"}
+# because every other source is LEFT joined onto it. Empty since 2026-09-26:
+# Alaska and Hawaii are now an in-app toggle instead of a build-time cut.
+EXCLUDED_STATES: set[str] = set()
 
 
 # The tell for mojibake: a UTF-8 multibyte sequence read as latin-1 turns
@@ -171,7 +172,7 @@ def main() -> None:
     print("\nSample rows:")
     print(df.head(5).to_string(index=False))
     print(f"\nStates present: {df['state'].nunique()} "
-          f"(expect 50: 49 states + DC, Alaska excluded)")
+          f"(expect 51: 50 states + DC)")
 
 
 if __name__ == "__main__":

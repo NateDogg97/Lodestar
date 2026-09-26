@@ -651,6 +651,29 @@ def test_population_center_search_points() -> None:
           "no popcenter file at all -> every county uses its internal point")
 
 
+def test_boundaries_must_match_data() -> None:
+    print("\nboundaries: shapes and data must cover the same counties")
+    import json
+    from . import validate
+    from .sources import boundaries
+    df = pd.DataFrame({"fips": ["01001", "06075"]})
+    path = boundaries.output_path()
+    check(config.INTERIM_DIR in path.parents, "boundary path follows the (isolated) interim dir")
+    sev = [f.severity for f in validate._check_boundaries(df)]
+    check(sev == ["WARN"], "no boundary file -> WARN, not a crash")
+
+    def write(ids: list[str]) -> None:
+        geoms = [{"type": "Polygon", "arcs": [], "properties": {"GEOID": i}} for i in ids]
+        path.write_text(json.dumps({"type": "Topology", "objects": {"counties": {"geometries": geoms}}}))
+    write(["01001", "06075"])
+    check([f.severity for f in validate._check_boundaries(df)] == ["INFO"], "exact match passes")
+    write(["01001"])
+    check([f.severity for f in validate._check_boundaries(df)] == ["FAIL"], "a county with no shape FAILs")
+    write(["01001", "06075", "99999"])
+    check([f.severity for f in validate._check_boundaries(df)] == ["FAIL"], "a shape with no data FAILs")
+    path.unlink()
+
+
 def main() -> int:
     print("=" * 70)
     print("OFFLINE TEST SUITE — no network required")
@@ -674,6 +697,7 @@ def main() -> int:
         test_noaa_inventory_parser()
         test_noaa_per_variable_station_selection()
         test_population_center_search_points()
+        test_boundaries_must_match_data()
         test_gazetteer_encoding_guard()
         test_app_payload_is_compact_and_lossless_where_it_matters()
 

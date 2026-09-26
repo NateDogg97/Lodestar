@@ -2,13 +2,14 @@ import { CountyFinder } from "@/components/finder/county-finder";
 
 export default function Home() {
   return (
-    <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 lg:px-8">
-      <header className="mb-8 space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">New Home Finder</h1>
-        <p className="max-w-2xl text-sm text-neutral-500 dark:text-neutral-400">
-          Every US county except Alaska, ranked by what you care about. Data: Census ACS
-          2019–2023, BEA price parities 2024, Stanford SEDA schools, NOAA 1991–2020 climate
-          normals.
+    <main className="flex h-dvh flex-col">
+      <header className="flex shrink-0 items-baseline justify-between gap-4 border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
+        <h1 className="text-base font-semibold tracking-tight">New Home Finder</h1>
+        <p
+          className="hidden truncate text-[11px] text-neutral-500 sm:block dark:text-neutral-400"
+          title="Census ACS 2019–2023 · BEA price parities 2024 · Stanford SEDA schools · NOAA 1991–2020 climate normals · Census 2024 county boundaries"
+        >
+          US counties · Census ACS 2019–2023 · BEA 2024 · SEDA · NOAA 1991–2020
         </p>
       </header>
       <CountyFinder />

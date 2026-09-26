@@ -8,6 +8,15 @@
 > Last updated: 2026-09-22
 >
 > **Changelog**
+> - 2026-09-26 — **Alaska and Hawaii are now in-app toggles, both off by default.** Alaska is
+>   back in the dataset (3,144 counties). When a state is off it is cut from the data *before*
+>   percentiles are computed (`subsetDataset`), so it affects no one's score, median, rank or
+>   count. Replaces the 2026-09-22 build-time exclusion of Alaska.
+> - 2026-09-26 — **Phase 4 map built** and checked in the browser. Boundary step in the ETL
+>   (validated to cover exactly the data's counties). **The map fills only the top 50 results,
+>   colored red → green relative to each other** (§6 item 6, changed). Filters and Results are
+>   independently collapsible left panels; "Maximize map" hides both. OpenFreeMap basemap,
+>   county-lines-only fallback offline.
 > - 2026-09-26 — **Phase 3 complete.** Tuning moved to an ongoing track (§12) rather than a
 >   phase gate. Phase 4 prepped: 2024 Census boundaries match all 3,114 counties exactly;
 >   simplified TopoJSON ≈ 620 KB / 190 KB gzipped, so one boundary file is enough. Three
@@ -130,9 +139,13 @@ Rationale:
 - ~3,100 units is granular enough to be useful, small enough to ship whole
 - Boundaries are stable and free from Census TIGER
 
-**Scope: the lower 48, Hawaii, and DC. Alaska is excluded** (decided 2026-09-22 — not a place
-we're considering). It is dropped at the county spine in the ETL, so it is absent from every
-metric, the map, and the rankings. 3,114 counties.
+**Scope: all 50 states and DC in the data (3,144 counties); Alaska and Hawaii are opt-in.**
+Decided 2026-09-26, replacing the 2026-09-22 decision to drop Alaska in the ETL. The app has
+"Include Alaska" / "Include Hawaii" toggles, **both off by default** (the owner isn't
+considering either, but someone else might). Off means the state's counties are removed from
+the dataset *before* percentiles are computed — they don't count toward any percentile,
+"typical county" median, rank, or count, and aren't colored on the map. Default scope: the
+lower 48 + DC, 3,109 counties.
 
 **Known limitation:** school districts do not nest inside counties — they cross county lines
 constantly. SEDA publishes county-level rollups, so this is handled for MVP, but we are
@@ -389,7 +402,18 @@ This is the actual product. Everything else is plumbing.
 4. **Score** = `Σ(weight × percentile) / Σ(weight)`
 5. **Hard filters eliminate a county entirely**, rather than penalizing its score.
 6. **Color ramp on score** — `d3-scale-chromatic` → `interpolateRdYlGn`. Green = strong match,
-   red = weak.
+   red = weak. **Changed 2026-09-26: the map fills only the top 50 results, and the ramp spans
+   those 50 relative to each other** — the best of them is fully green, the weakest fully red
+   (`topRelativeScores`). Coloring every county on an absolute scale buried the differences
+   that matter at the top. Absolute scores still decide *which* counties are in the top 50 and
+   are what the list shows; the list's bar colors use the same relative scale so a county is
+   the same color in both places. Other counties are unfilled, with faint county lines and
+   state outlines for orientation.
+8. **Opt-in places are removed before scoring, not after.** Filtering Alaska/Hawaii out of the
+   *results* would still let them shift everyone's percentiles (Hawaii's winters are the
+   warmest in the country; including it moves every other county down the warm-winter scale).
+   So the toggle subsets the dataset first (`subsetDataset`), then everything is computed on
+   what's left. Tested both ways against the real data.
 7. **Missing data is shown as unknown, never guessed** (decided 2026-09-22):
    - A county with no value for a metric used in a **hard filter** is neither passed nor
      eliminated — it is **unknown**. On the map it renders **grey**; in the list it is marked.
@@ -633,7 +657,7 @@ Known rough edges to expect:
       and the map will make wrong-feeling rankings easier to spot.
 - *(This is already a useful product. May turn out to be more useful than the map.)*
 
-### Phase 4 — Map ⬅️ **NEXT**
+### Phase 4 — Map ⬅️ **IN PROGRESS** (built 2026-09-26; tuning the layout by use)
 
 **Prep done 2026-09-26** (measured, nothing committed to the app yet):
 - **Boundaries:** Census cartographic boundary files, 2024 vintage —
@@ -658,28 +682,63 @@ Known rough edges to expect:
   no account, no API key, no usage cap. Needs a connection; offline, the county polygons
   still draw without the background.
 
-**Decisions needed before building:**
-1. **Basemap.** (a) OpenFreeMap — city names and roads, zero setup, online only.
-   (b) Self-hosted Protomaps `.pmtiles` on R2 — works offline, but hosting and a large file.
-   (c) No basemap — county shapes and state lines only; fully offline, simplest.
-   *Recommendation: (a), degrading to (c) when offline.*
-2. **Layout.** Map above the list, map beside the list, or a Map / List toggle.
-3. **Boundary pipeline.** Where the download + `mapshaper` step lives: a Python source module
-   that shells out to `npx mapshaper` (keeps one `python -m etl.build`), or a separate Node
-   script. *Recommendation: Python module, so the ETL stays one command.*
+**Decisions (2026-09-26):**
+1. **Basemap: online map when online, county lines when offline.** OpenFreeMap (positron in
+   light mode, dark in dark mode) when reachable; if it isn't, the map draws on a plain
+   background with county and state lines — still fully usable. *Future:* an **optional**
+   full-basemap download for complete offline use (large, so opt-in) — see §10.
+2. **Layout: the map gets most of the screen.** Filters and results are two **side panels on
+   the left, each collapsible independently** — show both, focus on one, or collapse both.
+   A **"maximize map"** control collapses both at once. Start here and tune the UI by use;
+   it is expected to change.
+3. **Boundary step lives in the Python pipeline** (`etl/sources/boundaries.py`, shelling out
+   to `npx mapshaper`), so the ETL stays one command. The future full-map download is a
+   separate problem.
+
+**Boundary output:** one TopoJSON with two layers sharing arcs — `counties` (GEOID) and
+`states` (dissolved from STATEFP, for state outlines). From the 500k file at 5%: 813 KB,
+246 KB gzipped.
 
 **Build steps:**
-- [ ] Boundary step in the ETL: download 2024 cartographic boundaries, drop AK + territories,
-      simplify, write `public/data/counties.topo.json` (GEOID only — scores join client-side)
-- [ ] Validate: every data FIPS has a shape and vice versa (FAIL otherwise)
-- [ ] MapLibre setup with the chosen basemap (client component, loaded lazily)
-- [ ] Choropleth colored by score, red → yellow → green (`d3-scale-chromatic`,
-      `interpolateRdYlGn`); **unknown counties grey**, **ruled-out counties faded**, and the
-      "Show unknown" toggle applies to the map too
-- [ ] Recolor on preference change without re-uploading geometry (`setFeatureState`, not
-      `setData`) — 3,114 features makes this cheap
-- [ ] Click a county → side panel with the same breakdown the list shows; the list and map
-      share one selected county
+- [x] Boundary step in the ETL — `etl/sources/boundaries.py`: 2024 cartographic boundaries
+      (500k), AK + territories dropped with the spine's own exclusion lists, simplified to 5%
+      by `npx mapshaper@0.7.68`, one TopoJSON with `counties` (GEOID) and `states` layers.
+      Published as `public/data/counties.topo.json` (813 KB) beside the data.
+- [x] Validate: `validate._check_boundaries` FAILs if any data county lacks a shape or any
+      shape lacks data; offline tests cover both directions. Current: exact match, 3,114.
+- [x] MapLibre setup — `src/components/finder/county-map.tsx`, loaded with
+      `next/dynamic({ ssr: false })`. OpenFreeMap positron / dark to match the system theme;
+      plain background with county + state lines when the style can't be fetched (offline).
+      **Gotcha:** MapLibre 6 loads its web worker from beside its own module, which the Next
+      bundler moves — the map never finished loading. Fix: `scripts/copy-maplibre-worker.mjs`
+      copies the worker (+ its shared chunk) into `public/maplibre/` on `predev`/`prebuild`,
+      and the map calls `setWorkerUrl()`. Git-ignored and ESLint-ignored.
+- [x] Choropleth — **top 50 only, relative colors** (see §6 item 6). A top-50 county with no
+      score is grey. A legend explains "weakest of these → best".
+- [x] Recolor via `setFeatureState` only; geometry is uploaded once.
+- [x] Click a county on the map, or a row in the list → the **same selected county**: white
+      outline on the map (it pans there if off-screen) and a detail card with rank and full
+      breakdown at the top of the Results panel. Hover shows name, score and rank.
+- [x] Layout — header bar, then **Filters** and **Results** panels on the left, each collapsing
+      to a labelled rail independently; **Maximize map** collapses both and "Show panels"
+      restores them. On phones one panel at a time covers the map.
+- [x] **Settings menus** (2026-09-26): a "⋯" button beside each panel title opens a small
+      dropdown of toggles, keeping the panels themselves for weights and results. Filters ⋯ →
+      Include Alaska / Hawaii. Results ⋯ → Show unknown. Closes on outside click, Escape (focus
+      returns to the button), or tabbing away. Future toggles go in these menus.
+- [x] **Alaska / Hawaii toggles** in the Filters ⋯ menu ("Include in results"), off by default.
+      Checked in the browser: 3,109 counties by default, 3,114 with Hawaii, 3,144 with both;
+      with warm winters as the only weight, Florida leads with Hawaii off and Honolulu, Kauai,
+      Kalawao and Maui move into the top 6 with it on.
+- [ ] **Not yet checked:** the offline fallback in a real offline browser, and the phone layout
+      on an actual phone. Both are implemented; neither has been exercised.
+
+**Noticed while testing (for the tuning track):**
+- At national zoom the top 50 are small, scattered counties — easy to miss. Options: zoom to
+  the top 50's bounds on demand, or draw a marker at each one's population center.
+- Hawaii sits outside the initial view.
+- Selecting a county inserts its card above the list, which shifts the list down.
+
 
 ### Phase 5 — Full metric set
 - [ ] Expand ETL: FEMA NRI, BLS unemployment, precomputed distances, state law CSV
@@ -730,6 +789,10 @@ Not in MVP. Do not build these until the above ships.
   Facility), an open API of species occurrence records. It's real data, but it's raw observation
   records rather than "here's what lives here" — turning it into something a person wants to read
   is meaningful work. Landscape imagery is a separate problem again. Park both.
+- **Optional full-basemap download for offline use** (decided 2026-09-26). Online, the map uses
+  OpenFreeMap; offline, it falls back to county lines only. A later version could let the
+  person download a US basemap (`.pmtiles`) on request for full offline use — opt-in because
+  it is large. Separate from the ETL boundary step.
 - **Street / parcel-level data.** Requires a commercial vendor and is arguably the wrong job for
   this app anyway. See the geography roadmap.
 
@@ -766,7 +829,8 @@ Not in MVP. Do not build these until the above ships.
   See §6 *Climate preferences*. (2026-09-22)
 - ~~How to handle counties with missing data — exclude, impute, or gray out?~~ Grey out, with a
   show/hide toggle for unknown results; never impute. See §6 item 7. (2026-09-22)
-- ~~Include Alaska?~~ No — out of scope, dropped at the spine. (2026-09-22)
+- ~~Include Alaska?~~ Superseded 2026-09-26: kept in the data; Alaska and Hawaii are both
+  in-app toggles, off by default. (Originally dropped at the spine, 2026-09-22.)
 - ~~Exclude counties under 10,000 population?~~ No. Keep them, store `population`, filter at
   runtime with a slider.
 - ~~Which climate normals?~~ Four seasonal temperature aggregates plus annual precipitation and

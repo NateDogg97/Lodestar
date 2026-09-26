@@ -39,7 +39,9 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import shutil
 import sys
+from pathlib import Path
 import traceback
 
 import pandas as pd
@@ -62,6 +64,9 @@ PIPELINE = [
     # Before NOAA: the station search starts from these points when present.
     ("popcenter", "etl.sources.popcenter", False),
     ("noaa", "etl.sources.noaa", False),
+    # Map shapes. Not joined — written as its own file and published beside
+    # the data after validation confirms both cover the same counties.
+    ("boundaries", "etl.sources.boundaries", False),
 ]
 
 
@@ -77,8 +82,11 @@ def run_source(name: str, module_path: str) -> bool:
         module = importlib.import_module(module_path)
         result = module.fetch()
 
-        # NOAA returns (summary, monthly); everything else returns one frame.
-        if isinstance(result, tuple):
+        # NOAA returns (summary, monthly); boundaries writes its own file and
+        # returns its path; everything else returns one frame.
+        if isinstance(result, Path):
+            pass
+        elif isinstance(result, tuple):
             summary, extra = result
             write_interim(summary, name)
             write_interim(extra, f"{name}_monthly")
@@ -253,6 +261,14 @@ def publish(df: pd.DataFrame) -> None:
     log.info("published %s  (%.0f KB)", config.PUBLISH_PATH, size_kb)
     print(f"Published to {config.PUBLISH_PATH.relative_to(config.ETL_DIR.parent)} "
           f"({size_kb:,.0f} KB)")
+
+    # Boundaries go out with the data they were validated against.
+    from .sources import boundaries
+    if boundaries.output_path().exists():
+        shutil.copyfile(boundaries.output_path(), config.BOUNDARY_PUBLISH_PATH)
+        kb = config.BOUNDARY_PUBLISH_PATH.stat().st_size / 1024
+        print(f"Published to {config.BOUNDARY_PUBLISH_PATH.relative_to(config.ETL_DIR.parent)} "
+              f"({kb:,.0f} KB)")
 
 
 if __name__ == "__main__":
