@@ -2,7 +2,7 @@
 SOURCE: NOAA NCEI 1991-2020 U.S. Climate Normals — climate.
 
 WHAT THIS PRODUCES
-    fips, summer_high_f, winter_low_f, spring_mean_f, fall_mean_f,
+    fips, climate_point, summer_high_f, winter_low_f, spring_mean_f, fall_mean_f,
     annual_precip_in, annual_snow_in,
     hottest_month_high_f, coldest_month_low_f,
     days_above_90f, nights_below_32f, rainy_days, snow_days,
@@ -28,7 +28,9 @@ WHY THIS SOURCE IS IN PHASE 1 AT ALL
 
 HOW THE SPATIAL JOIN WORKS
     1. Download NOAA's station inventory (station id, lat, lon).
-    2. For each county internal point, find the K_CANDIDATES nearest stations
+    2. For each county's SEARCH POINT — its 2020 population center, or its
+       Gazetteer internal point where there is none (sources/popcenter.py;
+       recorded per county as `climate_point`) — find the K_CANDIDATES nearest stations
        within MAX_STATION_DISTANCE_MI and fetch their normals.
     3. SELECT STATIONS PER VARIABLE GROUP (temperature, precipitation,
        snowfall): for each group, keep the nearest STATIONS_PER_COUNTY
@@ -426,6 +428,37 @@ def fetch_station_normals(stations: list[str], require_any: bool = True) -> pd.D
     return pd.concat(frames, ignore_index=True)
 
 
+def _read_popcenter() -> pd.DataFrame | None:
+    try:
+        return read_interim("popcenter")
+    except FileNotFoundError:
+        log.warning("no popcenter interim file — searching for stations from each county's "
+                    "internal point. Run `python -m etl.sources.popcenter` first.")
+        return None
+
+
+def search_points(spine: pd.DataFrame, popcenter: pd.DataFrame | None) -> pd.DataFrame:
+    """
+    The point each county's station search starts from: its 2020 population
+    center where known, otherwise its Gazetteer internal point.
+
+    Returns fips, lat, lon, climate_point ("population" | "internal"). The
+    UI can use climate_point to say where a county's climate was measured.
+    """
+    pts = spine[["fips", "lat", "lon"]].copy()
+    pts["climate_point"] = "internal"
+    if popcenter is not None and not popcenter.empty:
+        pts = pts.merge(popcenter[["fips", "pop_lat", "pop_lon"]], on="fips", how="left")
+        has = pts["pop_lat"].notna() & pts["pop_lon"].notna()
+        pts.loc[has, "lat"] = pts.loc[has, "pop_lat"]
+        pts.loc[has, "lon"] = pts.loc[has, "pop_lon"]
+        pts.loc[has, "climate_point"] = "population"
+        pts = pts.drop(columns=["pop_lat", "pop_lon"])
+    counts = pts["climate_point"].value_counts().to_dict()
+    log.info("station search points: %s", counts)
+    return pts.dropna(subset=["lat", "lon"]).reset_index(drop=True)
+
+
 def _candidate_pairs(spine: pd.DataFrame, inventory: pd.DataFrame, k: int) -> pd.DataFrame:
     """Long (fips, station, dist_mi) table of the k nearest stations within the radius."""
     idx, dist = nearest_points(
@@ -476,7 +509,7 @@ def fetch(limit: int | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     Returns (seasonal_summary, monthly_wide).
     `limit` caps the number of counties processed, for smoke tests.
     """
-    spine = read_interim("spine").dropna(subset=["lat", "lon"])
+    spine = search_points(read_interim("spine"), _read_popcenter())
     if limit:
         spine = spine.head(limit)
         log.warning("LIMIT active: only %d counties", len(spine))
@@ -612,7 +645,7 @@ def fetch(limit: int | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     # Re-attach counties that got nothing, so the frame stays one-row-per-county.
     summary = (
-        spine[["fips"]]
+        spine[["fips", "climate_point"]]
         .merge(summary, on="fips", how="left")
         .sort_values("fips")
         .reset_index(drop=True)

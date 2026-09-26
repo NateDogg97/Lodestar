@@ -8,6 +8,13 @@
 > Last updated: 2026-09-22
 >
 > **Changelog**
+> - 2026-09-26 — **Third direction: "Average is better"** (§6 item 2). Scores closeness to the
+>   typical (median) county: `100 − 2·|percentile − 50|`. For "average rain, not a little or a
+>   lot", or "some snow". Three-way Lower / Average / Higher toggle on every metric.
+> - 2026-09-26 — **Climate is now measured where people live**: the station search starts from
+>   each county's 2020 Census population center (Gazetteer internal point as fallback, CT only).
+>   San Diego 84 → 19 days over 90°F; SF's nearest station 28.8 → 0.9 mi; Nye NV gained snow
+>   data, so every county now has every climate column. Median county moved < 1 day.
 > - 2026-09-26 — Six climate columns added (full coverage except Nye NV snow days). **Phase 3
 >   list view built** and checked in the browser: weight sliders, direction toggles, min/max
 >   limits, unknown toggle, top-50 list with reasons and an expandable breakdown. Found that
@@ -189,7 +196,8 @@ shortcut.
 
 **"Distance to X" is not a runtime query.** Precompute in the ETL as ordinary columns:
 `dist_to_large_airport_mi`, `dist_to_coast_mi`, `dist_to_metro_500k_mi`. Haversine against a point
-file, or PostGIS. They then behave like any other metric.
+file, or PostGIS. They then behave like any other metric. **Measure from `pop_lat`/`pop_lon`**
+(the population center), not the geographic middle — same reason as climate (§9 Phase 3).
 
 ### Climate fallback sources
 
@@ -364,8 +372,13 @@ This is the actual product. Everything else is plumbing.
 
 1. **Normalize every metric to a percentile rank, 0–100.** Percentile, *not* min-max — min-max gets
    destroyed by outliers (one county with a $4M median home value flattens everything else).
-2. **Each metric carries a direction flag** — higher-is-better or lower-is-better. Invert the
-   percentile for the latter.
+2. **Each metric carries a direction** — higher is better, lower is better, or **average is
+   better** (added 2026-09-26). Each turns the raw percentile `p` into 0–100 points:
+   `p`, `100 − p`, or `100 − 2·|p − 50|`. "Average" means the **typical (median) county**, not
+   the arithmetic mean — a few 200-inch mountain counties drag mean snowfall far above what's
+   typical, and working in percentiles keeps all three directions on one scale. Symmetric: a
+   bit more than typical costs the same as a bit less. Every metric has a default direction;
+   the person can pick any of the three per search.
 3. **User input is two things:**
    - Hard filters: min/max cutoffs, boolean requirements
    - Weights: 0–5 slider per metric
@@ -511,7 +524,7 @@ The map is meaningless until the scoring works.
 - [x] Sanity-check against places we know (Travis TX, San Francisco CA, Cuyahoga OH)
 
 **The join holds.** Every future metric is one more column. See `etl/README.md` for the
-run log and known gaps (CT schools, rural RPP resolution, SF climate provenance). The
+run log and known gaps (CT schools, rural RPP resolution; SF climate provenance since fixed). The
 "7 counties with no station" gap was 5 Alaska areas (now excluded) plus Alpine CA and
 Livingston LA, both fixed 2026-09-22.
 
@@ -589,14 +602,29 @@ Known rough edges to expect:
       type). "Show unknown" toggle; match / unknown / ruled-out counts. Starts from modest
       defaults (cost 3, schools 3, days above 90°F 2, nights below freezing 2); "Clear all"
       empties them.
-- [ ] **Measure climate where people live.** Found 2026-09-26: a county's climate is taken at
-      its Gazetteer *internal point* — its geographic middle. For big western counties that's
-      the wrong place: San Diego County shows 84 days over 90°F and 30 freezing nights (point
-      inland, not the coast); Riverside County shows 12 rainy days (point in the desert, not
-      Riverside city). Fix: search for stations from the Census **centers of population**
-      (2020, free, one file per county), keeping the internal point as a fallback. Also fixes
-      San Francisco's point sitting in the Pacific. Changes every climate value slightly and
-      big western counties a lot, so re-check the real-data tests afterwards.
+- [x] **Measure climate where people live.** Found 2026-09-26: a county's climate was taken
+      at its Gazetteer *internal point* — its geographic middle — which for big western
+      counties is the wrong place. **Fixed:** new source `etl/sources/popcenter.py` (Census 2020
+      centers of population); the NOAA station search starts there, falling back to the
+      internal point for the 9 CT planning regions the 2020 file predates. Recorded per county
+      as `climate_point`. Results:
+
+      | County | Days > 90°F | Freezing nights | Nearest station |
+      |---|---|---|---|
+      | San Diego CA | 84 → 19 | 30 → 0 | 7.7 → 1.7 mi |
+      | Riverside CA | 189 → 121 | 9 → 13 | 11.5 → 5.8 mi |
+      | San Francisco CA | 10 → 3 | 2 → 0 | 28.8 → 0.9 mi |
+      | Pima AZ (Tucson) | 82 → 160 | | |
+      | King WA (Seattle) | | 67 → 29 | |
+
+      Median county moved < 1 day; 129 counties moved > 10 days, nearly all large western
+      ones. Nye NV now has snowfall, so every county has every climate column. Median
+      station distance 5.9 → 4.4 mi. County level stays a starting point — one point per
+      county can't describe a county that spans coast and desert; tracts will.
+- [x] **"Average is better" direction** (2026-09-26) — see §6 item 2. The panel shows the
+      typical county's value when it's picked ("Aiming for the typical county: 105 days");
+      the breakdown shows the raw percentile, e.g. "49th · aiming for 50th". Checked in the
+      browser: rainy days at weight 5 → top matches have 103–108 rainy days.
 - [ ] Tuning pass (§12 — the real risk): try real searches, note where rankings feel wrong,
       adjust metric defaults and directions.
 - [ ] *(This is already a useful product. May turn out to be more useful than the map.)*
@@ -623,6 +651,10 @@ Known rough edges to expect:
 - [ ] Köppen climate type as a label and categorical filter
 
 ### Phase 7 — Polish *(always last)*
+- [ ] **"New version available" prompt.** After a deploy, the first visit shows the previously
+      cached version while the new service worker installs in the background; the update
+      appears on the next load. Standard PWA behaviour, but confusing — show a small
+      "Update available — reload" notice when a new worker is waiting.
 - [ ] URL-encoded filter state
 - [x] PWA shell + service worker
 - [ ] `localStorage` shortlist

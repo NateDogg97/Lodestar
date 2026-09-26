@@ -92,9 +92,19 @@ describe("climate: the two ends of the year plus uncomfortable days", () => {
   const PHOENIX = "04013";
   const SEATTLE = "53033";
 
-  it("finds each county's real hottest month — San Francisco peaks in September, so a Jun–Aug average undersells it", () => {
+  it("measures climate where people live — San Francisco's September peak is about 70°F", () => {
+    // Measured from the 2020 population center: SF's hottest month is
+    // September at ~69.5°F, 3°F above its Jun–Aug average. (From the old
+    // geographic point, out in the Pacific, it read ~73°F off a station 29 mi away.)
     const sf = data.indexByFips.get(SAN_FRANCISCO)!;
-    expect(data.values.hottest_month_high_f[sf]).toBeGreaterThan(72);
+    expect(data.values.hottest_month_high_f[sf]).toBeGreaterThan(68);
+    expect(data.values.hottest_month_high_f[sf]).toBeLessThan(72);
+  });
+
+  it("San Diego reads as coastal, not as its inland geographic middle", () => {
+    const sd = data.indexByFips.get("06073")!;
+    expect(data.values.days_above_90f[sd]).toBeLessThan(30);
+    expect(data.values.nights_below_32f[sd]).toBeLessThan(5);
   });
 
   it("ceiling and floor together keep mild places and rule out both extremes", () => {
@@ -119,21 +129,43 @@ describe("climate: the two ends of the year plus uncomfortable days", () => {
     expect(dry.get(SEATTLE).score!).toBeLessThan(10);
   });
 
-  it("every county has the new climate columns except Nye County's snow days", () => {
-    for (const key of ["hottest_month_high_f", "coldest_month_low_f", "days_above_90f", "nights_below_32f", "rainy_days"] as const) {
+  it("'average is better' rainy days: Seattle (very wet) and Phoenix (very dry) both lose to a typical county", () => {
+    const { get, ranked } = run({ weights: { rainy_days: 5 }, directions: { rainy_days: "middle" } });
+    expect(get(SEATTLE).score!).toBeLessThan(10);
+    expect(get(PHOENIX).score!).toBeLessThan(25);
+    // the winners sit near the national median number of rainy days
+    const rainy = data.values.rainy_days;
+    const sorted = Array.from(rainy).sort((a, b) => a - b);
+    const median = sorted[sorted.length >> 1];
+    for (const r of ranked.slice(0, 20)) expect(Math.abs(rainy[r.index] - median)).toBeLessThan(2);
+  });
+
+  it("'average is better' snowfall: some snow beats none (Miami) and a lot (Cleveland)", () => {
+    const { get, ranked } = run({ weights: { annual_snow_in: 5 }, directions: { annual_snow_in: "middle" } });
+    const topSnow = data.values.annual_snow_in[ranked[0].index];
+    expect(topSnow).toBeGreaterThan(5);
+    expect(topSnow).toBeLessThan(25);
+    expect(get(MIAMI_DADE).score!).toBeLessThan(50);
+    expect(get(CUYAHOGA).score!).toBeLessThan(50);
+  });
+
+  it("every county has every climate column", () => {
+    // Nye County NV lacked snowfall until the search started from its
+    // population center (Pahrump), which has snow-reporting stations nearby.
+    for (const key of [
+      "hottest_month_high_f", "coldest_month_low_f", "days_above_90f", "nights_below_32f",
+      "rainy_days", "snow_days", "annual_snow_in", "annual_precip_in",
+    ] as const) {
       expect(data.values[key].some(Number.isNaN)).toBe(false);
     }
-    const missingSnowDays = data.fips.filter((_, i) => Number.isNaN(data.values.snow_days[i]));
-    expect(missingSnowDays).toEqual(["32023"]);
   });
 });
 
 describe("filters and unknowns on real data", () => {
-  it("a no-snow filter keeps Miami, drops Cleveland, and grey-flags counties without snow data", () => {
+  it("a no-snow filter keeps Miami and drops Cleveland", () => {
     const { get } = run({ weights: {}, filters: [{ metric: "annual_snow_in", max: 1 }] });
     expect(get(MIAMI_DADE).status).toBe("match");
     expect(get(CUYAHOGA).status).toBe("excluded");
-    expect(get("32023").status).toBe("unknown"); // Nye County NV — no station reports snowfall
   });
 
   it("Connecticut is unknown for schools, not excluded, and scored on what it has", () => {

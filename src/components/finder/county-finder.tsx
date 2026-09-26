@@ -35,14 +35,12 @@ export function CountyFinder() {
 function nationalRanges(data: CountyDataset): Partial<Record<MetricKey, MetricRange>> {
   const out: Partial<Record<MetricKey, MetricRange>> = {};
   for (const key of METRIC_KEYS) {
-    let min = Infinity;
-    let max = -Infinity;
-    for (const v of data.values[key]) {
-      if (Number.isNaN(v)) continue;
-      if (v < min) min = v;
-      if (v > max) max = v;
-    }
-    if (min <= max) out[key] = { min, max };
+    const known = Array.from(data.values[key]).filter((v) => !Number.isNaN(v));
+    if (known.length === 0) continue;
+    known.sort((a, b) => a - b);
+    const mid = known.length >> 1;
+    const median = known.length % 2 ? known[mid] : (known[mid - 1] + known[mid]) / 2;
+    out[key] = { min: known[0], max: known[known.length - 1], median };
   }
   return out;
 }

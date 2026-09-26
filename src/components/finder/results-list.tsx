@@ -196,7 +196,10 @@ function Breakdown({ id, score: s }: { id: string; score: CountyScore }) {
               <td className="py-1 pr-3">{getMetric(c.metric).label}</td>
               <td className="py-1 pr-3 tabular-nums">{formatValue(c.metric, c.value)}</td>
               <td className="py-1 pr-3 tabular-nums">
-                {c.percentile === null ? "—" : ordinal(c.percentile)}
+                {c.rawPercentile === null ? "—" : ordinal(c.rawPercentile)}
+                <span className="ml-1 text-xs text-neutral-500">
+                  {c.direction === "middle" ? "· aiming for 50th" : c.direction === "lower" ? "· lower is better" : ""}
+                </span>
               </td>
               <td className="py-1 pr-3 tabular-nums">{c.weight}</td>
               <td className="py-1 tabular-nums">
@@ -214,8 +217,10 @@ function Breakdown({ id, score: s }: { id: string; score: CountyScore }) {
         </tbody>
       </table>
       <p className="mt-2 text-xs text-neutral-500">
-        Percentiles compare against every county in the country, flipped where lower is better,
-        so a higher percentile is always better. Effect = weight × (percentile − 50).
+        Percentile = where this county sits among all counties (higher value, higher
+        percentile). Each metric turns that into 0–100 points: the percentile itself when
+        higher is better, 100 minus it when lower is better, and 100 minus twice its distance
+        from the 50th when average is better. Effect = weight × (points − 50).
       </p>
     </div>
   );

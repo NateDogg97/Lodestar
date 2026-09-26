@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  directionalScore,
   explainScore,
   METRIC_KEYS,
   parseCountyPayload,
@@ -102,6 +103,20 @@ describe("scoreCounties", () => {
       directions: { median_gross_rent: "higher" },
     });
     expect(s.map((x) => x.score)).toEqual([0, 50, 100]);
+  });
+
+  it("scores 'average is better' by closeness to the typical county, symmetrically", () => {
+    const data = setup([10, 20, 30, 40, 50].map((v, i) => ({ fips: `0000${i + 1}`, rainy_days: v })));
+    const s = scoreCounties(data, { weights: { rainy_days: 1 }, directions: { rainy_days: "middle" } });
+    // percentiles 0, 25, 50, 75, 100 -> points 0, 50, 100, 50, 0
+    expect(s.map((x) => x.score)).toEqual([0, 50, 100, 50, 0]);
+    expect(s[2].contributions[0]).toMatchObject({ direction: "middle", rawPercentile: 50, percentile: 100 });
+  });
+
+  it("directionalScore maps a percentile to points for each direction", () => {
+    expect([directionalScore(80, "higher"), directionalScore(80, "lower"), directionalScore(80, "middle")])
+      .toEqual([80, 20, 40]);
+    expect(directionalScore(20, "middle")).toBe(directionalScore(80, "middle"));
   });
 
   it("computes Σ(weight × percentile) / Σ(weight)", () => {

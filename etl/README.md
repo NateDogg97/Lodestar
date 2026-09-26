@@ -154,7 +154,8 @@ One row per county, 3,114 rows (Alaska excluded).
 | `fips` | string | 5 chars, zero-padded. **The join key.** |
 | `county_name` | string | e.g. "Travis County" |
 | `state` | string | Two-letter USPS |
-| `lat`, `lon` | float | Internal point (guaranteed inside the polygon) |
+| `lat`, `lon` | float | Internal point (guaranteed inside the polygon) — roughly the geographic middle |
+| `pop_lat`, `pop_lon` | float | 2020 population-weighted center — where people live. Null for CT's 9 planning regions (the 2020 file predates them) |
 | `land_sq_mi` | float | Land area |
 
 ### Census ACS 5-year
@@ -192,6 +193,7 @@ One row per county, 3,114 rows (Alaska excluded).
 | `days_above_90f`, `nights_below_32f` | Average days/nights per year past the threshold |
 | `rainy_days` | Days/year with ≥ 0.01 in precipitation |
 | `snow_days` | Days/year with ≥ 1.0 in snowfall |
+| `climate_point` | `population` or `internal` — which point the station search started from |
 | `climate_station_id` | Nearest contributing station |
 | `climate_station_dist_mi` | Distance to it — **use this to flag low-confidence values** |
 | `climate_station_count` | How many stations were averaged |
@@ -320,7 +322,8 @@ belongs in the phase whose job is proving the join works.
 **How the join works:** drop the CoCoRaHS network (`US1…` ids — volunteer
 rain gauges, no temperature, 5,440 of 15,615 stations) from the inventory;
 find the 10 nearest remaining stations within 60 miles of each county's
-internal point; fetch them; then, **separately for each variable group**
+**population center** (2020 Census; the internal point for the 9 Connecticut
+planning regions, which the 2020 file predates); fetch them; then, **separately for each variable group**
 (temperature, precipitation, snowfall), keep the nearest 3 stations that
 actually report it and average those weighted by inverse distance. Any
 county still short of 3 stations for some group gets a **fallback search**:
@@ -450,6 +453,7 @@ python -m etl.sources.spine     # no keys needed, should just work
 python -m etl.sources.acs       # needs Census key
 python -m etl.sources.bea       # needs BEA key; CHECK THE LINE-CODE MAPPING
 python -m etl.sources.seda      # needs the manual file
+python -m etl.sources.popcenter # no key; must run before noaa
 python -m etl.sources.noaa --limit 200
 python -m etl.sources.noaa      # full run
 python -m etl.build --skip-fetch
@@ -499,14 +503,16 @@ Deliberate Phase 1 omissions, not oversights:
   bulk — verified 2026-09-20), so ~62% of counties carry their state's blended
   RPP, which runs somewhat high for rural areas. See the BEA section. A derived
   value is possible but deferred.
-- **San Francisco's climate comes from the wrong stations.** The Gazetteer
-  internal point for `06075` is at −123.03° longitude — in the Pacific,
-  because the county polygon includes the Farallon Islands. Its nearest
-  stations are ~29 mi away on the coast. The resulting numbers (71°F / 45°F)
-  are plausibly close to SF's real marine climate, but `climate_station_id`
-  is misleading. The only such case among 3,114; other >25 mi distances are
-  genuinely remote counties. Fix would be a land-only centroid from TIGER
-  polygons in Phase 4 — not done in Phase 1.
+- ~~San Francisco's climate comes from the wrong stations.~~ **Fixed
+  2026-09-26** along with the wider problem it was an instance of: climate
+  was measured at each county's geographic middle, which for big western
+  counties is nowhere near where people live (San Diego read 84 days over
+  90°F from an inland point; now 19). The station search now starts from the
+  2020 Census population center — see `sources/popcenter.py`. SF's nearest
+  station went from 28.8 mi to 0.9 mi.
+- **County climate is one point per county.** Even from the population
+  center, a county spanning coast and desert gets one set of numbers. That is
+  a county-level limit, not a bug; the tract-level roadmap addresses it.
 - **Connecticut has no `school_achievement`.** SEDA keys counties by the
   legacy FIPS (`09001`–`09015`), while the spine uses the planning regions
   Census adopted in 2022 (`09110`–`09190`). The LEFT join therefore leaves

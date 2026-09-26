@@ -64,6 +64,7 @@ SOURCES = [
     ("acs", "Census ACS 5-year", True),
     ("bea", "BEA Regional Price Parities", False),
     ("seda", "SEDA school achievement", False),
+    ("popcenter", "Census 2020 centers of population", False),
     ("noaa", "NOAA climate normals", False),
 ]
 
@@ -149,7 +150,7 @@ def add_derived_columns(df: pd.DataFrame) -> pd.DataFrame:
 # adding a metric upstream will not silently disappear — it just lands last.
 COLUMN_ORDER = [
     # identity
-    "fips", "county_name", "state", "lat", "lon", "land_sq_mi",
+    "fips", "county_name", "state", "lat", "lon", "pop_lat", "pop_lon", "land_sq_mi",
     # ACS
     "population", "median_home_value", "median_household_income", "median_gross_rent",
     # BEA
@@ -162,7 +163,7 @@ COLUMN_ORDER = [
     "annual_precip_in", "annual_snow_in",
     "hottest_month_high_f", "coldest_month_low_f",
     "days_above_90f", "nights_below_32f", "rainy_days", "snow_days",
-    "climate_station_id", "climate_station_dist_mi", "climate_station_count",
+    "climate_point", "climate_station_id", "climate_station_dist_mi", "climate_station_count",
     # derived
     "home_value_to_income", "rent_to_income", "price_to_rent", "real_income",
     # provenance

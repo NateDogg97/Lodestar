@@ -632,6 +632,25 @@ def test_app_payload_is_compact_and_lossless_where_it_matters() -> None:
     check("NaN" not in text, "payload is strict JSON")
 
 
+def test_population_center_search_points() -> None:
+    print("\npopcenter: parse the Census file and prefer it over the internal point")
+    from .sources import noaa, popcenter
+    text = ("\ufeffSTATEFP,COUNTYFP,COUNAME,STNAME,POPULATION,LATITUDE,LONGITUDE\n"
+            "06,073,San Diego,California,3298634,+32.884418,-117.112348\n")
+    out = popcenter.parse(text)
+    check(out["fips"].tolist() == ["06073"], "byte-order mark stripped; FIPS built as a string")
+    check(abs(out.loc[0, "pop_lon"] + 117.112348) < 1e-9, "signed coordinates parse")
+
+    spine = pd.DataFrame({"fips": ["06073", "09190"], "lat": [33.0, 41.3], "lon": [-116.7, -73.4]})
+    pts = noaa.search_points(spine, out)
+    check(pts["climate_point"].tolist() == ["population", "internal"],
+          "population center used where known; internal point is the fallback")
+    check(abs(pts.loc[0, "lon"] + 117.112348) < 1e-9 and pts.loc[1, "lon"] == -73.4,
+          "search coordinates come from the chosen point")
+    check(noaa.search_points(spine, None)["climate_point"].eq("internal").all(),
+          "no popcenter file at all -> every county uses its internal point")
+
+
 def main() -> int:
     print("=" * 70)
     print("OFFLINE TEST SUITE — no network required")
@@ -654,6 +673,7 @@ def main() -> int:
         test_seda_subgroup_and_gap_filter()
         test_noaa_inventory_parser()
         test_noaa_per_variable_station_selection()
+        test_population_center_search_points()
         test_gazetteer_encoding_guard()
         test_app_payload_is_compact_and_lossless_where_it_matters()
 

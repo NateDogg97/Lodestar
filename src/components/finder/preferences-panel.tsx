@@ -3,6 +3,8 @@
 import { useState } from "react";
 
 import {
+  DIRECTIONS,
+  formatValue,
   getMetric,
   MAX_WEIGHT,
   METRICS,
@@ -24,7 +26,15 @@ const GROUPS: { id: MetricGroup; label: string }[] = [
 export interface MetricRange {
   min: number;
   max: number;
+  /** The typical (median) county — the target when "Average" is chosen. */
+  median: number;
 }
+
+const DIRECTION_LABELS: Record<Direction, string> = {
+  lower: "Lower",
+  middle: "Average",
+  higher: "Higher",
+};
 
 interface Props {
   prefs: Preferences;
@@ -129,22 +139,36 @@ function MetricControl({
       />
 
       <div className="mt-1 flex items-center justify-between gap-2 text-xs">
-        <div role="group" aria-label={`What is better for ${def.label}`} className="inline-flex rounded-md border border-neutral-300 dark:border-neutral-700">
-          {(["lower", "higher"] as const).map((d) => (
-            <button
-              key={d}
-              type="button"
-              onClick={() => onDirection(d)}
-              aria-pressed={direction === d}
-              className={`px-2 py-0.5 first:rounded-l-md last:rounded-r-md ${
-                direction === d
-                  ? "bg-neutral-800 text-white dark:bg-neutral-200 dark:text-neutral-900"
-                  : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
-              }`}
-            >
-              {d === "lower" ? "Lower is better" : "Higher is better"}
-            </button>
-          ))}
+        <div className="flex items-center gap-1.5">
+          <span id={`better-${metric}`} className="text-neutral-500 dark:text-neutral-400">
+            Better:
+          </span>
+          <div
+            role="group"
+            aria-labelledby={`better-${metric} ${sliderId}`}
+            className="inline-flex rounded-md border border-neutral-300 dark:border-neutral-700"
+          >
+            {DIRECTIONS.map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => onDirection(d)}
+                aria-pressed={direction === d}
+                title={
+                  d === "middle"
+                    ? "Closest to the typical (median) county scores best; both extremes score worst"
+                    : `${DIRECTION_LABELS[d]} values score better`
+                }
+                className={`px-2 py-0.5 first:rounded-l-md last:rounded-r-md ${
+                  direction === d
+                    ? "bg-neutral-800 text-white dark:bg-neutral-200 dark:text-neutral-900"
+                    : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                }`}
+              >
+                {DIRECTION_LABELS[d]}
+              </button>
+            ))}
+          </div>
         </div>
         <button
           type="button"
@@ -157,6 +181,12 @@ function MetricControl({
           {hasLimit ? "Limit set" : "Set limit"}
         </button>
       </div>
+
+      {direction === "middle" && range && (
+        <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+          Aiming for the typical county: {formatValue(metric, range.median)}
+        </p>
+      )}
 
       {limitsOpen && (
         <div className="mt-2 grid grid-cols-2 gap-2">

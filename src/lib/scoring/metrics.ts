@@ -7,10 +7,20 @@
  *
  * `defaultDirection` is what "better" means for most people. It is a default,
  * not a rule: whether a hot summer is good is a matter of taste, so the
- * scoring input can flip any metric (see `ScoringInput.directions`).
+ * scoring input can change it for any metric (see `ScoringInput.directions`).
  */
 
-export type Direction = "higher" | "lower";
+/**
+ * What "better" means for a metric:
+ * - `higher` / `lower`: the more (or less), the better.
+ * - `middle`: the closer to the typical county, the better — "average rain,
+ *   not a little or a lot". Typical means the MEDIAN county (50th
+ *   percentile), not the arithmetic mean, which extremes drag around
+ *   (a few 200-inch mountain counties pull mean snowfall far above typical).
+ */
+export type Direction = "higher" | "lower" | "middle";
+
+export const DIRECTIONS: readonly Direction[] = ["lower", "middle", "higher"];
 
 export type MetricGroup = "people" | "housing" | "cost" | "schools" | "climate";
 

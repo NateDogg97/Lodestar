@@ -59,6 +59,8 @@ PIPELINE = [
     ("acs", "etl.sources.acs", True),
     ("bea", "etl.sources.bea", False),
     ("seda", "etl.sources.seda", False),
+    # Before NOAA: the station search starts from these points when present.
+    ("popcenter", "etl.sources.popcenter", False),
     ("noaa", "etl.sources.noaa", False),
 ]
 
@@ -190,7 +192,7 @@ APP_PAYLOAD_FORMAT = "counties-columnar-v1"
 # 10+ significant digits by default.
 DEFAULT_DECIMALS = 3
 COLUMN_DECIMALS = {
-    "lat": 4, "lon": 4, "land_sq_mi": 1,
+    "lat": 4, "lon": 4, "pop_lat": 4, "pop_lon": 4, "land_sq_mi": 1,
     "population": 0, "median_home_value": 0, "median_household_income": 0,
     "median_gross_rent": 0, "real_income": 0,
     "summer_high_f": 2, "winter_low_f": 2, "spring_mean_f": 2, "fall_mean_f": 2,

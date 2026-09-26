@@ -116,6 +116,13 @@ CBSA_DELINEATION_URL = (
     "reference-files/{year}/delineation-files/list1_{year}.xlsx"
 )
 
+# 2020 county population-weighted centers. Plain CSV, stable decennial path.
+# Used to measure climate (and later distances) where people live rather
+# than at the county's geographic middle. See sources/popcenter.py.
+POPCENTER_URL = (
+    "https://www2.census.gov/geo/docs/reference/cenpop2020/county/CenPop2020_Mean_CO.txt"
+)
+
 # NOAA 1991-2020 monthly normals, one CSV per station (~15,600 of them).
 # Station inventory lives alongside the data files.
 #

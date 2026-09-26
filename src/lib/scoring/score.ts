@@ -3,9 +3,9 @@
  *
  *   score = Σ(weight × percentile) / Σ(weight)
  *
- * over the metrics the user has weighted, where each percentile is flipped
- * (100 − p) for metrics where lower is better. Hard filters remove a county
- * outright rather than lowering its score.
+ * over the metrics the user has weighted, where each percentile is first
+ * turned into "points" by the metric's direction (see `directionalScore`).
+ * Hard filters remove a county outright rather than lowering its score.
  *
  * MISSING DATA IS UNKNOWN, NEVER GUESSED (§6 item 7):
  * - A filter on a metric the county has no value for neither passes nor
@@ -26,6 +26,26 @@ import { percentileRanks } from "./percentile";
 
 export const MAX_WEIGHT = 5;
 
+/**
+ * Turn a raw percentile (higher value → higher percentile) into 0–100 points
+ * where higher is always better:
+ * - higher: p
+ * - lower:  100 − p
+ * - middle: 100 − 2·|p − 50| — the median county gets 100, the 25th and 75th
+ *   get 50, the extremes get 0. Symmetric in percentile terms, so "a bit more
+ *   rain than typical" and "a bit less" cost the same.
+ */
+export function directionalScore(percentile: number, direction: Direction): number {
+  switch (direction) {
+    case "higher":
+      return percentile;
+    case "lower":
+      return 100 - percentile;
+    case "middle":
+      return 100 - 2 * Math.abs(percentile - 50);
+  }
+}
+
 export interface RangeFilter {
   metric: MetricKey;
   /** Inclusive lower bound, in the metric's own units. */
@@ -37,7 +57,7 @@ export interface RangeFilter {
 export interface ScoringInput {
   /** 0–5 per metric. Absent or 0 means the metric does not count. */
   weights: Partial<Record<MetricKey, number>>;
-  /** Override what "better" means for a metric, e.g. hot summers wanted. */
+  /** Override what "better" means for a metric, e.g. hot summers, or typical rainfall. */
   directions?: Partial<Record<MetricKey, Direction>>;
   filters?: RangeFilter[];
 }
@@ -53,7 +73,10 @@ export interface MetricContribution {
   metric: MetricKey;
   /** Raw value in the metric's units, or null if unknown. */
   value: number | null;
-  /** 0–100, already flipped so that higher is always better. Null if unknown. */
+  direction: Direction;
+  /** Where the value sits nationally, 0–100 (higher value → higher). Null if unknown. */
+  rawPercentile: number | null;
+  /** 0–100 points after applying the direction, so higher is always better. Null if unknown. */
   percentile: number | null;
   weight: number;
   /** weight × (percentile − 50): how far this metric pushed the score up or down. Null if unknown. */
@@ -96,12 +119,12 @@ function clampWeight(w: number | undefined): number {
 export function scoreCounties(prepared: PreparedDataset, input: ScoringInput): CountyScore[] {
   const { data, percentiles } = prepared;
 
-  const weighted: { metric: MetricKey; weight: number; flip: boolean }[] = [];
+  const weighted: { metric: MetricKey; weight: number; direction: Direction }[] = [];
   for (const key of METRIC_KEYS) {
     const weight = clampWeight(input.weights[key]);
     if (weight === 0) continue;
     const direction = input.directions?.[key] ?? getMetric(key).defaultDirection;
-    weighted.push({ metric: key, weight, flip: direction === "lower" });
+    weighted.push({ metric: key, weight, direction });
   }
   const filters = input.filters ?? [];
 
@@ -126,18 +149,23 @@ export function scoreCounties(prepared: PreparedDataset, input: ScoringInput): C
     const missingMetrics: MetricKey[] = [];
     let sumWeighted = 0;
     let sumWeights = 0;
-    for (const { metric, weight, flip } of weighted) {
+    for (const { metric, weight, direction } of weighted) {
       const raw = data.values[metric][i];
       const p = percentiles[metric][i];
       if (Number.isNaN(p)) {
         missingMetrics.push(metric);
-        contributions.push({ metric, value: null, percentile: null, weight, impact: null });
+        contributions.push({
+          metric, value: null, direction, rawPercentile: null, percentile: null, weight, impact: null,
+        });
         continue;
       }
-      const pct = flip ? 100 - p : p;
+      const pct = directionalScore(p, direction);
       sumWeighted += weight * pct;
       sumWeights += weight;
-      contributions.push({ metric, value: raw, percentile: pct, weight, impact: weight * (pct - 50) });
+      contributions.push({
+        metric, value: raw, direction, rawPercentile: p, percentile: pct, weight,
+        impact: weight * (pct - 50),
+      });
     }
 
     out[i] = {
