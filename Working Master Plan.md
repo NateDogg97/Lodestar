@@ -8,6 +8,10 @@
 > Last updated: 2026-09-22
 >
 > **Changelog**
+> - 2026-09-26 — **Phase 3 complete.** Tuning moved to an ongoing track (§12) rather than a
+>   phase gate. Phase 4 prepped: 2024 Census boundaries match all 3,114 counties exactly;
+>   simplified TopoJSON ≈ 620 KB / 190 KB gzipped, so one boundary file is enough. Three
+>   decisions listed under Phase 4 before building.
 > - 2026-09-26 — **Third direction: "Average is better"** (§6 item 2). Scores closeness to the
 >   typical (median) county: `100 − 2·|percentile − 50|`. For "average rain, not a little or a
 >   lot", or "some snow". Three-way Lower / Average / Higher toggle on every metric.
@@ -585,7 +589,7 @@ Known rough edges to expect:
 - Data finding while testing: the **Miami metro is the second-costliest in BEA 2024**
   (114.2), ahead of Los Angeles (113.6). Surprising but correct.
 
-### Phase 3 — Ranked list view ⬅️ **IN PROGRESS**
+### Phase 3 — Ranked list view ✅ **DONE 2026-09-26**
 - [x] **First: climate columns** (§6 *Climate preferences*) — `hottest_month_high_f`,
       `coldest_month_low_f`, `days_above_90f`, `nights_below_32f`, `rainy_days`, `snow_days`.
       Each day-count gets its own station selection: rainy-day counts exist at fewer stations
@@ -625,15 +629,57 @@ Known rough edges to expect:
       typical county's value when it's picked ("Aiming for the typical county: 105 days");
       the breakdown shows the raw percentile, e.g. "49th · aiming for 50th". Checked in the
       browser: rainy days at weight 5 → top matches have 103–108 rainy days.
-- [ ] Tuning pass (§12 — the real risk): try real searches, note where rankings feel wrong,
-      adjust metric defaults and directions.
-- [ ] *(This is already a useful product. May turn out to be more useful than the map.)*
+- [x] ~~Tuning pass~~ → moved to the ongoing tuning track in §12. It never really "finishes",
+      and the map will make wrong-feeling rankings easier to spot.
+- *(This is already a useful product. May turn out to be more useful than the map.)*
 
-### Phase 4 — Map
-- [ ] Download + simplify Census county boundaries with `mapshaper`
-- [ ] MapLibre setup with free basemap
-- [ ] Choropleth colored by score
-- [ ] Click → side panel with score breakdown
+### Phase 4 — Map ⬅️ **NEXT**
+
+**Prep done 2026-09-26** (measured, nothing committed to the app yet):
+- **Boundaries:** Census cartographic boundary files, 2024 vintage —
+  `https://www2.census.gov/geo/tiger/GENZ2024/shp/cb_2024_us_county_{500k,5m,20m}.zip`
+  (11.6 MB / 3.0 MB / 0.9 MB). After dropping Alaska and territories, **GEOIDs match our 3,114
+  counties exactly, both directions** — including Connecticut's planning regions, so no crosswalk.
+- **Size after `mapshaper` simplification** (TopoJSON, quantization 1e5, GEOID only):
+
+  | Source | Simplify | Size | Gzipped |
+  |---|---|---|---|
+  | 5m | none | 1.37 MB | 419 KB |
+  | 5m | 10% | 620 KB | 189 KB |
+  | 500k | 5% | 748 KB | 231 KB |
+  | 500k | 2% | 621 KB | 188 KB |
+
+  Under Serwist's 2 MB per-file cap, so the boundaries precache and the choropleth works
+  offline. Pick between 5m@10% and 500k@2–5% by eye (coastlines, small eastern counties) —
+  similar size. **One file is enough; no second LOD** (closes the §11 question).
+- **Libraries (current versions):** `maplibre-gl` 6.11, `mapshaper` 0.7.68 (build-time only,
+  run with `npx`), `pmtiles` 4.5 (only if self-hosting a basemap).
+- **Basemap:** OpenFreeMap (`https://tiles.openfreemap.org/styles/positron`) is live — free,
+  no account, no API key, no usage cap. Needs a connection; offline, the county polygons
+  still draw without the background.
+
+**Decisions needed before building:**
+1. **Basemap.** (a) OpenFreeMap — city names and roads, zero setup, online only.
+   (b) Self-hosted Protomaps `.pmtiles` on R2 — works offline, but hosting and a large file.
+   (c) No basemap — county shapes and state lines only; fully offline, simplest.
+   *Recommendation: (a), degrading to (c) when offline.*
+2. **Layout.** Map above the list, map beside the list, or a Map / List toggle.
+3. **Boundary pipeline.** Where the download + `mapshaper` step lives: a Python source module
+   that shells out to `npx mapshaper` (keeps one `python -m etl.build`), or a separate Node
+   script. *Recommendation: Python module, so the ETL stays one command.*
+
+**Build steps:**
+- [ ] Boundary step in the ETL: download 2024 cartographic boundaries, drop AK + territories,
+      simplify, write `public/data/counties.topo.json` (GEOID only — scores join client-side)
+- [ ] Validate: every data FIPS has a shape and vice versa (FAIL otherwise)
+- [ ] MapLibre setup with the chosen basemap (client component, loaded lazily)
+- [ ] Choropleth colored by score, red → yellow → green (`d3-scale-chromatic`,
+      `interpolateRdYlGn`); **unknown counties grey**, **ruled-out counties faded**, and the
+      "Show unknown" toggle applies to the map too
+- [ ] Recolor on preference change without re-uploading geometry (`setFeatureState`, not
+      `setData`) — 3,114 features makes this cheap
+- [ ] Click a county → side panel with the same breakdown the list shows; the list and map
+      share one selected county
 
 ### Phase 5 — Full metric set
 - [ ] Expand ETL: FEMA NRI, BLS unemployment, precomputed distances, state law CSV
@@ -692,7 +738,6 @@ Not in MVP. Do not build these until the above ships.
 ## 11. Open questions
 
 - [ ] Which 6–8 state law attributes actually matter? (Needs a decision before Phase 5.)
-- [ ] Do we need a second boundary LOD for zoomed-out views, or is one simplified file enough?
 - [ ] At tract level, does the RPP recombination need re-weighting, or do BEA's national weights
       hold well enough?
 - [ ] **Rural cost of living.** ~62% of counties carry their state's blended RPP because BEA
@@ -714,6 +759,8 @@ Not in MVP. Do not build these until the above ships.
       under a schools filter. The crosswalk is now optional polish.
 
 **Resolved**
+- ~~Second boundary LOD for zoomed-out views?~~ No — one simplified file is ~620 KB /
+  190 KB gzipped. See Phase 4 prep. (2026-09-26)
 - ~~"Ideal value" scoring for climate?~~ Not as a year-round band. Hottest-month ceiling +
   coldest-month floor + uncomfortable-day counts, on existing filters and direction flags.
   See §6 *Climate preferences*. (2026-09-22)
@@ -737,3 +784,10 @@ The technical build is maybe three or four weekends. The hard part is **tuning w
 means** — getting the weighting model to produce a heat map that feels true rather than arbitrary.
 
 Budget most of the iteration time there, not on infrastructure.
+
+### Tuning track (ongoing, from Phase 3 on)
+
+Not a phase — a habit. Run real searches, note where a ranking feels wrong, and write down
+*why* before changing anything. Log findings here with the date, the search, and what changed.
+
+- *(no entries yet)*
