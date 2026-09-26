@@ -24,3 +24,9 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, sans-serif;
 }
+
+/* Keep MapLibre's bottom controls (attribution) above the phone results sheet. */
+.map-inset .maplibregl-ctrl-bottom-left,
+.map-inset .maplibregl-ctrl-bottom-right {
+  bottom: var(--map-inset, 0px);
+}

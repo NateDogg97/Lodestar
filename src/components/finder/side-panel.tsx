@@ -19,8 +19,8 @@ interface Props {
 
 /**
  * A left-hand panel that collapses to a thin labelled rail. Panels collapse
- * independently (plan §9 Phase 4, decision 2). On phones an open panel covers
- * the map instead of squeezing it.
+ * independently (plan §9 Phase 4, decision 2). Desktop only — phones use the
+ * top-bar filters and the results BottomSheet.
  */
 export function SidePanel({ id, title, badge, open, onToggle, widthClass, menu, headerExtra, children }: Props) {
   if (!open) {

@@ -5,9 +5,19 @@
 > If something here conflicts with what you actually built, the code is right and this file is
 > stale — fix the file.
 >
-> Last updated: 2026-09-22
+> Last updated: 2026-09-26
 >
 > **Changelog**
+> - 2026-09-26 — **Phase 4 complete; phone layout confirmed on a real phone.** Recorded the plan for a
+>   selected-result **detail view** (Phase 7, maybe post-MVP) and a later **place profile**
+>   (images, things to do, laws, good and bad). Profile content is deferred (§10) and must be
+>   keyed by place, not county, so neighborhoods can slot in later.
+> - 2026-09-26 — **Phone layout redesigned, Google Maps–style**: the map fills the screen,
+>   results are a bottom sheet dragged between 25 / 50 / 80 / 100%, and filters open from a
+>   "Filters" tab in a top bar. The side-panel layout on a phone felt wrong. **Picking a county
+>   in the list now always zooms to it** (previously only if it was off-screen). **The search
+>   is saved in `localStorage`** between sessions, pulled forward from Phase 7 as a stopgap for
+>   testing. Offline fallback checked in a real offline browser. It works.
 > - 2026-09-26 — **Alaska and Hawaii are now in-app toggles, both off by default.** Alaska is
 >   back in the dataset (3,144 counties). When a state is off it is cut from the data *before*
 >   percentiles are computed (`subsetDataset`), so it affects no one's score, median, rank or
@@ -494,6 +504,10 @@ moved earlier if muggy heat turns out to be a dealbreaker.
 two hours of an ocean"* → a JSON object matching the filter schema. One structured-output call,
 roughly $0.001 each. Best post-MVP feature; ~50 lines of code.
 
+**Place profile summary** *(post-MVP, noted 2026-09-26).* A short good-and-bad summary for
+the selected place in the detail view (§10 *Place profile content*). It has the same
+hallucination risk as below, so it should summarize sourced facts we fetched, not free-write.
+
 **One-time batch place descriptions.** Two sentences of character per county, cached as static
 JSON, never regenerated. ~$10 for the whole country. **Probably skip** — hallucination risk, and
 score decomposition already answers the "why" question.
@@ -573,7 +587,7 @@ Known rough edges to expect:
       Serwist precaches it and the app works offline. The browser fetches it once and parses
       it with `parseCountyPayload`, which transposes it into one typed array per metric.
       `etl/data/out/counties.json` stays the readable one-object-per-county version.
-- [ ] **ETL fixes found in the 2026-09-22 review** — do before scoring, since they change
+- [x] **ETL fixes found in the 2026-09-22 review** — do before scoring, since they change
       percentiles:
   - [x] **Snow was null for 214 counties that had temperature data**, including snowy ones
         (Rolette ND, Beltrami MN, Price WI). Cause: stations without temperature normals were
@@ -657,7 +671,7 @@ Known rough edges to expect:
       and the map will make wrong-feeling rankings easier to spot.
 - *(This is already a useful product. May turn out to be more useful than the map.)*
 
-### Phase 4 — Map ⬅️ **IN PROGRESS** (built 2026-09-26; tuning the layout by use)
+### Phase 4 — Map ✅ **DONE 2026-09-26**
 
 **Prep done 2026-09-26** (measured, nothing committed to the app yet):
 - **Boundaries:** Census cartographic boundary files, 2024 vintage —
@@ -730,14 +744,42 @@ Known rough edges to expect:
       Checked in the browser: 3,109 counties by default, 3,114 with Hawaii, 3,144 with both;
       with warm winters as the only weight, Florida leads with Hawaii off and Honolulu, Kauai,
       Kalawao and Maui move into the top 6 with it on.
-- [ ] **Not yet checked:** the offline fallback in a real offline browser, and the phone layout
-      on an actual phone. Both are implemented; neither has been exercised.
+- [x] **Offline fallback checked** in a real offline browser (2026-09-26): the app loads from
+      the service worker and the map draws county + state lines on a plain background. An
+      unknown path such as `/foo` shows the 404 page, not the offline page. That's fine.
+- [x] **Phone layout, first version, tried on a real phone (2026-09-26): rejected.** Side panels
+      and vertical rails don't suit a phone. Replaced by the layout below.
+- [x] **Phone layout, second version** (below `md`, 768 px), modeled on Google Maps:
+      - The map fills the screen behind everything.
+      - **Results are a bottom sheet** (`bottom-sheet.tsx`) that snaps to **25 / 50 / 80 /
+        100%** of the area below the top bar. Drag its header (a quick flick moves one snap),
+        tap the handle to step up, or use the arrow keys. Only the header drags; the list
+        scrolls normally. It opens at 50%.
+      - **Filters are a tab in a top bar** ("Filters · 4 weighted · 1 limit"). They open as a
+        full overlay with a Done button. The page header is hidden on phones to save a row.
+      - Picking a county (map or list) sets the sheet to 50% and scrolls it to the county card.
+      - The map knows the sheet's height (`bottomInset`): zooms keep the county above it, and
+        the legend, offline note and attribution sit just above it.
+      - The desktop layout (side panels, Maximize map) is unchanged.
+- [x] **Second phone layout tried on an actual phone** (2026-09-26): works well.
+- [x] **Picking a county in the list always zooms to it** (fit to its bounds, max zoom 8),
+      even when it is already on screen and even if it is already selected. Clicking a county
+      on the map selects it without moving the map.
+- [x] **The search is saved between sessions** (`localStorage`, key `nhf.preferences.v1`):
+      weights, directions, limits, Show unknown, Alaska/Hawaii. Loaded through
+      `sanitizePreferences`, so an old or damaged save never breaks the app (unit-tested).
+      Per device and per browser. This is a **testing stopgap pulled forward from Phase 7**. The
+      shareable version is still the URL (Phase 7), and accounts / saved-search lists stay out
+      of v1 (§10).
 
 **Noticed while testing (for the tuning track):**
 - At national zoom the top 50 are small, scattered counties — easy to miss. Options: zoom to
   the top 50's bounds on demand, or draw a marker at each one's population center.
 - Hawaii sits outside the initial view.
-- Selecting a county inserts its card above the list, which shifts the list down.
+- Selecting a county inserts its card above the list, which shifts the list down. → Planned
+  fix: the selected-result detail view (Phase 7).
+- Automated browser checks run in a hidden window, where MapLibre never renders (no animation
+  frames). The map itself has to be checked by eye.
 
 
 ### Phase 5 — Full metric set
@@ -760,7 +802,15 @@ Known rough edges to expect:
       cached version while the new service worker installs in the background; the update
       appears on the next load. Standard PWA behaviour, but confusing — show a small
       "Update available — reload" notice when a new worker is waiting.
-- [ ] URL-encoded filter state
+- [ ] **Selected-result detail view** *(maybe post-MVP; requested 2026-09-26).* Selecting a
+      result replaces the list in the Results panel/sheet with that county's own view, with
+      a "← All results" button back to the list at the same scroll position. The selected
+      card and the list stop sharing one scroll area, which also fixes the list shifting down
+      on select. This view is the frame the place profile (§10) will fill later. If any of
+      that ships in the MVP, build it as sections that can be empty (see §10).
+- [ ] URL-encoded filter state. *(The search is already saved in `localStorage` since
+      2026-09-26. The URL adds shareable links and should win over the saved search when both
+      are present.)*
 - [x] PWA shell + service worker
 - [ ] `localStorage` shortlist
 
@@ -780,6 +830,20 @@ Not in MVP. Do not build these until the above ships.
 - The state→neighborhood specificity filter
 - User accounts and auth
 - Natural language search
+- **Place profile content** (requested 2026-09-26) for the selected-result detail view:
+  images, points of interest and attractions, what the place is known for, rules and laws
+  to know, and anything else worth knowing, good and bad. Notes for when it's built:
+  - **Key everything by a place id, not a county FIPS.** The geography roadmap moves to
+    tracts (neighborhoods), school districts and towns, and the profile has to follow the
+    selected area. County-level facts stay useful as the outer layer. Neighborhood,
+    district and part-of-town detail goes on top of them.
+  - **Source is undecided:** a static dataset we build (works offline, fits §2) or a live
+    fetch when a place is selected (online only, needs a proxy or keyless APIs, rate
+    limits). Probably both: static basics, live extras. See §11.
+  - **The shell can come first:** empty sections (image carousel, Things to do, Laws to
+    know, Known for) that each fill from a fetch and show a plain "not available offline" /
+    "nothing yet" state.
+  - A possible **AI summary** of the place, good and bad (see §7).
 - AI-generated place descriptions
 - Commute isochrones
 - Saved comparisons
@@ -811,6 +875,9 @@ Not in MVP. Do not build these until the above ships.
 - [ ] Which ACS vintage? 5-year estimates are almost certainly right — the 1-year release only
       covers areas above 65,000 population, which would drop roughly two-thirds of counties.
       Confirm the latest available 5-year release when hitting the API.
+- [ ] **Place profile source** (post-MVP): a static dataset, a live fetch on select, or both?
+      Live fetches break "fully static, works offline" (§2), so they'd be an online-only
+      layer. Decide before building the §10 place profile.
 - [ ] Is a non-housing `real_income` variant worth computing alongside the standard one?
 - [ ] **Connecticut school data.** Census switched CT to nine planning regions in 2022
       (`09110`–`09190`); SEDA still keys on the eight legacy counties (`09001`–`09015`).

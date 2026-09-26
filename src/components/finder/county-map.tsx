@@ -11,7 +11,7 @@ import {
   type LngLatBoundsLike,
   type StyleSpecification,
 } from "maplibre-gl";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { feature } from "topojson-client";
 import type { Feature, FeatureCollection, Geometry, Position } from "geojson";
 import type { GeometryCollection, Topology } from "topojson-specification";
@@ -137,10 +137,23 @@ interface Props {
   /** The top results to fill: FIPS → 0–100 relative to each other, or null if unscored. */
   relative: Map<string, number | null>;
   selectedFips: string | null;
+  /** A pick from the results list: zoom to that county. A new object re-zooms, even to the same county. */
+  focus: { fips: string } | null;
+  /** Height of whatever covers the bottom of the map (the phone results sheet), in px. */
+  bottomInset: number;
   onSelect: (fips: string | null) => void;
 }
 
-export default function CountyMap({ data, scoresByFips, rankByFips, relative, selectedFips, onSelect }: Props) {
+export default function CountyMap({
+  data,
+  scoresByFips,
+  rankByFips,
+  relative,
+  selectedFips,
+  focus,
+  bottomInset,
+  onSelect,
+}: Props) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const shapesRef = useRef<Shapes | null>(null);
@@ -149,9 +162,9 @@ export default function CountyMap({ data, scoresByFips, rankByFips, relative, se
   const [error, setError] = useState<string | null>(null);
 
   // Latest props for map event handlers, which are registered once.
-  const latest = useRef({ data, scoresByFips, rankByFips, onSelect });
+  const latest = useRef({ data, scoresByFips, rankByFips, onSelect, bottomInset });
   useEffect(() => {
-    latest.current = { data, scoresByFips, rankByFips, onSelect };
+    latest.current = { data, scoresByFips, rankByFips, onSelect, bottomInset };
   });
 
   // Create the map once.
@@ -281,7 +294,7 @@ export default function CountyMap({ data, scoresByFips, rankByFips, relative, se
     }
   }, [ready, data, relative]);
 
-  // Highlight the selected county and bring it into view.
+  // Highlight the selected county.
   const prevSelected = useRef<string | null>(null);
   useEffect(() => {
     const map = mapRef.current;
@@ -290,12 +303,25 @@ export default function CountyMap({ data, scoresByFips, rankByFips, relative, se
     prevSelected.current = selectedFips;
     if (!selectedFips) return;
     map.setFeatureState({ source: "counties", id: selectedFips }, { selected: true });
-    const b = shapesRef.current?.bounds.get(selectedFips);
-    if (!b) return;
-    const view = map.getBounds();
-    const inView = view.contains([b[0], b[1]]) && view.contains([b[2], b[3]]);
-    if (!inView) map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 80, maxZoom: 8, duration: 600 });
   }, [ready, selectedFips]);
+
+  // A pick from the list always zooms to the county — kept above the phone
+  // sheet, which may cover most of the map.
+  useEffect(() => {
+    const map = mapRef.current;
+    const b = focus && shapesRef.current?.bounds.get(focus.fips);
+    if (!ready || !map || !b) return;
+    const height = map.getContainer().clientHeight;
+    const inset = Math.min(latest.current.bottomInset, height * 0.6);
+    const pad = Math.max(16, Math.min(60, (height - inset) / 6));
+    map.fitBounds(
+      [
+        [b[0], b[1]],
+        [b[2], b[3]],
+      ],
+      { padding: { top: pad, left: pad, right: pad, bottom: inset + pad }, maxZoom: 8, duration: 600 },
+    );
+  }, [ready, focus]);
 
   // Panels opening or closing change the map's size.
   useEffect(() => {
@@ -308,7 +334,8 @@ export default function CountyMap({ data, scoresByFips, rankByFips, relative, se
   }, [ready]);
 
   return (
-    <div className="relative h-full w-full">
+    // --map-inset lifts the map's own corner controls above the phone sheet.
+    <div className="map-inset relative h-full w-full" style={{ "--map-inset": `${bottomInset}px` } as CSSProperties}>
       <div ref={container} className="h-full w-full" aria-label="Map of counties colored by score" role="region" />
       {!ready && !error && (
         <p className="absolute inset-0 grid place-items-center text-sm text-neutral-500">Loading map…</p>
@@ -320,7 +347,7 @@ export default function CountyMap({ data, scoresByFips, rankByFips, relative, se
       )}
       {ready && relative.size > 0 && <Legend count={relative.size} />}
       {basemapOnline === false && (
-        <p className="pointer-events-none absolute bottom-2 left-2 rounded bg-white/85 px-2 py-1 text-[11px] text-neutral-700 dark:bg-neutral-900/85 dark:text-neutral-300">
+        <p className="pointer-events-none absolute bottom-[calc(var(--map-inset)+0.5rem)] left-2 rounded bg-white/85 px-2 py-1 text-[11px] text-neutral-700 dark:bg-neutral-900/85 dark:text-neutral-300">
           Offline — showing county lines only
         </p>
       )}
@@ -330,7 +357,7 @@ export default function CountyMap({ data, scoresByFips, rankByFips, relative, se
 
 function Legend({ count }: { count: number }) {
   return (
-    <div className="pointer-events-none absolute right-2 bottom-8 w-48 rounded-md bg-white/90 px-2.5 py-2 text-[11px] text-neutral-700 shadow-sm dark:bg-neutral-900/90 dark:text-neutral-300">
+    <div className="pointer-events-none absolute right-2 bottom-[calc(var(--map-inset)+2rem)] w-48 rounded-md bg-white/90 px-2.5 py-2 text-[11px] text-neutral-700 shadow-sm dark:bg-neutral-900/90 dark:text-neutral-300">
       <p className="font-medium">Top {count} results</p>
       <div
         className="mt-1 h-2 rounded-sm"

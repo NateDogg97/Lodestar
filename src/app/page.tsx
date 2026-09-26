@@ -3,7 +3,8 @@ import { CountyFinder } from "@/components/finder/county-finder";
 export default function Home() {
   return (
     <main className="flex h-dvh flex-col">
-      <header className="flex shrink-0 items-baseline justify-between gap-4 border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
+      {/* Phones use the finder's own top bar instead, to leave the map room. */}
+      <header className="hidden shrink-0 md:flex items-baseline justify-between gap-4 border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
         <h1 className="text-base font-semibold tracking-tight">New Home Finder</h1>
         <p
           className="hidden truncate text-[11px] text-neutral-500 sm:block dark:text-neutral-400"
