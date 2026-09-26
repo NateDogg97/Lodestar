@@ -160,6 +160,8 @@ COLUMN_ORDER = [
     # NOAA
     "summer_high_f", "winter_low_f", "spring_mean_f", "fall_mean_f",
     "annual_precip_in", "annual_snow_in",
+    "hottest_month_high_f", "coldest_month_low_f",
+    "days_above_90f", "nights_below_32f", "rainy_days", "snow_days",
     "climate_station_id", "climate_station_dist_mi", "climate_station_count",
     # derived
     "home_value_to_income", "rent_to_income", "price_to_rent", "real_income",

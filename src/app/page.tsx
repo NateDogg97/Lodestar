@@ -1,17 +1,17 @@
+import { CountyFinder } from "@/components/finder/county-finder";
+
 export default function Home() {
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-6 p-8 text-center">
-      <div className="space-y-2">
-        <h1 className="text-4xl font-semibold tracking-tight">
-          New Home Finder
-        </h1>
-        <p className="max-w-md text-neutral-500 dark:text-neutral-400">
-          Compare and shortlist the places our family might move to next.
+    <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 lg:px-8">
+      <header className="mb-8 space-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">New Home Finder</h1>
+        <p className="max-w-2xl text-sm text-neutral-500 dark:text-neutral-400">
+          Every US county except Alaska, ranked by what you care about. Data: Census ACS
+          2019–2023, BEA price parities 2024, Stanford SEDA schools, NOAA 1991–2020 climate
+          normals.
         </p>
-      </div>
-      <p className="text-xs text-neutral-400 dark:text-neutral-500">
-        Install this app from your browser menu to use it from your home screen.
-      </p>
+      </header>
+      <CountyFinder />
     </main>
   );
 }

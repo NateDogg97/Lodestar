@@ -106,11 +106,11 @@ describe("scoreCounties", () => {
 
   it("computes Σ(weight × percentile) / Σ(weight)", () => {
     const data = setup([
-      { fips: "00001", school_achievement: 1, winter_low_f: 10 },
-      { fips: "00002", school_achievement: 0, winter_low_f: 50 },
+      { fips: "00001", school_achievement: 1, coldest_month_low_f: 10 },
+      { fips: "00002", school_achievement: 0, coldest_month_low_f: 50 },
     ]);
     // county 1: schools 100 (w3), winter 0 (w1) -> 300/4 = 75
-    const s = scoreCounties(data, { weights: { school_achievement: 3, winter_low_f: 1 } });
+    const s = scoreCounties(data, { weights: { school_achievement: 3, coldest_month_low_f: 1 } });
     expect(s[0].score).toBe(75);
     expect(s[1].score).toBe(25);
   });
@@ -129,11 +129,11 @@ describe("scoreCounties", () => {
 
   it("drops a missing weighted metric from that county's average and flags it", () => {
     const data = setup([
-      { fips: "00001", school_achievement: null, winter_low_f: 50 },
-      { fips: "00002", school_achievement: 1, winter_low_f: 10 },
-      { fips: "00003", school_achievement: 0, winter_low_f: 30 },
+      { fips: "00001", school_achievement: null, coldest_month_low_f: 50 },
+      { fips: "00002", school_achievement: 1, coldest_month_low_f: 10 },
+      { fips: "00003", school_achievement: 0, coldest_month_low_f: 30 },
     ]);
-    const s = scoreCounties(data, { weights: { school_achievement: 5, winter_low_f: 1 } });
+    const s = scoreCounties(data, { weights: { school_achievement: 5, coldest_month_low_f: 1 } });
     // county 1 is scored on winter alone (100th percentile), not dragged to 0 by the gap
     expect(s[0].score).toBe(100);
     expect(s[0].missingMetrics).toEqual(["school_achievement"]);
@@ -223,11 +223,11 @@ describe("rankCounties", () => {
 describe("explainScore", () => {
   it("returns the top positive and bottom negative contributors by weight × (percentile − 50)", () => {
     const data = setup([
-      { fips: "00001", school_achievement: 1, winter_low_f: 0, median_gross_rent: 500, annual_snow_in: 10 },
-      { fips: "00002", school_achievement: 0, winter_low_f: 60, median_gross_rent: 2000, annual_snow_in: 10 },
+      { fips: "00001", school_achievement: 1, coldest_month_low_f: 0, median_gross_rent: 500, annual_snow_in: 10 },
+      { fips: "00002", school_achievement: 0, coldest_month_low_f: 60, median_gross_rent: 2000, annual_snow_in: 10 },
     ]);
     const [s] = scoreCounties(data, {
-      weights: { school_achievement: 2, winter_low_f: 5, median_gross_rent: 1, annual_snow_in: 3 },
+      weights: { school_achievement: 2, coldest_month_low_f: 5, median_gross_rent: 1, annual_snow_in: 3 },
     });
     const { strengths, weaknesses } = explainScore(s);
     // schools 100 × w2 = +100; rent 100 × w1 = +50; winter 0 × w5 = −250; snow tied at 50 = 0
@@ -235,16 +235,16 @@ describe("explainScore", () => {
       ["school_achievement", 100],
       ["median_gross_rent", 50],
     ]);
-    expect(weaknesses.map((c) => [c.metric, c.impact])).toEqual([["winter_low_f", -250]]);
+    expect(weaknesses.map((c) => [c.metric, c.impact])).toEqual([["coldest_month_low_f", -250]]);
   });
 
   it("leaves unknown metrics out of the explanation", () => {
     const data = setup([
-      { fips: "00001", school_achievement: null, winter_low_f: 60 },
-      { fips: "00002", school_achievement: 1, winter_low_f: 0 },
+      { fips: "00001", school_achievement: null, coldest_month_low_f: 60 },
+      { fips: "00002", school_achievement: 1, coldest_month_low_f: 0 },
     ]);
-    const [s] = scoreCounties(data, { weights: { school_achievement: 5, winter_low_f: 1 } });
+    const [s] = scoreCounties(data, { weights: { school_achievement: 5, coldest_month_low_f: 1 } });
     const { strengths, weaknesses } = explainScore(s);
-    expect([...strengths, ...weaknesses].map((c) => c.metric)).toEqual(["winter_low_f"]);
+    expect([...strengths, ...weaknesses].map((c) => c.metric)).toEqual(["coldest_month_low_f"]);
   });
 });

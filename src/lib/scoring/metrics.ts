@@ -45,9 +45,17 @@ export const METRICS = [
   // schools (SEDA; grade levels above/below the national average)
   { key: "school_achievement", label: "School achievement", unit: "grades", group: "schools", defaultDirection: "higher" },
 
-  // climate (NOAA 1991–2020 normals)
-  { key: "summer_high_f", label: "Summer high", unit: "°F", group: "climate", defaultDirection: "lower" },
-  { key: "winter_low_f", label: "Winter low", unit: "°F", group: "climate", defaultDirection: "higher" },
+  // climate (NOAA 1991–2020 normals). The year is described by its two ends
+  // plus how long the extremes last — see Working Master Plan §6 "Climate
+  // preferences". The 3-month summer/winter averages stay in the data for
+  // display but are not offered here: the hottest/coldest month is the real
+  // peak and trough, and is right even where the peak isn't in Jun–Aug.
+  { key: "hottest_month_high_f", label: "Hottest month's high", unit: "°F", group: "climate", defaultDirection: "lower" },
+  { key: "coldest_month_low_f", label: "Coldest month's low", unit: "°F", group: "climate", defaultDirection: "higher" },
+  { key: "days_above_90f", label: "Days above 90°F", unit: "days/yr", group: "climate", defaultDirection: "lower" },
+  { key: "nights_below_32f", label: "Nights below freezing", unit: "nights/yr", group: "climate", defaultDirection: "lower" },
+  { key: "rainy_days", label: "Rainy days", unit: "days/yr", group: "climate", defaultDirection: "lower" },
+  { key: "snow_days", label: "Snowy days (1 in+)", unit: "days/yr", group: "climate", defaultDirection: "lower" },
   { key: "spring_mean_f", label: "Spring average", unit: "°F", group: "climate", defaultDirection: "higher" },
   { key: "fall_mean_f", label: "Fall average", unit: "°F", group: "climate", defaultDirection: "higher" },
   { key: "annual_precip_in", label: "Annual precipitation", unit: "in", group: "climate", defaultDirection: "lower" },

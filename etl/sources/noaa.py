@@ -3,8 +3,14 @@ SOURCE: NOAA NCEI 1991-2020 U.S. Climate Normals — climate.
 
 WHAT THIS PRODUCES
     fips, summer_high_f, winter_low_f, spring_mean_f, fall_mean_f,
-    annual_precip_in, annual_snow_in, climate_station_id,
-    climate_station_dist_mi, climate_station_count
+    annual_precip_in, annual_snow_in,
+    hottest_month_high_f, coldest_month_low_f,
+    days_above_90f, nights_below_32f, rainy_days, snow_days,
+    climate_station_id, climate_station_dist_mi, climate_station_count
+
+    The hottest/coldest-month and day-count columns implement the climate
+    preference model in Working Master Plan.md §6 "Climate preferences":
+    describe the year by its two ends plus how long the extremes last.
 
     Plus a SEPARATE wide file, data/interim/noaa_monthly.csv, holding all 12
     monthly values per county. Phase 1 does not use it; the Phase 6 climate
@@ -113,10 +119,19 @@ K_EXPANDED = 40
 
 # Stations are chosen independently for each group. Columns within a group
 # travel together (a temperature station usually reports all three).
+#
+# Day-counts get their own groups even where coverage matches a sibling
+# variable today: measured 2026-09-26 on a 4,000-station sample, hot-day and
+# freezing-night counts exist wherever TMAX does, but rainy-day counts exist
+# at 3,287 stations vs 3,777 for PRCP — the snowfall trap again.
 VARIABLE_GROUPS = {
     "temperature": ("tmax", "tmin", "tavg"),
     "precipitation": ("prcp",),
     "snowfall": ("snow",),
+    "hot_days": ("dx90",),
+    "frost_nights": ("dn32",),
+    "rain_days": ("rd01",),
+    "snow_days": ("sd10",),
 }
 
 # Station-file column -> output column in the monthly table.
@@ -126,6 +141,10 @@ MONTHLY_COLUMNS = {
     "tavg": "tavg_f",
     "prcp": "precip_in",
     "snow": "snow_in",
+    "dx90": "days_above_90f",
+    "dn32": "nights_below_32f",
+    "rd01": "rainy_days",
+    "sd10": "snow_days",
 }
 
 # Parallel station fetches. NCEI is a public file server; 6 workers with the
@@ -168,11 +187,19 @@ SEASON_MONTHS = {
 #   MLY-TAVG-NORMAL   monthly normal daily average temperature (F)
 #   MLY-PRCP-NORMAL   monthly normal precipitation (inches)
 #   MLY-SNOW-NORMAL   monthly normal snowfall (inches)
+#   MLY-TMAX-AVGNDS-GRTH090   avg days per month with high >= 90 F
+#   MLY-TMIN-AVGNDS-LSTH032   avg days per month with low <= 32 F
+#   MLY-PRCP-AVGNDS-GE001HI   avg days per month with >= 0.01 in precipitation
+#   MLY-SNOW-AVGNDS-GE010TI   avg days per month with >= 1.0 in snowfall
 VAR_TMAX = "MLY-TMAX-NORMAL"
 VAR_TMIN = "MLY-TMIN-NORMAL"
 VAR_TAVG = "MLY-TAVG-NORMAL"
 VAR_PRCP = "MLY-PRCP-NORMAL"
 VAR_SNOW = "MLY-SNOW-NORMAL"
+VAR_DX90 = "MLY-TMAX-AVGNDS-GRTH090"
+VAR_DN32 = "MLY-TMIN-AVGNDS-LSTH032"
+VAR_RD01 = "MLY-PRCP-AVGNDS-GE001HI"
+VAR_SD10 = "MLY-SNOW-AVGNDS-GE010TI"
 
 # NOAA uses -9999 and similar for missing values.
 NOAA_MISSING = {-9999, -8888, -7777, -6666, -5555}
@@ -301,6 +328,10 @@ def _parse_station_csv(text: str, station: str) -> pd.DataFrame | None:
         "tavg": _num(VAR_TAVG),
         "prcp": _num(VAR_PRCP),
         "snow": _num(VAR_SNOW),
+        "dx90": _num(VAR_DX90),
+        "dn32": _num(VAR_DN32),
+        "rd01": _num(VAR_RD01),
+        "sd10": _num(VAR_SD10),
     }).dropna(subset=["month"])
 
     if out[list(MONTHLY_COLUMNS)].notna().sum().sum() == 0:
@@ -532,12 +563,13 @@ def fetch(limit: int | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
         sub = fips_group[fips_group["month"].isin(months)][col].dropna()
         if sub.empty:
             return float("nan")
-        # An annual total with a month missing would be silently low. None
-        # were partial on 2026-09-22, but per-group station selection makes
-        # it possible, so refuse rather than undercount.
-        if how == "sum" and len(sub) < len(months):
+        # An annual total with a month missing would be silently low, and a
+        # max/min over a partial year could miss the real peak. None were
+        # partial on 2026-09-22, but per-group station selection makes it
+        # possible, so refuse rather than guess.
+        if how != "mean" and len(sub) < len(months):
             return float("nan")
-        return float(sub.mean() if how == "mean" else sub.sum())
+        return float({"mean": sub.mean, "sum": sub.sum, "max": sub.max, "min": sub.min}[how]())
 
     summary_rows = []
     for fips, group in monthly.groupby("fips"):
@@ -552,6 +584,15 @@ def fetch(limit: int | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
             # Annual totals are sums across the 12 monthly normals.
             "annual_precip_in": _season(group, list(range(1, 13)), "precip_in", "sum"),
             "annual_snow_in": _season(group, list(range(1, 13)), "snow_in", "sum"),
+            # The two ends of the year (plan §6 "Climate preferences"). The
+            # hottest month is not always in Jun-Aug — San Francisco's is Sep.
+            "hottest_month_high_f": _season(group, list(range(1, 13)), "tmax_f", "max"),
+            "coldest_month_low_f": _season(group, list(range(1, 13)), "tmin_f", "min"),
+            # Uncomfortable-day counts: annual sums of the monthly averages.
+            "days_above_90f": _season(group, list(range(1, 13)), "days_above_90f", "sum"),
+            "nights_below_32f": _season(group, list(range(1, 13)), "nights_below_32f", "sum"),
+            "rainy_days": _season(group, list(range(1, 13)), "rainy_days", "sum"),
+            "snow_days": _season(group, list(range(1, 13)), "snow_days", "sum"),
         })
 
     summary = pd.DataFrame(summary_rows)

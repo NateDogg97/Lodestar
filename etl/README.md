@@ -188,6 +188,10 @@ One row per county, 3,114 rows (Alaska excluded).
 | `winter_low_f` | °F, mean of Dec/Jan/Feb daily minima |
 | `spring_mean_f`, `fall_mean_f` | °F |
 | `annual_precip_in`, `annual_snow_in` | inches/year |
+| `hottest_month_high_f`, `coldest_month_low_f` | °F — the peak and trough of the year (plan §6 *Climate preferences*) |
+| `days_above_90f`, `nights_below_32f` | Average days/nights per year past the threshold |
+| `rainy_days` | Days/year with ≥ 0.01 in precipitation |
+| `snow_days` | Days/year with ≥ 1.0 in snowfall |
 | `climate_station_id` | Nearest contributing station |
 | `climate_station_dist_mi` | Distance to it — **use this to flag low-confidence values** |
 | `climate_station_count` | How many stations were averaged |

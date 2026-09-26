@@ -222,6 +222,12 @@ PLAUSIBLE_RANGES = {
     "winter_low_f": (-40, 80),
     "annual_precip_in": (0, 250),
     "annual_snow_in": (0, 400),
+    "hottest_month_high_f": (50, 125),
+    "coldest_month_low_f": (-30, 75),
+    "days_above_90f": (0, 366),
+    "nights_below_32f": (0, 366),
+    "rainy_days": (0, 366),
+    "snow_days": (0, 366),
 }
 
 

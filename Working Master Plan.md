@@ -8,6 +8,11 @@
 > Last updated: 2026-09-22
 >
 > **Changelog**
+> - 2026-09-26 — Six climate columns added (full coverage except Nye NV snow days). **Phase 3
+>   list view built** and checked in the browser: weight sliders, direction toggles, min/max
+>   limits, unknown toggle, top-50 list with reasons and an expandable breakdown. Found that
+>   big western counties get climate from their geographic middle, not where people live —
+>   fix proposed below.
 > - 2026-09-22 — **Climate preference model decided** (§6 *Climate preferences*): describe
 >   the year by its two ends — hottest-month high and coldest-month low — plus counts of
 >   uncomfortable days. No single year-round band, no annual averages. Built with existing
@@ -567,13 +572,33 @@ Known rough edges to expect:
 - Data finding while testing: the **Miami metro is the second-costliest in BEA 2024**
   (114.2), ahead of Los Angeles (113.6). Surprising but correct.
 
-### Phase 3 — Ranked list view ⬅️ **NEXT**
-- [ ] **First: climate columns** (§6 *Climate preferences*) — add `hottest_month_high_f`,
-      `coldest_month_low_f`, `days_above_90f`, `nights_below_32f`, `rainy_days`, `snow_days`
-      to the NOAA source; check per-variable station coverage; add them to
-      `src/lib/scoring/metrics.ts` and the real-data tests
-- [ ] Table of top 50 counties with score breakdown
-- [ ] Weight sliders + hard filter inputs
+### Phase 3 — Ranked list view ⬅️ **IN PROGRESS**
+- [x] **First: climate columns** (§6 *Climate preferences*) — `hottest_month_high_f`,
+      `coldest_month_low_f`, `days_above_90f`, `nights_below_32f`, `rainy_days`, `snow_days`.
+      Each day-count gets its own station selection: rainy-day counts exist at fewer stations
+      than rainfall totals (3,287 vs 3,777 in a 4,000-station sample). **Coverage: every
+      county, except Nye County NV for snow days.** Existing columns unchanged. Spot checks:
+      Phoenix 176 days over 90°F, Seattle 187 rainy days, San Francisco's hottest month is
+      September. In the metric list the hottest/coldest-month columns replace the 3-month
+      summer/winter averages (those stay in the data for display).
+- [x] Table of top 50 counties with score breakdown — `src/components/finder/`. Each row shows
+      up to 3 strengths / 3 weaknesses; clicking opens every weighted metric's value,
+      percentile, weight and effect. "Show 50 more" pages through the rest.
+- [x] Weight sliders + hard filter inputs — per metric: weight 0–5, "lower/higher is better"
+      toggle, optional min/max limit (placeholders show the national range in the units you
+      type). "Show unknown" toggle; match / unknown / ruled-out counts. Starts from modest
+      defaults (cost 3, schools 3, days above 90°F 2, nights below freezing 2); "Clear all"
+      empties them.
+- [ ] **Measure climate where people live.** Found 2026-09-26: a county's climate is taken at
+      its Gazetteer *internal point* — its geographic middle. For big western counties that's
+      the wrong place: San Diego County shows 84 days over 90°F and 30 freezing nights (point
+      inland, not the coast); Riverside County shows 12 rainy days (point in the desert, not
+      Riverside city). Fix: search for stations from the Census **centers of population**
+      (2020, free, one file per county), keeping the internal point as a fallback. Also fixes
+      San Francisco's point sitting in the Pacific. Changes every climate value slightly and
+      big western counties a lot, so re-check the real-data tests afterwards.
+- [ ] Tuning pass (§12 — the real risk): try real searches, note where rankings feel wrong,
+      adjust metric defaults and directions.
 - [ ] *(This is already a useful product. May turn out to be more useful than the map.)*
 
 ### Phase 4 — Map

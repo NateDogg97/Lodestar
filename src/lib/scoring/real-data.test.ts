@@ -64,20 +64,20 @@ describe("rankings agree with common knowledge", () => {
   });
 
   it("warm winters: the top 15 are all Florida or Hawaii", () => {
-    const { ranked } = run({ weights: { winter_low_f: 5 } });
+    const { ranked } = run({ weights: { coldest_month_low_f: 5 } });
     const states = new Set(ranked.slice(0, 15).map((r) => data.state[r.index]));
     expect([...states].every((s) => s === "FL" || s === "HI")).toBe(true);
   });
 
   it("warm winters: Miami beats Austin beats Cleveland", () => {
-    const { rankOf } = run({ weights: { winter_low_f: 5 } });
+    const { rankOf } = run({ weights: { coldest_month_low_f: 5 } });
     expect(rankOf(MIAMI_DADE)).toBeLessThan(rankOf(TRAVIS));
     expect(rankOf(TRAVIS)).toBeLessThan(rankOf(CUYAHOGA));
   });
 
   it("flipping a direction flips the ranking", () => {
-    const warm = run({ weights: { winter_low_f: 5 } });
-    const cold = run({ weights: { winter_low_f: 5 }, directions: { winter_low_f: "lower" } });
+    const warm = run({ weights: { coldest_month_low_f: 5 } });
+    const cold = run({ weights: { coldest_month_low_f: 5 }, directions: { coldest_month_low_f: "lower" } });
     expect(cold.get(CUYAHOGA).score!).toBeGreaterThan(warm.get(CUYAHOGA).score!);
     expect(cold.rankOf(MIAMI_DADE)).toBeGreaterThan(cold.ranked.length - 50);
   });
@@ -85,6 +85,46 @@ describe("rankings agree with common knowledge", () => {
   it("cheap with good schools: San Francisco is nowhere near the top", () => {
     const { rankOf, ranked } = run({ weights: { rpp_all: 3, school_achievement: 3 } });
     expect(rankOf(SAN_FRANCISCO)).toBeGreaterThan(ranked.length / 2);
+  });
+});
+
+describe("climate: the two ends of the year plus uncomfortable days", () => {
+  const PHOENIX = "04013";
+  const SEATTLE = "53033";
+
+  it("finds each county's real hottest month — San Francisco peaks in September, so a Jun–Aug average undersells it", () => {
+    const sf = data.indexByFips.get(SAN_FRANCISCO)!;
+    expect(data.values.hottest_month_high_f[sf]).toBeGreaterThan(72);
+  });
+
+  it("ceiling and floor together keep mild places and rule out both extremes", () => {
+    const { get } = run({
+      weights: {},
+      filters: [
+        { metric: "hottest_month_high_f", max: 90 },
+        { metric: "coldest_month_low_f", min: 30 },
+      ],
+    });
+    expect(get(SAN_FRANCISCO).status).toBe("match");
+    expect(get(PHOENIX).status).toBe("excluded"); // too hot
+    expect(get(CUYAHOGA).status).toBe("excluded"); // too cold
+  });
+
+  it("day-counts rank as expected: Phoenix has the hot days, Seattle the rainy ones", () => {
+    const hot = run({ weights: { days_above_90f: 5 } });
+    expect(hot.get(PHOENIX).score!).toBeLessThan(5);
+    expect(hot.get(SAN_FRANCISCO).score!).toBeGreaterThan(hot.get(TRAVIS).score!);
+    const dry = run({ weights: { rainy_days: 5 } });
+    expect(dry.get(PHOENIX).score!).toBeGreaterThan(dry.get(SEATTLE).score!);
+    expect(dry.get(SEATTLE).score!).toBeLessThan(10);
+  });
+
+  it("every county has the new climate columns except Nye County's snow days", () => {
+    for (const key of ["hottest_month_high_f", "coldest_month_low_f", "days_above_90f", "nights_below_32f", "rainy_days"] as const) {
+      expect(data.values[key].some(Number.isNaN)).toBe(false);
+    }
+    const missingSnowDays = data.fips.filter((_, i) => Number.isNaN(data.values.snow_days[i]));
+    expect(missingSnowDays).toEqual(["32023"]);
   });
 });
 
@@ -111,9 +151,9 @@ describe("filters and unknowns on real data", () => {
 
 describe("score decomposition on real data", () => {
   it("explains a Miami ranking with warmth as a strength and cost as a weakness", () => {
-    const { get } = run({ weights: { winter_low_f: 3, rpp_all: 3, school_achievement: 1 } });
+    const { get } = run({ weights: { coldest_month_low_f: 3, rpp_all: 3, school_achievement: 1 } });
     const { strengths, weaknesses } = explainScore(get(MIAMI_DADE));
-    expect(strengths[0].metric).toBe("winter_low_f");
+    expect(strengths[0].metric).toBe("coldest_month_low_f");
     expect(weaknesses.map((w) => w.metric)).toContain("rpp_all");
   });
 });
@@ -121,7 +161,7 @@ describe("score decomposition on real data", () => {
 describe("performance", () => {
   it("re-scores the whole country fast enough for a slider drag", () => {
     const input: ScoringInput = {
-      weights: { rpp_all: 3, school_achievement: 4, winter_low_f: 2, annual_snow_in: 1, median_home_value: 2 },
+      weights: { rpp_all: 3, school_achievement: 4, coldest_month_low_f: 2, annual_snow_in: 1, median_home_value: 2 },
       filters: [{ metric: "population", min: 20_000 }],
     };
     const t0 = performance.now();

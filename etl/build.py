@@ -195,6 +195,8 @@ COLUMN_DECIMALS = {
     "median_gross_rent": 0, "real_income": 0,
     "summer_high_f": 2, "winter_low_f": 2, "spring_mean_f": 2, "fall_mean_f": 2,
     "annual_precip_in": 2, "annual_snow_in": 2,
+    "hottest_month_high_f": 2, "coldest_month_low_f": 2,
+    "days_above_90f": 1, "nights_below_32f": 1, "rainy_days": 1, "snow_days": 1,
     "climate_station_dist_mi": 1, "climate_station_count": 0,
     "rent_to_income": 4,
     "acs_vintage": 0, "rpp_vintage": 0,
