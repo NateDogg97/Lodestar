@@ -344,6 +344,17 @@ def _check_boundaries(df: pd.DataFrame) -> list[Finding]:
     return [Finding("INFO", f"Boundaries cover exactly the {len(shapes)} counties in the data")]
 
 
+def _check_monthly_climate(df: pd.DataFrame) -> list[Finding]:
+    """The Climate tab's monthly file must cover the same counties, and agree
+    with the annual climate columns it shares stations with (etl/climate.py)."""
+    from . import climate
+
+    if not climate.monthly_path().exists():
+        return [Finding("WARN", "No monthly climate file (data/interim/noaa_monthly.csv); "
+                                "the app's Climate tab will have no chart")]
+    return [Finding(sev, msg) for sev, msg in climate.check(climate.load_monthly(), df)]
+
+
 def validate(df: pd.DataFrame) -> tuple[list[Finding], bool]:
     """Run all checks. Returns (findings, passed)."""
     findings: list[Finding] = []
@@ -357,6 +368,7 @@ def validate(df: pd.DataFrame) -> tuple[list[Finding], bool]:
     findings += _check_plausible_ranges(df)
     findings += _check_derived_sanity(df)
     findings += _check_boundaries(df)
+    findings += _check_monthly_climate(df)
 
     passed = not any(f.severity == "FAIL" for f in findings)
     return findings, passed

@@ -271,6 +271,13 @@ def publish(df: pd.DataFrame) -> None:
     print(f"Published to {config.PUBLISH_PATH.relative_to(config.ETL_DIR.parent)} "
           f"({size_kb:,.0f} KB)")
 
+    # Monthly climate goes out with the county table it was validated against.
+    from . import climate
+    if climate.monthly_path().exists():
+        path = climate.publish(df)
+        print(f"Published to {path.relative_to(config.ETL_DIR.parent)} "
+              f"({path.stat().st_size / 1024:,.0f} KB)")
+
     # Boundaries go out with the data they were validated against.
     from .sources import boundaries
     if boundaries.output_path().exists():

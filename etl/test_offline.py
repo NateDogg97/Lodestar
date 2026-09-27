@@ -681,6 +681,54 @@ def test_boundaries_must_match_data() -> None:
     path.unlink()
 
 
+def test_monthly_climate() -> None:
+    print("\nmonthly climate: payload shape and consistency with annual columns")
+    from . import climate, validate
+    check(config.INTERIM_DIR in climate.monthly_path().parents, "monthly path follows the (isolated) interim dir")
+    df = pd.DataFrame({"fips": ["01001", "06075"]})
+    check([f.severity for f in validate._check_monthly_climate(df)] == ["WARN"],
+          "no monthly file -> WARN, not a crash")
+
+    # Two counties, 12 months each, with simple known numbers.
+    rows = []
+    for fips, base in (("01001", 60.0), ("06075", 50.0)):
+        for m in range(1, 13):
+            rows.append({"fips": fips, "month": m, "tmax_f": base + m, "tmin_f": base - 20 + m,
+                         "tavg_f": base - 10 + m, "precip_in": 1.0, "snow_in": 0.0,
+                         "days_above_90f": 0.0, "nights_below_32f": 2.0, "rainy_days": 5.0,
+                         "snow_days": 0.0})
+    monthly = pd.DataFrame(rows)
+    annual = pd.DataFrame({
+        "fips": ["01001", "06075"], "hottest_month_high_f": [72.0, 62.0], "coldest_month_low_f": [41.0, 31.0],
+        "annual_precip_in": [12.0, 12.0], "annual_snow_in": [0.0, 0.0], "days_above_90f": [0.0, 0.0],
+        "nights_below_32f": [24.0, 24.0], "rainy_days": [60.0, 60.0], "snow_days": [0.0, 0.0],
+    })
+    sev = [s for s, _ in climate.check(monthly, annual)]
+    check(sev == ["INFO"], "consistent monthly and annual data passes", str(climate.check(monthly, annual)))
+
+    off = annual.copy()
+    off.loc[0, "rainy_days"] = 90.0
+    check(any(s == "FAIL" and "rainy_days" in m for s, m in climate.check(monthly, off)),
+          "an annual column that isn't its monthly sum FAILs")
+    short = monthly[~((monthly["fips"] == "01001") & (monthly["month"] == 7))]
+    check(any(s == "FAIL" and "months 1–12" in m for s, m in climate.check(short, annual)),
+          "a county missing a month FAILs")
+    upside = monthly.copy()
+    upside.loc[0, "tmin_f"] = 99.0
+    check(any(s == "FAIL" and "low is above" in m for s, m in climate.check(upside, annual)),
+          "a low above the high FAILs")
+    nochart = pd.concat([annual, pd.DataFrame({"fips": ["48453"], "hottest_month_high_f": [96.0]})])
+    check(any(s == "FAIL" and "no monthly rows" in m for s, m in climate.check(monthly, nochart)),
+          "a county with climate numbers but no chart FAILs")
+
+    payload = climate.to_payload(monthly, ["06075", "01001", "99999"])
+    check(list(payload["counties"]) == ["06075", "01001"], "published in county order; unknown county skipped")
+    series = payload["counties"]["01001"]
+    check(len(series) == len(climate.MEASURES) and all(len(x) == 12 for x in series),
+          "one 12-month series per measure")
+    check(series[0][0] == 61.0 and series[0][11] == 72.0, "January first, values rounded")
+
+
 def main() -> int:
     print("=" * 70)
     print("OFFLINE TEST SUITE — no network required")
@@ -705,6 +753,7 @@ def main() -> int:
         test_noaa_per_variable_station_selection()
         test_population_center_search_points()
         test_boundaries_must_match_data()
+        test_monthly_climate()
         test_gazetteer_encoding_guard()
         test_app_payload_is_compact_and_lossless_where_it_matters()
 

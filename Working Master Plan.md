@@ -859,7 +859,10 @@ first place view, not at startup. One file, not per state, because the envelope 
 "climate like a place I know" need every county's curve.
 
 **Build order:**
-- [ ] ETL: publish `climate.json` (+ validation, offline tests)
+- [x] ETL: publish `climate.json` (+ validation, offline tests) — 2026-09-27. `etl/climate.py`;
+      3,140 counties × 12 months × 8 measures, 1.36 MB / ~370 KB gzipped, precached (total
+      precache now 5.9 MB). `validate` checks the monthly data reproduces the annual columns
+      (it does, for every county).
 - [ ] Place view: list ↔ place states, header, tabs (Overview / Climate / Laws & taxes),
       "← All results" with scroll restore, Back gesture, phone sheet behavior
 - [ ] Overview tab: reasons + per-filter pass/fail/unknown + weighted breakdown

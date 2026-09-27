@@ -214,6 +214,20 @@ Monthly values (12 per county) are kept separately in
 
 State laws and taxes are a separate pipeline — see `LAWS.md` and `etl/laws/`.
 
+### Monthly climate — `public/data/climate.json` (`etl/climate.py`)
+
+The Climate tab's chart data: every county's 12 monthly NOAA 1991–2020 normals for 8
+measures — average high, average low, precipitation, snowfall, days above 90°F, nights below
+freezing, rainy days (≥ 0.01 in), snowy days (≥ 1 in) — one decimal, January first, keyed
+by FIPS. Built from `data/interim/noaa_monthly.csv`, which the NOAA step writes from the same
+stations as the annual columns. 3,140 counties (the 4 remote Alaska areas with no climate data
+are absent); 1.36 MB, ~370 KB gzipped, precached for offline use.
+
+`validate` FAILs unless every county with annual climate columns has exactly months 1–12,
+every monthly value is plausible, no month's low exceeds its high, and the monthly data
+reproduces the annual columns (max/min of the monthly highs/lows; sums of amounts and day
+counts).
+
 ---
 
 ## Source notes
