@@ -8,6 +8,10 @@
 > Last updated: 2026-09-26
 >
 > **Changelog**
+> - 2026-09-27 — **Phase 6 planned: place view + climate.** Selecting a county replaces the
+>   results list with a Google Maps–style place view (header, Overview / Climate / Laws &
+>   taxes tabs, "← All results", Back gesture); the detail view moves here from Phase 7.
+>   Climate tab: monthly chart incl. rainy/snowy day counts, compare with a county you pick.
 > - 2026-09-27 — **Law filters.** Filters panel split into Place and Laws & taxes tabs; taxes
 >   are sliders, policies are pass/fail "acceptable values" filters. See Phase 5.
 > - 2026-09-27 — **Phase 5 started: state laws, sourced and re-checked automatically.** No
@@ -817,9 +821,50 @@ Known rough edges to expect:
       (`scope: "state"`) and category filters, joined from laws.json per county (LAWS.md §10).
 - [ ] Each new metric = one column + one slider
 
-### Phase 6 — Climate tab
-- [ ] Per-location panel with monthly temperature band chart (data already in the Phase 1 pull)
-- [ ] Precipitation and snowfall by month
+### Phase 6 — Place view and climate
+
+**Decided 2026-09-27 (planning session):**
+
+*Place view* — modeled on Google Maps' place sheet. The Results panel (desktop) / bottom sheet
+(phone) has two states, **list** and **place**:
+- Selecting a county (list or map) replaces the list with the place view; the map still
+  highlights and zooms. **"← All results"** returns to the list at the same scroll position.
+  The browser/phone **Back** gesture does the same (a history entry, not full URL state).
+  Clicking another county on the map while a place is open switches to it.
+- No previous/next arrows.
+- **Header** (always visible): name, state, rank "#1 of 3,109", score bar, a few quick-fact
+  chips. On a phone the 25% sheet shows the header; dragging up shows the tabs.
+- **Tabs, not collapsible sections**; always opens on **Overview**:
+  - *Overview* — why it ranks here (strengths/weaknesses), then **how it does on your
+    filters**: each weighted metric's value, percentile and effect; each limit and policy
+    filter as pass / fail / unknown. Filter *controls* stay in the Filters panel.
+  - *Climate* — see below.
+  - *Laws & taxes* — the existing section.
+  - Later: Photos, Things to do, … (the place profile, §10) as more tabs.
+
+*Climate tab:*
+- Monthly chart: low–high temperature range, precipitation amount, snowfall amount, and
+  **rainy-day and snowy-day counts** per month — all in the first version.
+- **Compare with a county you pick**: overlay a second county's curves (a "Compare with…"
+  picker). No national-typical line.
+- Key numbers: hottest month high, coldest month low, days > 90°F, nights < 32°F, rainy
+  days, snowy days. Source line: NOAA 1991–2020 normals + distance to the nearest station;
+  caution past ~25 mi.
+- Hand-built SVG (no chart library); must fit a 360 px phone.
+
+*Data:* the ETL publishes `public/data/climate.json` — all counties, 12 months × 8 measures
+(tmax, tmin, precip, snow, days > 90, nights < 32, rainy days, snow days), 1 decimal. Measured
+1.36 MB raw / 359 KB gzipped: under the 2 MB precache cap, so it works offline. Loaded on
+first place view, not at startup. One file, not per state, because the envelope filter and
+"climate like a place I know" need every county's curve.
+
+**Build order:**
+- [ ] ETL: publish `climate.json` (+ validation, offline tests)
+- [ ] Place view: list ↔ place states, header, tabs (Overview / Climate / Laws & taxes),
+      "← All results" with scroll restore, Back gesture, phone sheet behavior
+- [ ] Overview tab: reasons + per-filter pass/fail/unknown + weighted breakdown
+- [ ] Climate tab: monthly chart, key numbers, source; compare-with overlay
+- [ ] Köppen climate type (computed from monthly normals) as a label and filter
 - [x] ~~Add `days_above_90f` / `days_below_32f`~~ Moved to Phase 3 (§6 *Climate preferences*)
 - [ ] **Month-by-month climate envelope** — an acceptable range per month; a county passes if
       its monthly curve fits inside. Ships monthly normals to the browser as a separate,
@@ -833,12 +878,8 @@ Known rough edges to expect:
       cached version while the new service worker installs in the background; the update
       appears on the next load. Standard PWA behaviour, but confusing — show a small
       "Update available — reload" notice when a new worker is waiting.
-- [ ] **Selected-result detail view** *(maybe post-MVP; requested 2026-09-26).* Selecting a
-      result replaces the list in the Results panel/sheet with that county's own view, with
-      a "← All results" button back to the list at the same scroll position. The selected
-      card and the list stop sharing one scroll area, which also fixes the list shifting down
-      on select. This view is the frame the place profile (§10) will fill later. If any of
-      that ships in the MVP, build it as sections that can be empty (see §10).
+- [x] ~~Selected-result detail view~~ Moved to Phase 6 as the **place view** (2026-09-27) —
+      the climate section needs it.
 - [ ] URL-encoded filter state. *(The search is already saved in `localStorage` since
       2026-09-26. The URL adds shareable links and should win over the saved search when both
       are present.)*
