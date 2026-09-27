@@ -8,6 +8,20 @@
 > Last updated: 2026-09-26
 >
 > **Changelog**
+> - 2026-09-27 — **Phase 5 started: state laws, sourced and re-checked automatically.** No
+>   person reviews law values, so every value is parsed by code from a cited source
+>   (`etl/laws/refresh.py`), re-checked monthly by a GitHub Actions workflow, and shown in the
+>   county card with its source, the source's date, and the check date. Where a second source
+>   exists they must agree, or the cell is blank with the reason. The first pass found 4 stale
+>   income tax rates and an NCSL error (RI minimum wage). **Property tax** is now a county
+>   metric (ACS aggregates; matches Tax Foundation within 0.1 pt). Details in `LAWS.md`.
+> - 2026-09-27 — A deploy that adds a metric no longer breaks the first visit: the old
+>   service worker serves the old data file once, and a missing metric column now reads as
+>   unknown instead of an error.
+> - 2026-09-27 — **State laws have their own design doc, `LAWS.md`.** 12 laws with rubrics,
+>   verify tiers and sources; a long-format table in `etl/data/law_*.csv` (393/512 values
+>   filled from aggregators, none yet from primary sources); `etl/laws-v2/verify_laws.py`
+>   checks it. Answers the §11 "which state law attributes" question.
 > - 2026-09-26 — **Phase 4 complete; phone layout confirmed on a real phone.** Recorded the plan for a
 >   selected-result **detail view** (Phase 7, maybe post-MVP) and a later **place profile**
 >   (images, things to do, laws, good and bad). Profile content is deferred (§10) and must be
@@ -219,7 +233,8 @@ academically rigorous, nationally comparable, free, and rankable however we want
 
 **State laws have no API and never will.** Pick 6–8 binary or categorical attributes that actually
 matter, build a 50-row CSV by hand, commit it. This is the correct engineering answer, not a
-shortcut.
+shortcut. *Superseded 2026-09-27 by `LAWS.md`:* 12 laws, one row per (law, state) with
+per-fact sources and review dates, and a verifier. Some are ranking filters, some are info only.
 
 **"Distance to X" is not a runtime query.** Precompute in the ETL as ordinary columns:
 `dist_to_large_airport_mi`, `dist_to_coast_mi`, `dist_to_metro_500k_mi`. Haversine against a point
@@ -783,7 +798,18 @@ Known rough edges to expect:
 
 
 ### Phase 5 — Full metric set
-- [ ] Expand ETL: FEMA NRI, BLS unemployment, precomputed distances, state law CSV
+- [ ] Expand ETL: FEMA NRI, BLS unemployment, precomputed distances
+- [x] **Property tax rate** (2026-09-27) — county metric from ACS aggregates (B25090 ÷ B25082),
+      in the Housing group. Aggregates, not medians: the median-taxes variable is top-coded.
+- [x] **State laws: sourced, refreshed, displayed** (2026-09-27, `LAWS.md`). 9 laws, 456
+      values from Tax Foundation, NCSL, KFF, Giffords and EIA, cross-checked against Wikipedia
+      where possible; `python -m etl.laws.refresh`; monthly `.github/workflows/laws-refresh.yml`
+      (starts once the repo is pushed to GitHub); "Laws & taxes" in the county card with source,
+      source date and check date on every value (LAWS.md §10).
+- [ ] **Laws as scoring filters.** Numeric laws (income, sales tax, minimum wage, electricity)
+      join onto counties by state and become sliders. Boolean (require true / false / don't
+      care) and nominal (multi-select of acceptable values) need new controls; ordinals map
+      through their declared order.
 - [ ] Each new metric = one column + one slider
 
 ### Phase 6 — Climate tab
@@ -864,7 +890,8 @@ Not in MVP. Do not build these until the above ships.
 
 ## 11. Open questions
 
-- [ ] Which 6–8 state law attributes actually matter? (Needs a decision before Phase 5.)
+- [x] ~~Which 6–8 state law attributes actually matter?~~ Answered by `LAWS.md` (2026-09-27):
+      12 laws, each marked filter / info / both.
 - [ ] At tract level, does the RPP recombination need re-weighting, or do BEA's national weights
       hold well enough?
 - [ ] **Rural cost of living.** ~62% of counties carry their state's blended RPP because BEA

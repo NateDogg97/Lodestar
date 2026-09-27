@@ -166,6 +166,7 @@ One row per county, 3,144 rows (50 states + DC).
 | `median_home_value` | dollars, owner-occupied |
 | `median_household_income` | dollars |
 | `median_gross_rent` | dollars/month, includes utilities |
+| `aggregate_real_estate_taxes`, `aggregate_home_value` | dollars, owner-occupied (B25090, B25082). Inputs to `property_tax_effective_rate`; kept in `data/out/`, left out of the app payload |
 
 ### BEA Regional Price Parities
 | Column | Notes |
@@ -209,6 +210,9 @@ Monthly values (12 per county) are kept separately in
 | `rent_to_income` | `rent×12 / income` | 0.30 is the conventional threshold |
 | `price_to_rent` | `home_value / (rent×12)` | <15 favors buying, >20 favors renting |
 | `real_income` | `income / (rpp_all/100)` | Purchasing-power-adjusted income |
+| `property_tax_effective_rate` | `100 × aggregate_real_estate_taxes / aggregate_home_value` | Percent of home value paid in property tax per year. Aggregates because the median-taxes variable (B25103) is top-coded at $10,000+. State totals match Tax Foundation's Facts & Figures Table 33 within 0.1 point. |
+
+State laws and taxes are a separate pipeline — see `LAWS.md` and `etl/laws/`.
 
 ---
 

@@ -168,6 +168,12 @@ ACS_VARIABLES = {
     "B25077_001E": "median_home_value",       # owner-occupied, dollars
     "B19013_001E": "median_household_income",  # dollars
     "B25064_001E": "median_gross_rent",        # monthly dollars, incl. utilities
+    # Property tax (LAWS.md, Tier A). AGGREGATES, not medians: the median
+    # real-estate-tax variable (B25103) is top-coded at "$10,000+", which
+    # flattens exactly the high-tax counties the metric exists to separate.
+    # Aggregate taxes / aggregate value is also Tax Foundation's method.
+    "B25090_001E": "aggregate_real_estate_taxes",  # owner-occupied, dollars
+    "B25082_001E": "aggregate_home_value",         # owner-occupied, dollars
 }
 
 # The Census API encodes "no data" as large negative sentinels rather than
@@ -230,6 +236,7 @@ PLAUSIBLE_RANGES = {
     "median_home_value": (10_000, 3_000_000),
     "median_household_income": (5_000, 300_000),
     "median_gross_rent": (150, 5_000),
+    "property_tax_effective_rate": (0.05, 4.0),
     "rpp_all": (70, 140),
     "rpp_rents": (30, 220),
     "rpp_utilities": (50, 220),

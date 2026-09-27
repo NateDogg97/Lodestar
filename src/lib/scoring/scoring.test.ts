@@ -66,10 +66,22 @@ describe("parseCountyPayload", () => {
     expect(() => parseCountyPayload({ ...payload([]), format: "records" })).toThrow(/format/);
   });
 
-  it("rejects a file missing a metric column", () => {
+  it("reads a missing metric column as unknown everywhere, and says so", () => {
+    // After a deploy that adds a metric, the old service worker serves the old
+    // data file to the new code once. That must not break the app.
+    const p = payload([{ fips: "01001", school_achievement: 0.3 }]);
+    const i = p.columns.indexOf("school_achievement");
+    p.columns.splice(i, 1);
+    p.rows.forEach((r) => r.splice(i, 1));
+    const d = parseCountyPayload(p);
+    expect(d.missingColumns).toEqual(["school_achievement"]);
+    expect(d.values.school_achievement[0]).toBeNaN();
+  });
+
+  it("rejects a file missing an identity column", () => {
     const p = payload([{ fips: "01001" }]);
-    p.columns = p.columns.filter((c) => c !== "school_achievement");
-    expect(() => parseCountyPayload(p)).toThrow(/school_achievement/);
+    p.columns = p.columns.map((c) => (c === "state" ? "st" : c));
+    expect(() => parseCountyPayload(p)).toThrow(/state/);
   });
 
   it("keeps FIPS as strings and reads null as unknown (NaN), not zero", () => {

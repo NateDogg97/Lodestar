@@ -10,6 +10,7 @@ describe("formatValue", () => {
     expect(formatValue("days_above_90f", 94.8)).toBe("95 days");
     expect(formatValue("nights_below_32f", 0.2)).toBe("0 nights");
     expect(formatValue("rent_to_income", 0.1687)).toBe("17%");
+    expect(formatValue("property_tax_effective_rate", 1.4731)).toBe("1.47%");
     expect(formatValue("home_value_to_income", 2.826)).toBe("2.8×");
     expect(formatValue("rpp_all", 114.155)).toBe("114.2");
     expect(formatValue("population", 1307625)).toBe("1,307,625");

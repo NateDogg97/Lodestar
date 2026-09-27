@@ -30,6 +30,8 @@ export function formatValue(metric: MetricKey, value: number | null): string {
       return `${whole.format(value)} days`;
     case "nights/yr":
       return `${whole.format(value)} nights`;
+    case "%":
+      return `${value.toFixed(2)}%`;
     case "ratio":
       return `${whole.format(value * 100)}%`;
     case "×":

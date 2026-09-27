@@ -44,6 +44,8 @@ export const METRICS = [
   { key: "home_value_to_income", label: "Home price to income", unit: "×", group: "housing", defaultDirection: "lower" },
   { key: "rent_to_income", label: "Rent share of income", unit: "ratio", group: "housing", defaultDirection: "lower" },
   { key: "price_to_rent", label: "Price to rent", unit: "×", group: "housing", defaultDirection: "lower" },
+  // Census ACS: aggregate property taxes paid / aggregate home value, owner-occupied (LAWS.md)
+  { key: "property_tax_effective_rate", label: "Property tax rate", unit: "%", group: "housing", defaultDirection: "lower" },
 
   // cost of living (BEA Regional Price Parities; 100 = national average)
   { key: "rpp_all", label: "Cost of living", unit: "index", group: "cost", defaultDirection: "lower" },

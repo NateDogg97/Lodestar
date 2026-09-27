@@ -1,7 +1,9 @@
 "use client";
 
+import type { LawData } from "@/lib/laws";
 import type { CountyDataset, CountyScore } from "@/lib/scoring";
 
+import { LawsSection } from "./laws-section";
 import { Breakdown, Reasons, ScoreBadge, StatusBadges } from "./results-list";
 
 interface Props {
@@ -11,11 +13,13 @@ interface Props {
   rank: number | null;
   total: number;
   rel: number | null | undefined;
+  /** State laws and taxes; null until loaded (or if unavailable). */
+  laws: LawData | null;
   onClose: () => void;
 }
 
 /** The county picked on the map or in the list, with its full score breakdown. */
-export function SelectedCounty({ score: s, data, rank, total, rel, onClose }: Props) {
+export function SelectedCounty({ score: s, data, rank, total, rel, laws, onClose }: Props) {
   const where =
     s.status === "excluded"
       ? "Ruled out by a limit"
@@ -55,6 +59,7 @@ export function SelectedCounty({ score: s, data, rank, total, rel, onClose }: Pr
       <div className="mt-3 max-h-64 overflow-y-auto">
         <Breakdown score={s} />
       </div>
+      {laws && <LawsSection laws={laws} data={data} index={s.index} />}
     </div>
   );
 }

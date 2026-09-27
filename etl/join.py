@@ -140,8 +140,16 @@ def add_derived_columns(df: pd.DataFrame) -> pd.DataFrame:
             df["median_household_income"], df["rpp_all"] / 100.0
         )
 
-    derived = [c for c in ("home_value_to_income", "rent_to_income",
-                           "price_to_rent", "real_income") if c in df.columns]
+    # Effective property tax rate, percent of home value, owner-occupied homes
+    # (LAWS.md: property_tax_effective_rate). Mean rate: aggregate taxes over
+    # aggregate value, so it matches Tax Foundation's state table.
+    if {"aggregate_real_estate_taxes", "aggregate_home_value"} <= have:
+        df["property_tax_effective_rate"] = 100.0 * _safe_divide(
+            df["aggregate_real_estate_taxes"], df["aggregate_home_value"]
+        )
+
+    derived = [c for c in ("home_value_to_income", "rent_to_income", "price_to_rent",
+                           "real_income", "property_tax_effective_rate") if c in df.columns]
     log.info("derived %d columns: %s", len(derived), derived)
     return df
 
@@ -166,6 +174,7 @@ COLUMN_ORDER = [
     "climate_point", "climate_station_id", "climate_station_dist_mi", "climate_station_count",
     # derived
     "home_value_to_income", "rent_to_income", "price_to_rent", "real_income",
+    "property_tax_effective_rate",
     # provenance
     "acs_vintage", "rpp_vintage",
 ]

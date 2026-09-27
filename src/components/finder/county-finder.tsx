@@ -31,7 +31,7 @@ import {
 import { ResultsList } from "./results-list";
 import { SelectedCounty } from "./selected-county";
 import { SidePanel } from "./side-panel";
-import { useCountyData } from "./use-county-data";
+import { useCountyData, useLawData } from "./use-county-data";
 
 // MapLibre needs the browser (WebGL, window), so it never renders on the
 // server, and it loads in its own chunk after the panels are usable.
@@ -85,6 +85,7 @@ const SHEET_START = 1; // 50%
 
 function Finder({ data }: { data: CountyDataset }) {
   const wide = useIsWide();
+  const laws = useLawData();
   // The search is remembered between sessions (localStorage; plan Phase 7 adds the URL).
   const [prefs, setPrefs] = useState<Preferences>(loadPreferences);
   useEffect(() => savePreferences(prefs), [prefs]);
@@ -250,6 +251,7 @@ function Finder({ data }: { data: CountyDataset }) {
           rank={rankByFips.get(selected.fips) ?? null}
           total={ranked.length}
           rel={relative.get(selected.fips)}
+          laws={laws}
           onClose={() => setSelectedFips(null)}
         />
       )}

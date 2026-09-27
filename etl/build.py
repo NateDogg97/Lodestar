@@ -209,8 +209,14 @@ COLUMN_DECIMALS = {
     "days_above_90f": 1, "nights_below_32f": 1, "rainy_days": 1, "snow_days": 1,
     "climate_station_dist_mi": 1, "climate_station_count": 0,
     "rent_to_income": 4,
+    "property_tax_effective_rate": 3,
     "acs_vintage": 0, "rpp_vintage": 0,
 }
+
+
+# Raw inputs to a derived column; the app never reads them. Kept in
+# etl/data/out/ for auditing.
+APP_EXCLUDED_COLUMNS = ("aggregate_real_estate_taxes", "aggregate_home_value")
 
 
 def _compact(value: object, decimals: int) -> object:
@@ -241,7 +247,10 @@ def to_app_payload(df: pd.DataFrame) -> dict:
     dataset is available offline.
 
     Nulls are JSON null — the app treats them as "unknown", never as zero.
+    Inputs that only exist to derive another column stay in the readable CSV
+    but are left out of the app payload (APP_EXCLUDED_COLUMNS).
     """
+    df = df.drop(columns=[c for c in APP_EXCLUDED_COLUMNS if c in df.columns])
     columns = list(df.columns)
     decimals = [COLUMN_DECIMALS.get(c, DEFAULT_DECIMALS) for c in columns]
     rows = [

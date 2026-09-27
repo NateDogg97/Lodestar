@@ -372,6 +372,7 @@ def _make_synthetic() -> dict[str, pd.DataFrame]:
     spine = spine.sort_values("fips").reset_index(drop=True)
     n = len(spine)
 
+    agg_value = rng.integers(10_000_000, 900_000_000, n).astype(float)
     return {
         "spine": spine,
         "acs": pd.DataFrame({
@@ -380,6 +381,8 @@ def _make_synthetic() -> dict[str, pd.DataFrame]:
             "median_home_value": rng.integers(60_000, 900_000, n).astype(float),
             "median_household_income": rng.integers(25_000, 150_000, n).astype(float),
             "median_gross_rent": rng.integers(500, 2600, n).astype(float),
+            "aggregate_home_value": agg_value,
+            "aggregate_real_estate_taxes": agg_value * (0.003 + rng.random(n) * 0.022),
             "acs_vintage": 2023,
         }),
         "bea": pd.DataFrame({
@@ -465,7 +468,8 @@ def test_healthy_build(fixtures: dict[str, pd.DataFrame]) -> None:
 
     check(len(out) == len(fixtures["spine"]),
           f"row count preserved: {len(out)}")
-    for col in ("home_value_to_income", "rent_to_income", "price_to_rent", "real_income"):
+    for col in ("home_value_to_income", "rent_to_income", "price_to_rent", "real_income",
+                "property_tax_effective_rate"):
         check(col in out.columns, f"derived column {col} present")
 
     r = out.iloc[100]
@@ -478,6 +482,9 @@ def test_healthy_build(fixtures: dict[str, pd.DataFrame]) -> None:
     check(abs(r["home_value_to_income"]
               - r["median_home_value"] / r["median_household_income"]) < 1e-9,
           "home_value_to_income matches definition")
+    check(abs(r["property_tax_effective_rate"]
+              - 100 * r["aggregate_real_estate_taxes"] / r["aggregate_home_value"]) < 1e-9,
+          "property_tax_effective_rate matches definition (aggregate taxes / aggregate value)")
 
     _, passed = validate.validate(out)
     check(passed, "validation passes on clean data")

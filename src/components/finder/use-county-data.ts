@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { parseLawPayload, type LawData } from "@/lib/laws";
 import { parseCountyPayload, type CountyDataset } from "@/lib/scoring";
 
 export const COUNTY_DATA_URL = "/data/counties.json";
@@ -46,4 +47,41 @@ export function useCountyData(): CountyDataState {
   }, []);
 
   return state;
+}
+
+// ---------------------------------------------------------------------------
+// Laws and taxes (LAWS.md). Optional: if the file is missing or malformed the
+// finder still works, and the county card simply has no laws section.
+
+export const LAW_DATA_URL = "/data/laws.json";
+
+let lawsPending: Promise<LawData> | null = null;
+
+function loadLawData(): Promise<LawData> {
+  lawsPending ??= fetch(LAW_DATA_URL)
+    .then((res) => {
+      if (!res.ok) throw new Error(`Could not load law data (HTTP ${res.status})`);
+      return res.json();
+    })
+    .then(parseLawPayload)
+    .catch((err: unknown) => {
+      lawsPending = null;
+      throw err;
+    });
+  return lawsPending;
+}
+
+export function useLawData(): LawData | null {
+  const [data, setData] = useState<LawData | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadLawData().then(
+      (d) => !cancelled && setData(d),
+      (err: unknown) => console.warn("[laws]", err),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return data;
 }

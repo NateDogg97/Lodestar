@@ -24,6 +24,12 @@ export interface CountyDataset {
   values: Record<MetricKey, Float64Array>;
   /** Row index by FIPS. */
   indexByFips: Map<string, number>;
+  /**
+   * Metrics the file has no column for, read as unknown everywhere. Happens
+   * for one page load after a deploy that adds a metric: the old service
+   * worker still serves the old, cached data file to the new code.
+   */
+  missingColumns: MetricKey[];
 }
 
 interface Payload {
@@ -50,11 +56,13 @@ export function parseCountyPayload(payload: unknown): CountyDataset {
   }
 
   const col = new Map(payload.columns.map((name, i) => [name, i]));
-  const required = ["fips", "county_name", "state", ...METRIC_KEYS];
+  const required = ["fips", "county_name", "state"];
   const missing = required.filter((c) => !col.has(c));
   if (missing.length) {
     throw new Error(`County data is missing columns: ${missing.join(", ")}`);
   }
+  // A missing metric is unknown for every county — never a crash. See `missingColumns`.
+  const missingColumns = METRIC_KEYS.filter((k) => !col.has(k));
 
   const rows = payload.rows;
   const n = rows.length;
@@ -70,11 +78,13 @@ export function parseCountyPayload(payload: unknown): CountyDataset {
 
   const values = {} as Record<MetricKey, Float64Array>;
   for (const key of METRIC_KEYS) {
-    const i = col.get(key)!;
-    const arr = new Float64Array(n);
-    for (let r = 0; r < n; r++) {
-      const v = rows[r][i];
-      arr[r] = typeof v === "number" && Number.isFinite(v) ? v : NaN;
+    const i = col.get(key);
+    const arr = new Float64Array(n).fill(NaN);
+    if (i !== undefined) {
+      for (let r = 0; r < n; r++) {
+        const v = rows[r][i];
+        arr[r] = typeof v === "number" && Number.isFinite(v) ? v : NaN;
+      }
     }
     values[key] = arr;
   }
@@ -87,6 +97,7 @@ export function parseCountyPayload(payload: unknown): CountyDataset {
     rppGeoLevel: text("rpp_geo_level"),
     values,
     indexByFips: new Map(fips.map((f, i) => [f, i])),
+    missingColumns,
   };
 }
 
@@ -112,5 +123,6 @@ export function subsetDataset(data: CountyDataset, keep: (index: number) => bool
     rppGeoLevel: pick(data.rppGeoLevel),
     values,
     indexByFips: new Map(fips.map((f, i) => [f, i])),
+    missingColumns: data.missingColumns,
   };
 }

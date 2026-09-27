@@ -1,0 +1,81 @@
+# Re-verify every law and tax value against its cited source, monthly.
+#
+# etl/laws/refresh.py re-fetches each source, parses it, validates the result,
+# and rewrites etl/data/law_values.csv and public/data/laws.json — including
+# each value's "checked" date, which the app shows. No person reviews the
+# values, so the rules are enforced in code (LAWS.md §8):
+#   - a value is only ever written from a parsed, cited source;
+#   - a source that fails keeps its old rows (their dates age, visibly) and
+#     this workflow fails, so GitHub emails the repo owner;
+#   - if the table fails verification after a refresh, nothing is committed.
+# Run it by hand from the Actions tab with "Run workflow".
+
+name: Refresh law table
+
+on:
+  schedule:
+    - cron: "17 9 1 * *"   # 09:17 UTC on the 1st of each month
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: laws-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -r etl/laws/requirements.txt
+
+      - name: Offline tests
+        run: |
+          python -m etl.laws.test_sources
+          python -m etl.laws.test_verify
+
+      - name: Refresh from sources
+        id: refresh
+        env:
+          # Optional; without it the EIA's public DEMO_KEY is used.
+          EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+        run: |
+          set +e
+          python -m etl.laws.refresh --report refresh-report.md
+          code=$?
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          [ -f refresh-report.md ] && cat refresh-report.md >> "$GITHUB_STEP_SUMMARY"
+          # 1 = the refreshed table failed verification: commit nothing.
+          if [ "$code" -eq 1 ]; then exit 1; fi
+
+      - name: Commit refreshed values
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add etl/data/law_values.csv public/data/laws.json
+          if git diff --cached --quiet; then
+            echo "Nothing changed."
+            exit 0
+          fi
+          { echo "Laws: monthly re-check $(date -u +%F)"; echo; cat refresh-report.md; } > commit-msg.txt
+          git commit -F commit-msg.txt
+          git push
+
+      - name: Check every cited page and data file still loads
+        run: python -m etl.laws.verify_laws --online --report md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail if a source could not be refreshed
+        if: steps.refresh.outputs.code == '2'
+        run: |
+          echo "::error::One or more law sources failed to refresh. Their values were kept with their previous check dates — see the job summary."
+          exit 1
