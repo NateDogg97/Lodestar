@@ -863,8 +863,12 @@ first place view, not at startup. One file, not per state, because the envelope 
       3,140 counties × 12 months × 8 measures, 1.36 MB / ~370 KB gzipped, precached (total
       precache now 5.9 MB). `validate` checks the monthly data reproduces the annual columns
       (it does, for every county).
-- [ ] Place view: list ↔ place states, header, tabs (Overview / Climate / Laws & taxes),
-      "← All results" with scroll restore, Back gesture, phone sheet behavior
+- [x] Place view: list ↔ place states, header, tabs, "← All results" with scroll restore,
+      Back gesture, phone sheet behavior — 2026-09-27 (`place-view.tsx`). The list stays
+      mounted while a place is open, so its scroll position survives; each opening pushes one
+      history entry, so Back / Escape return to the list. On phones the place identity is the
+      sheet's drag header. Tabs so far: Overview (today's reasons + breakdown, reworked in the
+      next step) and Laws & taxes; Climate joins with its step. Replaces the old county card.
 - [ ] Overview tab: reasons + per-filter pass/fail/unknown + weighted breakdown
 - [ ] Climate tab: monthly chart, key numbers, source; compare-with overlay
 - [ ] Köppen climate type (computed from monthly normals) as a label and filter

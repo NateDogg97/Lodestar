@@ -33,7 +33,7 @@ import {
   type Preferences,
 } from "./preferences";
 import { ResultsList } from "./results-list";
-import { SelectedCounty } from "./selected-county";
+import { PlaceIdentity, PlaceView, type PlaceProps } from "./place-view";
 import { SidePanel } from "./side-panel";
 import { useCountyData, useLawData } from "./use-county-data";
 
@@ -90,6 +90,8 @@ function subscribeWide(onChange: () => void) {
 const useIsWide = () =>
   useSyncExternalStore(subscribeWide, () => window.matchMedia(WIDE_QUERY).matches, () => true);
 
+const isPlaceEntry = (state: unknown) => Boolean((state as { nhfPlace?: boolean } | null)?.nhfPlace);
+
 /** Where the phone sheet opens, and where it goes when a county is picked. */
 const SHEET_START = 1; // 50%
 
@@ -125,6 +127,17 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     return out;
   }, [laws]);
   const [selectedFips, setSelectedFips] = useState<string | null>(null);
+  // The Results panel shows the ranked list or one county's place view (plan
+  // Phase 6). Returning to the list keeps the county highlighted.
+  const [view, setView] = useState<"list" | "place">("list");
+  // A history entry marks the place view, so the Back gesture returns to the list.
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      setView(isPlaceEntry(e.state) ? "place" : "list");
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   // Bumped by a pick in the list: the map zooms to that county every time.
   const [focus, setFocus] = useState<{ fips: string; n: number } | null>(null);
 
@@ -138,7 +151,6 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   // bottom sheet. The map needs the sheet's height to keep counties above it.
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [sheetSnap, setSheetSnap] = useState(SHEET_START);
-  const [sheetScrollKey, setSheetScrollKey] = useState(0);
   const area = useRef<HTMLDivElement>(null);
   const [areaHeight, setAreaHeight] = useState(0);
   useEffect(() => {
@@ -195,14 +207,22 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   const select = (fips: string | null) => {
     setSelectedFips(fips);
     if (!fips) return;
+    if (view !== "place") {
+      window.history.pushState({ nhfPlace: true }, "");
+      setView("place");
+    }
     if (wide) {
       if (!resultsOpen) setResultsOpen(true);
     } else {
-      // Half-height sheet: the county card on the bottom, the county above it.
+      // Half-height sheet: the place view below, the county above it.
       setMobileFiltersOpen(false);
       setSheetSnap(SHEET_START);
-      setSheetScrollKey((k) => k + 1);
     }
+  };
+  const backToList = () => {
+    // Consume our history entry so Back/Forward stay in step with the view.
+    if (isPlaceEntry(window.history.state)) window.history.back();
+    else setView("list");
   };
   const selectFromList = (fips: string) => {
     select(fips);
@@ -223,6 +243,30 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
 
   // A selected county in a state that was just turned off is simply unselected.
   const selected = selectedFips ? (scoresByFips.get(selectedFips) ?? null) : null;
+  const showPlace = view === "place" && selected !== null;
+
+  // Escape leaves the place view (unless typing in a field).
+  useEffect(() => {
+    if (!showPlace) return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.key === "Escape" && !t?.closest("input, textarea, select, [role=menu]")) backToList();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  const placeProps: PlaceProps | null = selected
+    ? {
+        score: selected,
+        data: scoped,
+        rank: rankByFips.get(selected.fips) ?? null,
+        total: ranked.length,
+        rel: relative.get(selected.fips),
+        laws,
+        onBack: backToList,
+      }
+    : null;
 
   const weightedCount = Object.values(prefs.weights).filter((w) => (w ?? 0) > 0).length;
   const limitCount = Object.values(prefs.limits).filter((l) => l && (l.min !== undefined || l.max !== undefined)).length;
@@ -312,46 +356,52 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       />
     </PanelMenu>
   );
-  const resultsBody = (
-    <>
-      {selected && (
-        <SelectedCounty
-          score={selected}
-          data={scoped}
-          rank={rankByFips.get(selected.fips) ?? null}
-          total={ranked.length}
-          rel={relative.get(selected.fips)}
-          laws={laws}
-          onClose={() => setSelectedFips(null)}
-        />
-      )}
-      <div className="px-3 py-3">
-        <p className="mb-2 px-1 text-xs text-neutral-600 dark:text-neutral-400" aria-live="polite">
-          {counts.match.toLocaleString()} match
-          {counts.unknown > 0 && (
-            <>, {counts.unknown.toLocaleString()} unknown{!prefs.includeUnknown && " (hidden)"}</>
-          )}
-          {counts.excluded > 0 && <>, {counts.excluded.toLocaleString()} ruled out</>}
-        </p>
-        {anyWeight ? (
-          <p className="mb-2 px-1 text-[11px] text-neutral-500">
-            The map colors the top {Math.min(MAP_TOP_N, ranked.length)} relative to each other.
-          </p>
-        ) : (
-          <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-            Give at least one filter a weight to rank counties and color the map.
-          </p>
+  const resultsList = (
+    <div className="px-3 py-3">
+      <p className="mb-2 px-1 text-xs text-neutral-600 dark:text-neutral-400" aria-live="polite">
+        {counts.match.toLocaleString()} match
+        {counts.unknown > 0 && (
+          <>, {counts.unknown.toLocaleString()} unknown{!prefs.includeUnknown && " (hidden)"}</>
         )}
-        <ResultsList
-          key={resetKey}
-          ranked={ranked}
-          data={scoped}
-          relative={relative}
-          selectedFips={selectedFips}
-          onSelect={selectFromList}
-        />
+        {counts.excluded > 0 && <>, {counts.excluded.toLocaleString()} ruled out</>}
+      </p>
+      {anyWeight ? (
+        <p className="mb-2 px-1 text-[11px] text-neutral-500">
+          The map colors the top {Math.min(MAP_TOP_N, ranked.length)} relative to each other.
+        </p>
+      ) : (
+        <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          Give at least one filter a weight to rank counties and color the map.
+        </p>
+      )}
+      <ResultsList
+        key={resetKey}
+        ranked={ranked}
+        data={scoped}
+        relative={relative}
+        selectedFips={selectedFips}
+        onSelect={selectFromList}
+      />
+    </div>
+  );
+  /**
+   * List and place each scroll on their own. The list stays mounted (just
+   * hidden) while a place is open, so "← All results" lands where you were.
+   */
+  const resultsBody = (withIdentity: boolean) => (
+    <div className="relative h-full">
+      <div
+        className={`absolute inset-0 overflow-y-auto overscroll-contain ${showPlace ? "invisible" : ""}`}
+        inert={showPlace}
+      >
+        {resultsList}
       </div>
-    </>
+      {showPlace && placeProps && (
+        <div key={placeProps.score.fips} className="absolute inset-0 overflow-y-auto overscroll-contain">
+          <PlaceView {...placeProps} withIdentity={withIdentity} />
+        </div>
+      )}
+    </div>
   );
 
   const map = (
@@ -402,16 +452,22 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
             snap={sheetSnap}
             onSnap={setSheetSnap}
             areaHeight={areaHeight}
-            scrollTopKey={sheetScrollKey}
             header={
-              <div className="flex items-center gap-1 px-4 pb-2">
-                <h2 className="text-sm font-semibold">Results</h2>
-                {resultsBadge && <span className="text-sm text-neutral-500">{resultsBadge}</span>}
-                {resultsMenu}
-              </div>
+              showPlace && placeProps ? (
+                // At 25% the sheet still says which county this is.
+                <div className="px-4 pb-2">
+                  <PlaceIdentity {...placeProps} />
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 px-4 pb-2">
+                  <h2 className="text-sm font-semibold">Results</h2>
+                  {resultsBadge && <span className="text-sm text-neutral-500">{resultsBadge}</span>}
+                  {resultsMenu}
+                </div>
+              )
             }
           >
-            {resultsBody}
+            {resultsBody(false)}
           </BottomSheet>
 
           {mobileFiltersOpen && (
@@ -467,7 +523,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         widthClass="md:w-96"
         menu={resultsMenu}
       >
-        {resultsBody}
+        {resultsBody(true)}
       </SidePanel>
 
       <div className="relative min-w-0 flex-1">

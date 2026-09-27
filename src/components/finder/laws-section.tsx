@@ -10,7 +10,7 @@ interface Props {
 }
 
 /**
- * "Laws & taxes" for the selected county (LAWS.md §10). Every value shows its
+ * The place view's "Laws & taxes" tab (LAWS.md §10). Every value shows its
  * source (linked), the source's own date, and when we last checked it — the
  * app never shows a legal or tax fact without them. Stale values are marked;
  * a deliberately blank value says why.
@@ -22,14 +22,11 @@ export function LawsSection({ laws, data, index }: Props) {
   const propertySource = laws.countySources.property_tax_effective_rate;
 
   return (
-    <details className="group mt-3 rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950" open>
-      <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm font-semibold">
-        <span>
-          Laws &amp; taxes <span className="font-normal text-neutral-500">· {state} statewide</span>
-        </span>
-        <span aria-hidden className="text-neutral-400 transition-transform group-open:rotate-90">›</span>
-      </summary>
-      <ul className="divide-y divide-neutral-200 border-t border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800">
+    <section aria-label="Laws and taxes">
+      <p className="text-xs text-neutral-500">
+        State laws apply to every county in {state}; property tax is this county&rsquo;s own.
+      </p>
+      <ul className="-mx-3 mt-2 divide-y divide-neutral-200 dark:divide-neutral-800">
         {propertySource && (
           <Row
             name="Property tax rate (this county)"
@@ -44,10 +41,10 @@ export function LawsSection({ laws, data, index }: Props) {
           return isGap(f) ? <GapRow key={def.key} def={def} gap={f} /> : <FactRow key={def.key} def={def} fact={f} />;
         })}
       </ul>
-      <p className="border-t border-neutral-200 px-3 py-2 text-[11px] leading-snug text-neutral-500 dark:border-neutral-800">
+      <p className="mt-2 border-t border-neutral-200 pt-2 text-[11px] leading-snug text-neutral-500 dark:border-neutral-800">
         {laws.disclaimer}
       </p>
-    </details>
+    </section>
   );
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 
 /** Heights the sheet settles at, as a fraction of the area it sits in. */
 export const SHEET_SNAPS = [0.25, 0.5, 0.8, 1] as const;
@@ -15,8 +15,7 @@ interface Props {
   areaHeight: number;
   /** Title row; the whole row is a drag handle, but its buttons still work. */
   header: ReactNode;
-  /** Bumped to scroll the body back to the top (e.g. to show a new selection). */
-  scrollTopKey?: number;
+  /** Fills the body; it manages its own scrolling (the list and place views each scroll). */
   children: ReactNode;
 }
 
@@ -29,15 +28,10 @@ const FLICK_SPEED = 0.5;
  * bottom of the map, dragged by its header between fixed heights — like
  * Google Maps. Only the header drags; the body scrolls normally.
  */
-export function BottomSheet({ id, label, snap, onSnap, areaHeight, header, scrollTopKey, children }: Props) {
+export function BottomSheet({ id, label, snap, onSnap, areaHeight, header, children }: Props) {
   const [dragHeight, setDragHeight] = useState<number | null>(null);
   const drag = useRef<{ startY: number; startH: number; lastY: number; lastT: number; speed: number; moved: boolean } | null>(null);
   const suppressClick = useRef(false);
-  const body = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (scrollTopKey) body.current?.scrollTo({ top: 0 });
-  }, [scrollTopKey]);
 
   const minH = SHEET_SNAPS[0] * areaHeight;
 
@@ -130,9 +124,7 @@ export function BottomSheet({ id, label, snap, onSnap, areaHeight, header, scrol
         </button>
         {header}
       </div>
-      <div ref={body} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        {children}
-      </div>
+      <div className="relative min-h-0 flex-1">{children}</div>
     </section>
   );
 }
