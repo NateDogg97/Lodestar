@@ -7,7 +7,8 @@
  * metric. Missing values are `NaN`, never 0: a missing value is unknown.
  */
 
-import { METRIC_KEYS, type MetricKey } from "./metrics";
+import { CATEGORY_KEYS, type CategoryKey } from "./categories";
+import { METRIC_KEYS, STATE_METRIC_KEYS, type MetricKey } from "./metrics";
 
 export const PAYLOAD_FORMAT = "counties-columnar-v1";
 
@@ -22,6 +23,8 @@ export interface CountyDataset {
   rppGeoLevel: (string | null)[];
   /** One array per metric, `NaN` where the value is unknown. */
   values: Record<MetricKey, Float64Array>;
+  /** One array per policy category (a law value such as "medical"), null where unknown. */
+  categories: Record<CategoryKey, (string | null)[]>;
   /** Row index by FIPS. */
   indexByFips: Map<string, number>;
   /**
@@ -62,7 +65,8 @@ export function parseCountyPayload(payload: unknown): CountyDataset {
     throw new Error(`County data is missing columns: ${missing.join(", ")}`);
   }
   // A missing metric is unknown for every county — never a crash. See `missingColumns`.
-  const missingColumns = METRIC_KEYS.filter((k) => !col.has(k));
+  // State-level metrics are never in this file; `applyStateLaws` fills them.
+  const missingColumns = METRIC_KEYS.filter((k) => !col.has(k) && !STATE_METRIC_KEYS.includes(k));
 
   const rows = payload.rows;
   const n = rows.length;
@@ -96,6 +100,10 @@ export function parseCountyPayload(payload: unknown): CountyDataset {
     state: text("state") as string[],
     rppGeoLevel: text("rpp_geo_level"),
     values,
+    categories: Object.fromEntries(CATEGORY_KEYS.map((k) => [k, new Array<string | null>(n).fill(null)])) as Record<
+      CategoryKey,
+      (string | null)[]
+    >,
     indexByFips: new Map(fips.map((f, i) => [f, i])),
     missingColumns,
   };
@@ -114,6 +122,8 @@ export function subsetDataset(data: CountyDataset, keep: (index: number) => bool
   const pick = <T,>(arr: T[]) => idx.map((i) => arr[i]);
   const values = {} as Record<MetricKey, Float64Array>;
   for (const key of METRIC_KEYS) values[key] = Float64Array.from(idx, (i) => data.values[key][i]);
+  const categories = {} as Record<CategoryKey, (string | null)[]>;
+  for (const key of CATEGORY_KEYS) categories[key] = pick(data.categories[key]);
   const fips = pick(data.fips);
   return {
     n: idx.length,
@@ -122,6 +132,7 @@ export function subsetDataset(data: CountyDataset, keep: (index: number) => bool
     state: pick(data.state),
     rppGeoLevel: pick(data.rppGeoLevel),
     values,
+    categories,
     indexByFips: new Map(fips.map((f, i) => [f, i])),
     missingColumns: data.missingColumns,
   };

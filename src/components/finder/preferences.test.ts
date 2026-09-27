@@ -8,6 +8,7 @@ describe("sanitizePreferences", () => {
       ...DEFAULT_PREFERENCES,
       directions: { days_above_90f: "higher" as const },
       limits: { rpp_all: { max: 100 } },
+      categories: { permitless_carry: ["false"], marijuana_status: ["recreational", "medical"] },
       includeUnknown: false,
       includeStates: { AK: false, HI: true },
     };
@@ -20,11 +21,13 @@ describe("sanitizePreferences", () => {
       directions: { rpp_all: "sideways", snow_days: "middle" },
       limits: { rpp_all: { min: "x" }, snow_days: { min: 0, max: null } },
       includeStates: { AK: "yes", HI: true, TX: true },
+      categories: { marijuana_status: ["medical", "legal-ish", 3, "medical"], not_a_law: ["x"], abortion_access: "banned" },
     });
     expect(out).toEqual({
       weights: { rpp_all: 5 },
       directions: { snow_days: "middle" },
       limits: { snow_days: { min: 0 } },
+      categories: { marijuana_status: ["medical"] },
       includeUnknown: true,
       includeStates: { AK: false, HI: true },
     });

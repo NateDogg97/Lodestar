@@ -3,7 +3,19 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { formatDay, formatLaw, isGap, isStale, parseLawPayload, type LawDef, type LawFact } from ".";
+import { parseCountyPayload } from "@/lib/scoring";
+
+import {
+  applyStateLaws,
+  formatDay,
+  formatLaw,
+  isGap,
+  isStale,
+  lawSource,
+  parseLawPayload,
+  type LawDef,
+  type LawFact,
+} from ".";
 
 const def = (over: Partial<LawDef>): LawDef => ({
   key: "x",
@@ -98,5 +110,41 @@ describe("the published laws.json", () => {
         if (!isGap(f) && d!.allowed.length) expect(d!.allowed).toContain(f.v);
       }
     }
+  });
+});
+
+describe("applyStateLaws on the real data", () => {
+  const counties = parseCountyPayload(
+    JSON.parse(readFileSync(join(__dirname, "../../../public/data/counties.json"), "utf8")),
+  );
+  const laws = parseLawPayload(JSON.parse(readFileSync(join(__dirname, "../../../public/data/laws.json"), "utf8")));
+  const data = applyStateLaws(counties, laws);
+  const at = (fips: string) => data.indexByFips.get(fips)!;
+
+  it("gives every county its state's tax and electricity values", () => {
+    const travis = at("48453"); // Texas
+    expect(data.values.income_tax_top_rate[travis]).toBe(0);
+    expect(data.values.sales_tax_combined[travis]).toBeCloseTo(8.2, 1);
+    expect(data.values.electricity_price_cents_kwh[travis]).toBeGreaterThan(5);
+    const sf = at("06075"); // California
+    expect(data.values.income_tax_top_rate[sf]).toBeCloseTo(13.3, 1);
+  });
+
+  it("fills policy categories, and leaves a blanked state unknown", () => {
+    expect(data.categories.permitless_carry[at("48453")]).toBe("true");
+    expect(data.categories.permitless_carry[at("06075")]).toBe("false");
+    const polk = at("19153"); // Iowa: NCSL and Wikipedia disagree on marijuana
+    expect(data.categories.marijuana_status[polk]).toBeNull();
+  });
+
+  it("without law data, law values are unknown — not zero", () => {
+    const none = applyStateLaws(counties, null);
+    expect(none.values.income_tax_top_rate[at("48453")]).toBeNaN();
+    expect(none.categories.abortion_access[at("48453")]).toBeNull();
+  });
+
+  it("names one source per law for the filter captions", () => {
+    expect(lawSource(laws, "sales_tax_combined")?.sourceName).toBe("Tax Foundation");
+    expect(lawSource(laws, "not_a_law")).toBeNull();
   });
 });

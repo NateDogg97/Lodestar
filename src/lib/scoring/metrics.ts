@@ -22,7 +22,7 @@ export type Direction = "higher" | "lower" | "middle";
 
 export const DIRECTIONS: readonly Direction[] = ["lower", "middle", "higher"];
 
-export type MetricGroup = "people" | "housing" | "cost" | "schools" | "climate";
+export type MetricGroup = "people" | "housing" | "cost" | "schools" | "climate" | "taxes";
 
 export interface MetricDef {
   key: string;
@@ -30,6 +30,12 @@ export interface MetricDef {
   unit: string;
   group: MetricGroup;
   defaultDirection: Direction;
+  /**
+   * `state`: not a column of counties.json — every county takes its state's
+   * value from the law table (public/data/laws.json, same key). See
+   * `applyStateLaws` in src/lib/laws.
+   */
+  scope?: "state";
 }
 
 export const METRICS = [
@@ -51,6 +57,8 @@ export const METRICS = [
   { key: "rpp_all", label: "Cost of living", unit: "index", group: "cost", defaultDirection: "lower" },
   { key: "rpp_rents", label: "Cost of living: rents", unit: "index", group: "cost", defaultDirection: "lower" },
   { key: "rpp_utilities", label: "Cost of living: utilities", unit: "index", group: "cost", defaultDirection: "lower" },
+  // EIA average residential price, statewide (LAWS.md)
+  { key: "electricity_price_cents_kwh", label: "Electricity price", unit: "¢/kWh", group: "cost", defaultDirection: "lower", scope: "state" },
   { key: "rpp_goods", label: "Cost of living: goods", unit: "index", group: "cost", defaultDirection: "lower" },
   { key: "rpp_services", label: "Cost of living: services", unit: "index", group: "cost", defaultDirection: "lower" },
 
@@ -72,6 +80,10 @@ export const METRICS = [
   { key: "fall_mean_f", label: "Fall average", unit: "°F", group: "climate", defaultDirection: "higher" },
   { key: "annual_precip_in", label: "Annual precipitation", unit: "in", group: "climate", defaultDirection: "lower" },
   { key: "annual_snow_in", label: "Annual snowfall", unit: "in", group: "climate", defaultDirection: "lower" },
+
+  // state taxes (LAWS.md; Tax Foundation) — shown in the Laws & taxes tab
+  { key: "income_tax_top_rate", label: "Income tax (top rate)", unit: "%", group: "taxes", defaultDirection: "lower", scope: "state" },
+  { key: "sales_tax_combined", label: "Sales tax (state + avg local)", unit: "%", group: "taxes", defaultDirection: "lower", scope: "state" },
 ] as const satisfies readonly MetricDef[];
 
 export type MetricKey = (typeof METRICS)[number]["key"];
@@ -89,3 +101,8 @@ export function getMetric(key: MetricKey): MetricDef {
 export function isMetricKey(key: string): key is MetricKey {
   return BY_KEY.has(key);
 }
+
+/** Metrics whose value is the county's state's, from the law table. */
+export const STATE_METRIC_KEYS: readonly MetricKey[] = METRICS.filter(
+  (m) => (m as MetricDef).scope === "state",
+).map((m) => m.key);

@@ -3,20 +3,24 @@
 import dynamic from "next/dynamic";
 import { useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
+import { applyStateLaws, lawSource, type LawData, type LawSourceSummary } from "@/lib/laws";
 import {
+  CATEGORY_KEYS,
   MAP_TOP_N,
+  STATE_METRIC_KEYS,
   METRIC_KEYS,
   prepareDataset,
   rankCounties,
   scoreCounties,
   subsetDataset,
   topRelativeScores,
+  type CategoryKey,
   type CountyDataset,
   type MetricKey,
 } from "@/lib/scoring";
 
 import { BottomSheet, SHEET_SNAPS } from "./bottom-sheet";
-import { PreferencesPanel, type MetricRange } from "./preferences-panel";
+import { activeLawFilters, PreferencesPanel, type FiltersTab, type MetricRange } from "./preferences-panel";
 import { MenuToggle, PanelMenu } from "./panel-menu";
 import {
   DEFAULT_PREFERENCES,
@@ -42,8 +46,14 @@ const CountyMap = dynamic(() => import("./county-map"), {
 
 export function CountyFinder() {
   const state = useCountyData();
+  const laws = useLawData();
+  // Each county takes its state's law values (taxes, electricity, policies).
+  const data = useMemo(
+    () => (state.status === "ready" && laws.settled ? applyStateLaws(state.data, laws.data) : null),
+    [state, laws],
+  );
 
-  if (state.status === "loading") {
+  if (state.status === "loading" || (state.status === "ready" && !data)) {
     return <p className="grid flex-1 place-items-center text-sm text-neutral-500">Loading county data…</p>;
   }
   if (state.status === "error") {
@@ -53,7 +63,7 @@ export function CountyFinder() {
       </p>
     );
   }
-  return <Finder data={state.data} />;
+  return <Finder data={data!} laws={laws.data} />;
 }
 
 function nationalRanges(data: CountyDataset): Partial<Record<MetricKey, MetricRange>> {
@@ -83,13 +93,37 @@ const useIsWide = () =>
 /** Where the phone sheet opens, and where it goes when a county is picked. */
 const SHEET_START = 1; // 50%
 
-function Finder({ data }: { data: CountyDataset }) {
+function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   const wide = useIsWide();
-  const laws = useLawData();
   // The search is remembered between sessions (localStorage; plan Phase 7 adds the URL).
   const [prefs, setPrefs] = useState<Preferences>(loadPreferences);
   useEffect(() => savePreferences(prefs), [prefs]);
   const [resetKey, setResetKey] = useState(0);
+  const [filtersTab, setFiltersTab] = useState<FiltersTab>("place");
+
+  // Law captions and counts for the Laws & taxes tab.
+  const lawSources = useMemo(() => {
+    const out: Record<string, LawSourceSummary> = {};
+    if (laws) {
+      for (const key of [...STATE_METRIC_KEYS, ...CATEGORY_KEYS]) {
+        const s = lawSource(laws, key);
+        if (s) out[key] = s;
+      }
+    }
+    return out;
+  }, [laws]);
+  const stateCounts = useMemo(() => {
+    const out: Partial<Record<CategoryKey, Record<string, number>>> = {};
+    for (const key of CATEGORY_KEYS) {
+      const c: Record<string, number> = {};
+      for (const facts of Object.values(laws?.states ?? {})) {
+        const v = facts[key]?.v;
+        if (typeof v === "string") c[v] = (c[v] ?? 0) + 1;
+      }
+      out[key] = c;
+    }
+    return out;
+  }, [laws]);
   const [selectedFips, setSelectedFips] = useState<string | null>(null);
   // Bumped by a pick in the list: the map zooms to that county every time.
   const [focus, setFocus] = useState<{ fips: string; n: number } | null>(null);
@@ -227,7 +261,43 @@ function Finder({ data }: { data: CountyDataset }) {
         Weights rank counties. Limits rule counties out entirely. A county with no data for a
         limit is kept as <em>unknown</em> rather than guessed. Your settings are saved on this device.
       </p>
-      <PreferencesPanel prefs={prefs} onChange={setPrefs} ranges={ranges} resetKey={resetKey} />
+      <div role="tablist" aria-label="Filter categories" className="mb-4 grid grid-cols-2 rounded-lg bg-neutral-100 p-0.5 text-sm dark:bg-neutral-900">
+        {(
+          [
+            { id: "place", label: "Place" },
+            { id: "laws", label: "Laws & taxes", badge: activeLawFilters(prefs) },
+          ] as { id: FiltersTab; label: string; badge?: number }[]
+        ).map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={filtersTab === t.id}
+            onClick={() => setFiltersTab(t.id)}
+            className={`rounded-md px-2 py-1.5 font-medium ${
+              filtersTab === t.id
+                ? "bg-white shadow-sm dark:bg-neutral-800"
+                : "text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+            }`}
+          >
+            {t.label}
+            {t.badge ? (
+              <span className="ml-1.5 rounded-full bg-emerald-600 px-1.5 text-[11px] text-white">{t.badge}</span>
+            ) : null}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel">
+        <PreferencesPanel
+          prefs={prefs}
+          onChange={setPrefs}
+          ranges={ranges}
+          resetKey={resetKey}
+          tab={filtersTab}
+          sources={lawSources}
+          stateCounts={stateCounts}
+        />
+      </div>
     </div>
   );
 

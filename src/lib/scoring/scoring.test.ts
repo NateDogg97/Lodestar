@@ -11,12 +11,15 @@ import {
   rankCounties,
   subsetDataset,
   scoreCounties,
+  STATE_METRIC_KEYS,
   type MetricKey,
 } from ".";
 
 /** Build a published-format payload from a few rows; unlisted metrics are null. */
 function payload(rows: ({ fips: string } & Partial<Record<MetricKey, number | null>>)[]) {
-  const columns = ["fips", "county_name", "state", "rpp_geo_level", ...METRIC_KEYS];
+  // State-level metrics aren't in the published file; applyStateLaws adds them.
+  const keys = METRIC_KEYS.filter((k) => !STATE_METRIC_KEYS.includes(k));
+  const columns = ["fips", "county_name", "state", "rpp_geo_level", ...keys];
   return {
     format: PAYLOAD_FORMAT,
     columns,
@@ -25,7 +28,7 @@ function payload(rows: ({ fips: string } & Partial<Record<MetricKey, number | nu
       `County ${r.fips}`,
       "ZZ",
       "metro",
-      ...METRIC_KEYS.map((k) => r[k] ?? null),
+      ...keys.map((k) => r[k] ?? null),
     ]),
   };
 }
@@ -297,5 +300,37 @@ describe("subsetDataset (Alaska / Hawaii toggles)", () => {
     // Among 20, 40, 30 alone: 0th, 100th, 50th. With the 65 included, the
     // 40 would only be at 67th — the excluded county would have leaked in.
     expect(s.map((x) => x.score)).toEqual([0, 100, 50]);
+  });
+});
+
+describe("policy (category) filters", () => {
+  function withCarry(values: (string | null)[]) {
+    const prepared = setup(values.map((_, i) => ({ fips: `0100${i}`, population: 1000 + i })));
+    prepared.data.categories.permitless_carry = values;
+    return prepared;
+  }
+
+  it("rules out a county whose value isn't accepted, and keeps unknowns unknown", () => {
+    const s = scoreCounties(withCarry(["true", "false", null]), {
+      weights: { population: 1 },
+      categoryFilters: [{ category: "permitless_carry", accept: ["false"] }],
+    });
+    expect(s.map((c) => c.status)).toEqual(["excluded", "match", "unknown"]);
+    expect(s[0].failedFilters).toEqual(["permitless_carry"]);
+    expect(s[0].score).toBeNull();
+    expect(s[2].unknownFilters).toEqual(["permitless_carry"]);
+  });
+
+  it("an empty accept list rules out every county with a value", () => {
+    const s = scoreCounties(withCarry(["true", "false"]), {
+      weights: {},
+      categoryFilters: [{ category: "permitless_carry", accept: [] }],
+    });
+    expect(s.every((c) => c.status === "excluded")).toBe(true);
+  });
+
+  it("state-level metrics never count as missing columns", () => {
+    const d = parseCountyPayload(payload([{ fips: "01001" }]));
+    expect(d.missingColumns).toEqual([]);
   });
 });

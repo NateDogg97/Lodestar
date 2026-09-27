@@ -71,17 +71,25 @@ function loadLawData(): Promise<LawData> {
   return lawsPending;
 }
 
-export function useLawData(): LawData | null {
-  const [data, setData] = useState<LawData | null>(null);
+/**
+ * `settled` turns true once the file has loaded or failed; the finder waits
+ * for it so law-based metrics don't flash "unknown" and re-rank on arrival.
+ * On failure `data` stays null and every law value is unknown.
+ */
+export function useLawData(): { settled: boolean; data: LawData | null } {
+  const [state, setState] = useState<{ settled: boolean; data: LawData | null }>({ settled: false, data: null });
   useEffect(() => {
     let cancelled = false;
     loadLawData().then(
-      (d) => !cancelled && setData(d),
-      (err: unknown) => console.warn("[laws]", err),
+      (data) => !cancelled && setState({ settled: true, data }),
+      (err: unknown) => {
+        console.warn("[laws]", err);
+        if (!cancelled) setState({ settled: true, data: null });
+      },
     );
     return () => {
       cancelled = true;
     };
   }, []);
-  return data;
+  return state;
 }

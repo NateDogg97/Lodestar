@@ -4,13 +4,14 @@ import { useState } from "react";
 
 import {
   explainScore,
+  filterLabel,
   formatValue,
   getMetric,
   ordinal,
   type CountyDataset,
   type CountyScore,
+  type FilterKey,
   type MetricContribution,
-  type MetricKey,
 } from "@/lib/scoring";
 
 import { scoreColor, UNKNOWN_COLOR } from "./score-colors";
@@ -129,7 +130,7 @@ export function Reasons({ score }: { score: CountyScore }) {
 }
 
 export function StatusBadges({ score: s }: { score: CountyScore }) {
-  const names = (keys: readonly MetricKey[]) => keys.map((k) => getMetric(k).label).join(", ");
+  const names = (keys: readonly FilterKey[]) => keys.map(filterLabel).join(", ");
   return (
     <>
       {s.status === "unknown" && (

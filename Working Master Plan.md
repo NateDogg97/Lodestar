@@ -8,6 +8,8 @@
 > Last updated: 2026-09-26
 >
 > **Changelog**
+> - 2026-09-27 — **Law filters.** Filters panel split into Place and Laws & taxes tabs; taxes
+>   are sliders, policies are pass/fail "acceptable values" filters. See Phase 5.
 > - 2026-09-27 — **Phase 5 started: state laws, sourced and re-checked automatically.** No
 >   person reviews law values, so every value is parsed by code from a cited source
 >   (`etl/laws/refresh.py`), re-checked monthly by a GitHub Actions workflow, and shown in the
@@ -806,10 +808,13 @@ Known rough edges to expect:
       where possible; `python -m etl.laws.refresh`; monthly `.github/workflows/laws-refresh.yml`
       (starts once the repo is pushed to GitHub); "Laws & taxes" in the county card with source,
       source date and check date on every value (LAWS.md §10).
-- [ ] **Laws as scoring filters.** Numeric laws (income, sales tax, minimum wage, electricity)
-      join onto counties by state and become sliders. Boolean (require true / false / don't
-      care) and nominal (multi-select of acceptable values) need new controls; ordinals map
-      through their declared order.
+- [x] **Laws as filters** (2026-09-27). The Filters panel has two tabs, **Place** and **Laws &
+      taxes**. Income and sales tax are weighted sliders in Laws & taxes; electricity sits in
+      Place → Cost of living after utilities; property tax stays in Housing. Marijuana and
+      abortion access are "acceptable values" checkboxes, permitless carry is Any / Permitless /
+      Permit required — policies are never weighted, only rule out. Income tax structure,
+      grocery tax and minimum wage are info only (county card). Engine: state-level metrics
+      (`scope: "state"`) and category filters, joined from laws.json per county (LAWS.md §10).
 - [ ] Each new metric = one column + one slider
 
 ### Phase 6 — Climate tab

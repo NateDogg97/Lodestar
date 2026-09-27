@@ -20,6 +20,7 @@
  * score of a county that was already on screen.
  */
 
+import { getCategory, isCategoryKey, type CategoryKey } from "./categories";
 import type { CountyDataset } from "./dataset";
 import { getMetric, METRIC_KEYS, type Direction, type MetricKey } from "./metrics";
 import { percentileRanks } from "./percentile";
@@ -54,12 +55,29 @@ export interface RangeFilter {
   max?: number;
 }
 
+/**
+ * A policy filter: the county's value must be one of `accept`. An empty
+ * list rules everything out; leave the filter off for "don't care".
+ */
+export interface CategoryFilter {
+  category: CategoryKey;
+  accept: readonly string[];
+}
+
+/** What a filter is on: a metric (range limit) or a policy category. */
+export type FilterKey = MetricKey | CategoryKey;
+
+export function filterLabel(key: FilterKey): string {
+  return isCategoryKey(key) ? getCategory(key).label : getMetric(key).label;
+}
+
 export interface ScoringInput {
   /** 0–5 per metric. Absent or 0 means the metric does not count. */
   weights: Partial<Record<MetricKey, number>>;
   /** Override what "better" means for a metric, e.g. hot summers, or typical rainfall. */
   directions?: Partial<Record<MetricKey, Direction>>;
   filters?: RangeFilter[];
+  categoryFilters?: CategoryFilter[];
 }
 
 /**
@@ -89,8 +107,8 @@ export interface CountyScore {
   /** 0–100, or null when excluded or when no weighted metric has data. */
   score: number | null;
   status: CountyStatus;
-  failedFilters: MetricKey[];
-  unknownFilters: MetricKey[];
+  failedFilters: FilterKey[];
+  unknownFilters: FilterKey[];
   /** Weighted metrics this county has no data for; non-empty means the score is partial. */
   missingMetrics: MetricKey[];
   /** One entry per weighted metric, in the order they were weighted. */
@@ -127,17 +145,24 @@ export function scoreCounties(prepared: PreparedDataset, input: ScoringInput): C
     weighted.push({ metric: key, weight, direction });
   }
   const filters = input.filters ?? [];
+  const categoryFilters = (input.categoryFilters ?? []).map((f) => ({ ...f, accept: new Set(f.accept) }));
 
   const out: CountyScore[] = new Array(data.n);
   for (let i = 0; i < data.n; i++) {
-    const failedFilters: MetricKey[] = [];
-    const unknownFilters: MetricKey[] = [];
+    const failedFilters: FilterKey[] = [];
+    const unknownFilters: FilterKey[] = [];
     for (const f of filters) {
       const v = data.values[f.metric][i];
       if (Number.isNaN(v)) unknownFilters.push(f.metric);
       else if ((f.min !== undefined && v < f.min) || (f.max !== undefined && v > f.max)) {
         failedFilters.push(f.metric);
       }
+    }
+    // Policy filters follow the same rule: no value is unknown, never a guess.
+    for (const f of categoryFilters) {
+      const v = data.categories[f.category][i];
+      if (v === null) unknownFilters.push(f.category);
+      else if (!f.accept.has(v)) failedFilters.push(f.category);
     }
     const status: CountyStatus = failedFilters.length
       ? "excluded"

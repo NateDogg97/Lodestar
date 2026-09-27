@@ -4,3 +4,4 @@ export * from "./percentile";
 export * from "./score";
 export * from "./format";
 export * from "./relative";
+export * from "./categories";

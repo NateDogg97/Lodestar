@@ -435,7 +435,22 @@ Built 2026-09-27 as the **Laws & taxes** section of the selected-county card
 - **A standing disclaimer** closes the section: compiled automatically from the linked
   sources, re-checked about monthly, verify anything you'd act on.
 
-Laws are not yet scoring filters — see the master plan, Phase 5.
+**Laws as filters** (2026-09-27), in the Filters panel's **Laws & taxes** tab:
+
+| Law | Where | Control |
+|---|---|---|
+| `income_tax_top_rate`, `sales_tax_combined` | Laws & taxes → Taxes | Weighted slider, Lower/Average/Higher, limits |
+| `electricity_price_cents_kwh` | Place → Cost of living, after utilities | Weighted slider |
+| `property_tax_effective_rate` | Place → Housing (county-level) | Weighted slider |
+| `marijuana_status`, `abortion_access` | Laws & taxes → Policies | Checkboxes of acceptable values (all = no filter) |
+| `permitless_carry` | Laws & taxes → Policies | Any / Permitless only / Permit required only |
+| `income_tax_structure`, `grocery_tax_exempt`, `minimum_wage` | County card only | Info |
+
+Each county takes its state's value (`applyStateLaws`, `src/lib/laws`), so all counties in a
+state tie on a law; percentiles are over counties, so a state with many counties (Texas, 254)
+moves the percentile scale more than one with few. Policies are never weighted: a county
+whose state isn't allowed is ruled out, and a blank value counts as unknown. Every law control
+shows its source and dates.
 
 ---
 
@@ -459,11 +474,9 @@ Laws are not yet scoring filters — see the master plan, Phase 5.
 - `refresh.py` + 6 source parsers, `publish.py`, `verify_laws.py` (7 checks), 72 parser/merge
   tests and 33 verifier tests, all offline.
 - Monthly GitHub Actions workflow (runs once the repo is on GitHub).
-- The app's Laws & taxes section with sources and dates (§10).
+- The app's Laws & taxes section with sources and dates, and law filters (§10).
 
 **Not done**
-- Laws as scoring filters (numeric ones are easy; boolean and nominal need the new controls
-  in §3).
 - Second sources for sales tax, groceries and abortion.
 - County overrides (§7).
 - Tier C laws — waiting for a machine-readable source.

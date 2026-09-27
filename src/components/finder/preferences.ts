@@ -1,4 +1,14 @@
-import { DIRECTIONS, METRIC_KEYS, type Direction, type MetricKey, type RangeFilter, type ScoringInput } from "@/lib/scoring";
+import {
+  CATEGORIES,
+  DIRECTIONS,
+  METRIC_KEYS,
+  type CategoryFilter,
+  type CategoryKey,
+  type Direction,
+  type MetricKey,
+  type RangeFilter,
+  type ScoringInput,
+} from "@/lib/scoring";
 
 /**
  * Places that are opt-in (plan §6): off means cut from the data before
@@ -20,6 +30,8 @@ export interface Preferences {
   weights: Partial<Record<MetricKey, number>>;
   directions: Partial<Record<MetricKey, Direction>>;
   limits: Partial<Record<MetricKey, { min?: number; max?: number }>>;
+  /** Policy filters: the values a county's state may have. Absent = don't care. */
+  categories: Partial<Record<CategoryKey, string[]>>;
   /** Show counties whose data is missing for a limit (grey, "unknown"). */
   includeUnknown: boolean;
   /** Opt-in places; both off by default. */
@@ -40,6 +52,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   },
   directions: {},
   limits: {},
+  categories: {},
   includeUnknown: true,
   includeStates: { AK: false, HI: false },
 };
@@ -48,6 +61,7 @@ export const EMPTY_PREFERENCES: Preferences = {
   weights: {},
   directions: {},
   limits: {},
+  categories: {},
   includeUnknown: true,
   includeStates: { AK: false, HI: false },
 };
@@ -62,7 +76,11 @@ export function toScoringInput(prefs: Preferences): ScoringInput {
   for (const [metric, limit] of Object.entries(prefs.limits) as [MetricKey, { min?: number; max?: number }][]) {
     if (limit.min !== undefined || limit.max !== undefined) filters.push({ metric, ...limit });
   }
-  return { weights: prefs.weights, directions: prefs.directions, filters };
+  const categoryFilters: CategoryFilter[] = [];
+  for (const [category, accept] of Object.entries(prefs.categories) as [CategoryKey, string[] | undefined][]) {
+    if (accept) categoryFilters.push({ category, accept });
+  }
+  return { weights: prefs.weights, directions: prefs.directions, filters, categoryFilters };
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +105,7 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
     weights: {},
     directions: {},
     limits: {},
+    categories: {},
     includeUnknown: typeof raw.includeUnknown === "boolean" ? raw.includeUnknown : true,
     includeStates: { AK: false, HI: false },
   };
@@ -107,6 +126,14 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
       if (isNumber(l.min)) limit.min = l.min;
       if (isNumber(l.max)) limit.max = l.max;
       if (limit.min !== undefined || limit.max !== undefined) out.limits[k as MetricKey] = limit;
+    }
+  }
+  if (isRecord(raw.categories)) {
+    for (const def of CATEGORIES) {
+      const accept = raw.categories[def.key];
+      if (!Array.isArray(accept)) continue;
+      const allowed = new Set<string>(def.options.map((o) => o.value));
+      out.categories[def.key] = [...new Set(accept.filter((v): v is string => typeof v === "string" && allowed.has(v)))];
     }
   }
   if (isRecord(raw.includeStates)) {
