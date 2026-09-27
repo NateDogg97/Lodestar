@@ -869,7 +869,11 @@ first place view, not at startup. One file, not per state, because the envelope 
       history entry, so Back / Escape return to the list. On phones the place identity is the
       sheet's drag header. Tabs so far: Overview (today's reasons + breakdown, reworked in the
       next step) and Laws & taxes; Climate joins with its step. Replaces the old county card.
-- [ ] Overview tab: reasons + per-filter pass/fail/unknown + weighted breakdown
+- [x] Overview tab: reasons + per-filter pass/fail/unknown + weighted breakdown — 2026-09-27
+      (`place-overview.tsx`): a status line (passes all / ruled out / unknown), "Why it ranks
+      here", "Your filters" (✓/✕/? with your rule in words and the county's value, limits and
+      policies alike), and "How it's scored" as rows with a 0–100 points bar, percentile,
+      direction, weight and effect. Rows, not a table, so it fits a phone.
 - [ ] Climate tab: monthly chart, key numbers, source; compare-with overlay
 - [ ] Köppen climate type (computed from monthly normals) as a label and filter
 - [x] ~~Add `days_above_90f` / `days_below_32f`~~ Moved to Phase 3 (§6 *Climate preferences*)

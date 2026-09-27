@@ -178,7 +178,8 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
 
   const prepared = useMemo(() => prepareDataset(scoped), [scoped]);
   const ranges = useMemo(() => nationalRanges(scoped), [scoped]);
-  const scores = useMemo(() => scoreCounties(prepared, toScoringInput(deferred)), [prepared, deferred]);
+  const scoringInput = useMemo(() => toScoringInput(deferred), [deferred]);
+  const scores = useMemo(() => scoreCounties(prepared, scoringInput), [prepared, scoringInput]);
   const scoresByFips = useMemo(() => new Map(scores.map((s) => [s.fips, s])), [scores]);
   const ranked = useMemo(
     () => rankCounties(scores, { includeUnknown: deferred.includeUnknown }),
@@ -264,6 +265,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         total: ranked.length,
         rel: relative.get(selected.fips),
         laws,
+        input: scoringInput,
         onBack: backToList,
       }
     : null;

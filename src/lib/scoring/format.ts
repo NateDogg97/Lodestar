@@ -65,3 +65,14 @@ export function ordinal(n: number): string {
       return `${r}th`;
   }
 }
+
+/** A limit in words: "at most 5.00%", "at least 40°F", "between 20 and 40 days". */
+export function describeLimit(metric: MetricKey, limit: { min?: number; max?: number }): string {
+  const { min, max } = limit;
+  if (min !== undefined && max !== undefined) {
+    return `between ${formatValue(metric, min)} and ${formatValue(metric, max)}`;
+  }
+  if (max !== undefined) return `at most ${formatValue(metric, max)}`;
+  if (min !== undefined) return `at least ${formatValue(metric, min)}`;
+  return "any value";
+}

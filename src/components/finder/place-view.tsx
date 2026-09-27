@@ -3,10 +3,11 @@
 import { useState, type ReactNode } from "react";
 
 import type { LawData } from "@/lib/laws";
-import { formatValue, type CountyDataset, type CountyScore, type MetricKey } from "@/lib/scoring";
+import { formatValue, type CountyDataset, type CountyScore, type MetricKey, type ScoringInput } from "@/lib/scoring";
 
 import { LawsSection } from "./laws-section";
-import { Breakdown, Reasons, ScoreBadge, StatusBadges } from "./results-list";
+import { PlaceOverview } from "./place-overview";
+import { ScoreBadge, StatusBadges } from "./results-list";
 
 /**
  * The place view (plan Phase 6): what the Results panel / sheet shows once a
@@ -39,6 +40,8 @@ export interface PlaceProps {
   total: number;
   rel: number | null | undefined;
   laws: LawData | null;
+  /** The search the county was scored against (for the Overview's filter list). */
+  input: ScoringInput;
   onBack: () => void;
 }
 
@@ -81,7 +84,7 @@ export function PlaceIdentity({ score: s, data, rank, total, rel, onBack }: Plac
  * lives in the sheet header instead.
  */
 export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
-  const { score: s, data, laws, withIdentity } = props;
+  const { score: s, data, laws, input, withIdentity } = props;
   const [tab, setTab] = useState<PlaceTab>("overview");
   const facts = QUICK_FACTS.map((f) => ({ ...f, value: data.values[f.metric][s.index] })).filter(
     (f) => !Number.isNaN(f.value),
@@ -132,29 +135,13 @@ export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
       </div>
 
       <div id="place-tabpanel" role="tabpanel" aria-labelledby={`place-tab-${tab}`} className="px-4 py-3">
-        {tab === "overview" && <Overview score={s} />}
+        {tab === "overview" && <PlaceOverview score={s} data={data} input={input} />}
         {tab === "laws" &&
           (laws ? (
             <LawsSection laws={laws} data={data} index={s.index} />
           ) : (
             <Empty>Law and tax data couldn&rsquo;t be loaded.</Empty>
           ))}
-      </div>
-    </div>
-  );
-}
-
-function Overview({ score: s }: { score: CountyScore }) {
-  return (
-    <div>
-      {s.failedFilters.length > 0 && (
-        <p className="mb-2 text-xs text-rose-700 dark:text-rose-400">
-          Fails your {s.failedFilters.length === 1 ? "filter" : `${s.failedFilters.length} filters`}.
-        </p>
-      )}
-      <Reasons score={s} />
-      <div className="mt-3">
-        <Breakdown score={s} />
       </div>
     </div>
   );

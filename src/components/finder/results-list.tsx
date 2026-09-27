@@ -7,7 +7,6 @@ import {
   filterLabel,
   formatValue,
   getMetric,
-  ordinal,
   type CountyDataset,
   type CountyScore,
   type FilterKey,
@@ -187,63 +186,5 @@ export function ScoreBadge({ score, rel }: { score: number | null; rel: number |
       </span>
       <span className="w-7 text-right text-sm font-semibold tabular-nums">{Math.round(score)}</span>
     </span>
-  );
-}
-
-export function Breakdown({ score: s }: { score: CountyScore }) {
-  if (s.contributions.length === 0) {
-    return (
-      <p className="text-sm text-neutral-500">
-        Nothing is weighted yet, so there is no score to break down.
-      </p>
-    );
-  }
-  const rows = [...s.contributions].sort((a, b) => (b.impact ?? -Infinity) - (a.impact ?? -Infinity));
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <caption className="sr-only">Score breakdown</caption>
-        <thead>
-          <tr className="text-left text-xs text-neutral-500">
-            <th className="py-1 pr-3 font-normal">Metric</th>
-            <th className="py-1 pr-3 font-normal">Value</th>
-            <th className="py-1 pr-3 font-normal">Percentile</th>
-            <th className="py-1 pr-3 font-normal">Weight</th>
-            <th className="py-1 font-normal">Effect</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((c) => (
-            <tr key={c.metric} className="border-t border-neutral-200 dark:border-neutral-800">
-              <td className="py-1 pr-3">{getMetric(c.metric).label}</td>
-              <td className="py-1 pr-3 tabular-nums">{formatValue(c.metric, c.value)}</td>
-              <td className="py-1 pr-3 tabular-nums">
-                {c.rawPercentile === null ? "—" : ordinal(c.rawPercentile)}
-                <span className="ml-1 text-xs text-neutral-500">
-                  {c.direction === "middle" ? "· aiming for 50th" : c.direction === "lower" ? "· lower is better" : ""}
-                </span>
-              </td>
-              <td className="py-1 pr-3 tabular-nums">{c.weight}</td>
-              <td className="py-1 tabular-nums">
-                {c.impact === null ? (
-                  <span className="text-neutral-400">Not counted</span>
-                ) : (
-                  <span className={c.impact >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}>
-                    {c.impact >= 0 ? "+" : "−"}
-                    {Math.abs(Math.round(c.impact))}
-                  </span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="mt-2 text-xs text-neutral-500">
-        Percentile = where this county sits among all counties (higher value, higher
-        percentile). Each metric turns that into 0–100 points: the percentile itself when
-        higher is better, 100 minus it when lower is better, and 100 minus twice its distance
-        from the 50th when average is better. Effect = weight × (points − 50).
-      </p>
-    </div>
   );
 }

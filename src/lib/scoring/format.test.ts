@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatValue, ordinal } from "./format";
+import { describeLimit, formatValue, ordinal } from "./format";
 
 describe("formatValue", () => {
   it("formats each unit the way a person would say it", () => {
@@ -37,5 +37,14 @@ describe("ordinal", () => {
 
   it("rounds to a whole percentile", () => {
     expect(ordinal(93.6)).toBe("94th");
+  });
+});
+
+describe("describeLimit", () => {
+  it("says a limit in words, in the metric's units", () => {
+    expect(describeLimit("income_tax_top_rate", { max: 5 })).toBe("at most 5.00%");
+    expect(describeLimit("coldest_month_low_f", { min: 20 })).toBe("at least 20°F");
+    expect(describeLimit("days_above_90f", { min: 5, max: 30 })).toBe("between 5 days and 30 days");
+    expect(describeLimit("rpp_all", {})).toBe("any value");
   });
 });
