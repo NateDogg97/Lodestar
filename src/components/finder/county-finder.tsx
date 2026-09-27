@@ -6,7 +6,9 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternal
 import { applyStateLaws, lawSource, type LawData, type LawSourceSummary } from "@/lib/laws";
 import {
   CATEGORY_KEYS,
+  COUNTY_CATEGORY_KEYS,
   MAP_TOP_N,
+  STATE_CATEGORY_KEYS,
   STATE_METRIC_KEYS,
   METRIC_KEYS,
   prepareDataset,
@@ -118,7 +120,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   }, [laws]);
   const stateCounts = useMemo(() => {
     const out: Partial<Record<CategoryKey, Record<string, number>>> = {};
-    for (const key of CATEGORY_KEYS) {
+    for (const key of STATE_CATEGORY_KEYS) {
       const c: Record<string, number> = {};
       for (const facts of Object.values(laws?.states ?? {})) {
         const v = facts[key]?.v;
@@ -197,6 +199,16 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   }, [data, excludedKey]);
 
   const prepared = useMemo(() => prepareDataset(scoped), [scoped]);
+  // Option counts beside each category filter: states for policies, counties for climate type.
+  const categoryCounts = useMemo(() => {
+    const out = { ...stateCounts };
+    for (const key of COUNTY_CATEGORY_KEYS) {
+      const c: Record<string, number> = {};
+      for (const v of scoped.categories[key]) if (v !== null) c[v] = (c[v] ?? 0) + 1;
+      out[key] = c;
+    }
+    return out;
+  }, [stateCounts, scoped]);
   const ranges = useMemo(() => nationalRanges(scoped), [scoped]);
   const scoringInput = useMemo(() => toScoringInput(deferred), [deferred]);
   const scores = useMemo(() => scoreCounties(prepared, scoringInput), [prepared, scoringInput]);
@@ -363,7 +375,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
           resetKey={resetKey}
           tab={filtersTab}
           sources={lawSources}
-          stateCounts={stateCounts}
+          categoryCounts={categoryCounts}
         />
       </div>
     </div>

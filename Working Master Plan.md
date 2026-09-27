@@ -8,6 +8,9 @@
 > Last updated: 2026-09-26
 >
 > **Changelog**
+> - 2026-09-27 — **Phase 6 complete.** Place view (Overview / Climate / Laws & taxes), monthly
+>   climate charts with a compare county, and a Köppen climate type label and filter. The
+>   month-by-month envelope and "climate like a place I know" moved to §10 (deferred).
 > - 2026-09-27 — **Phase 6 planned: place view + climate.** Selecting a county replaces the
 >   results list with a Google Maps–style place view (header, Overview / Climate / Laws &
 >   taxes tabs, "← All results", Back gesture); the detail view moves here from Phase 7.
@@ -821,7 +824,7 @@ Known rough edges to expect:
       (`scope: "state"`) and category filters, joined from laws.json per county (LAWS.md §10).
 - [ ] Each new metric = one column + one slider
 
-### Phase 6 — Place view and climate
+### Phase 6 — Place view and climate ✅ **DONE 2026-09-27**
 
 **Decided 2026-09-27 (planning session):**
 
@@ -884,14 +887,19 @@ first place view, not at startup. One file, not per state, because the envelope 
       validated light and dark), remembered across places and sessions. Source line: NOAA
       normals + nearest-station distance, with a caution past 25 mi. climate.json is loaded on
       first use of the tab and now also carries station distances (1.40 MB).
-- [ ] Köppen climate type (computed from monthly normals) as a label and filter
+- [x] Köppen climate type as a label and filter — 2026-09-27. The ETL computes it per county
+      from the monthly normals with the Peel, Finlayson & McMahon (2007) rules (`etl/climate.py`
+      `koppen()`; E checked before B so dry Arctic Alaska is tundra), publishes a `koppen`
+      column, and FAILs on an unnamed type, a climate county without a type, or a wrong
+      well-known place (Austin Cfa, Phoenix BWh, Seattle Csb, Minneapolis Dfa, Denver BSk).
+      App: a county-level category filter "Climate type (Köppen)" in Place → Climate
+      (checkboxes of the types that exist, with county counts), a header chip, and a line at
+      the top of the Climate tab with a borderline-county caveat. Mix (50 states + DC): Cfa
+      1,394 · Dfa 801 · Dfb 472 · BSk 209 · others < 70 each.
 - [x] ~~Add `days_above_90f` / `days_below_32f`~~ Moved to Phase 3 (§6 *Climate preferences*)
-- [ ] **Month-by-month climate envelope** — an acceptable range per month; a county passes if
-      its monthly curve fits inside. Ships monthly normals to the browser as a separate,
-      lazily loaded file (the tab needs it anyway).
-- [ ] **"Climate like a place I know"** — pick a county; score others by similarity of their
-      monthly high/low/precipitation curves
-- [ ] Köppen climate type as a label and categorical filter
+- [x] ~~Month-by-month climate envelope~~ and ~~"Climate like a place I know"~~ — moved to §10
+      *Explicitly deferred* on 2026-09-27 when Phase 6 closed; the Climate tab's compare overlay
+      covers the everyday need.
 
 ### Phase 7 — Polish *(always last)*
 - [ ] **"New version available" prompt.** After a deploy, the first visit shows the previously
@@ -922,6 +930,12 @@ Not in MVP. Do not build these until the above ships.
 - The state→neighborhood specificity filter
 - User accounts and auth
 - Natural language search
+- **Month-by-month climate envelope** (from Phase 6) — an acceptable range per month; a county
+  passes if its monthly curve fits inside. The monthly data is already in the browser
+  (`climate.json`); needs a chart-based control.
+- **"Climate like a place I know"** (from Phase 6) — pick a county; score others by the
+  similarity of their monthly high/low/precipitation curves. Pairs with the envelope (a chosen
+  county's curve ± a margin).
 - **Place profile content** (requested 2026-09-26) for the selected-result detail view:
   images, points of interest and attractions, what the place is known for, rules and laws
   to know, and anything else worth knowing, good and bad. Notes for when it's built:

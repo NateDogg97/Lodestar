@@ -11,7 +11,7 @@ import {
   type CountyClimate,
   type MeasureKey,
 } from "@/lib/climate";
-import type { CountyDataset } from "@/lib/scoring";
+import { categoryLabel, type CountyDataset } from "@/lib/scoring";
 
 import { MonthChart, type ChartSeries } from "./month-chart";
 import { useClimateData } from "./use-county-data";
@@ -84,6 +84,11 @@ export function ClimateTab({ fips, data, compareFips, onCompare }: Props) {
     return i === undefined ? f : `${data.countyName[i]}, ${data.state[i]}`;
   };
   const other = compareFips && compareFips !== fips ? climate.byFips.get(compareFips) : undefined;
+  const typeOf = (f: string) => {
+    const i = data.indexByFips.get(f);
+    const k = i === undefined ? null : data.categories.koppen[i];
+    return k ? categoryLabel("koppen", k) : null;
+  };
   const counties: { name: string; color: string; c: CountyClimate }[] = [
     { name: name(fips), color: "var(--viz-s1)", c: here },
     ...(other && compareFips ? [{ name: name(compareFips), color: "var(--viz-s2)", c: other }] : []),
@@ -122,6 +127,31 @@ export function ClimateTab({ fips, data, compareFips, onCompare }: Props) {
           ))}
         </ul>
       )}
+
+      <div>
+        <p className="text-sm">
+          <span className="text-neutral-500">Climate type:</span>{" "}
+          <span className="font-semibold">{typeOf(fips) ?? "Unknown"}</span>
+          {other && compareFips && (
+            <span className="text-neutral-500">
+              {" "}
+              · {name(compareFips)}: {typeOf(compareFips) ?? "Unknown"}
+            </span>
+          )}
+        </p>
+        <p className="mt-0.5 text-[11px] leading-snug text-neutral-500">
+          <a
+            href="https://en.wikipedia.org/wiki/K%C3%B6ppen_climate_classification"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-neutral-300 underline-offset-2"
+          >
+            Köppen–Geiger
+          </a>{" "}
+          type, computed from these normals with the Peel et al. (2007) rules. A county near a boundary
+          between types may differ from published maps.
+        </p>
+      </div>
 
       <KeyNumbers counties={counties} />
 

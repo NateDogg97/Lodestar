@@ -33,7 +33,7 @@ const GROUPS: { id: MetricGroup; label: string; tab: FiltersTab }[] = [
 
 /** How many law & tax filters are doing something — for the tab's badge. */
 export function activeLawFilters(prefs: Preferences): number {
-  let n = Object.values(prefs.categories).filter(Boolean).length;
+  let n = CATEGORIES.filter((c) => c.scope === "state" && prefs.categories[c.key]).length;
   for (const m of METRICS) {
     if (m.group !== "taxes") continue;
     const limit = prefs.limits[m.key];
@@ -65,11 +65,11 @@ interface Props {
   tab: FiltersTab;
   /** Source and dates for each state-level metric and policy, keyed like the law table. */
   sources: Record<string, LawSourceSummary>;
-  /** Per policy: how many states (and DC) have each value. */
-  stateCounts: Partial<Record<CategoryKey, Record<string, number>>>;
+  /** Per category: how many states (policies) or counties (climate type) have each value. */
+  categoryCounts: Partial<Record<CategoryKey, Record<string, number>>>;
 }
 
-export function PreferencesPanel({ prefs, onChange, ranges, resetKey, tab, sources, stateCounts }: Props) {
+export function PreferencesPanel({ prefs, onChange, ranges, resetKey, tab, sources, categoryCounts }: Props) {
   const setWeight = (key: MetricKey, weight: number) =>
     onChange({ ...prefs, weights: { ...prefs.weights, [key]: weight } });
 
@@ -110,6 +110,16 @@ export function PreferencesPanel({ prefs, onChange, ranges, resetKey, tab, sourc
               source={sources[m.key]}
             />
           ))}
+          {CATEGORIES.filter((def) => def.scope === "county" && group.id === "climate").map((def) => (
+            <CategoryControl
+              key={def.key}
+              def={def}
+              accept={prefs.categories[def.key]}
+              counts={categoryCounts[def.key] ?? {}}
+              source={undefined}
+              onChange={(accept) => setCategory(def.key, accept)}
+            />
+          ))}
         </fieldset>
       ))}
       {tab === "laws" && (
@@ -121,12 +131,12 @@ export function PreferencesPanel({ prefs, onChange, ranges, resetKey, tab, sourc
             Not weighted — a county whose state isn&rsquo;t one you allow is ruled out. States with no
             value (sources disagree) are kept as unknown.
           </p>
-          {CATEGORIES.map((def) => (
+          {CATEGORIES.filter((def) => def.scope === "state").map((def) => (
             <CategoryControl
               key={def.key}
               def={def}
               accept={prefs.categories[def.key]}
-              counts={stateCounts[def.key] ?? {}}
+              counts={categoryCounts[def.key] ?? {}}
               source={sources[def.key]}
               onChange={(accept) => setCategory(def.key, accept)}
             />
@@ -169,7 +179,10 @@ function CategoryControl({
   source: LawSourceSummary | undefined;
   onChange: (accept: string[] | undefined) => void;
 }) {
-  const all = def.options.map((o) => o.value);
+  // A county-level type no county has (e.g. ice cap) isn't worth a checkbox,
+  // and isn't part of the filter: "all" means all the types that exist.
+  const visible = def.options.filter((o) => def.scope === "state" || (counts[o.value] ?? 0) > 0);
+  const all = visible.map((o) => o.value);
   const active = accept !== undefined;
   const groupId = `category-${def.key}`;
 
@@ -208,7 +221,7 @@ function CategoryControl({
         </div>
       ) : (
         <div role="group" aria-labelledby={groupId} className="mt-1 space-y-0.5">
-          {def.options.map((o) => {
+          {visible.map((o) => {
             const checked = accept === undefined || accept.includes(o.value);
             return (
               <label key={o.value} className="flex cursor-pointer items-center gap-2 text-xs">
@@ -216,7 +229,7 @@ function CategoryControl({
                   type="checkbox"
                   checked={checked}
                   onChange={(e) => {
-                    const current = accept ?? all;
+                    const current = (accept ?? all).filter((v) => all.includes(v));
                     const next = e.target.checked ? [...current, o.value] : current.filter((v) => v !== o.value);
                     // Everything allowed again is the same as no filter.
                     onChange(all.every((v) => next.includes(v)) ? undefined : all.filter((v) => next.includes(v)));
@@ -224,7 +237,10 @@ function CategoryControl({
                   className="accent-emerald-600"
                 />
                 <span className="flex-1">{o.label}</span>
-                <span className="tabular-nums text-neutral-400" title="States (and DC) with this value">
+                <span
+                  className="tabular-nums text-neutral-400"
+                  title={def.scope === "state" ? "States (and DC) with this value" : "Counties with this climate type"}
+                >
                   {counts[o.value] ?? 0}
                 </span>
               </label>

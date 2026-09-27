@@ -172,6 +172,7 @@ COLUMN_ORDER = [
     "hottest_month_high_f", "coldest_month_low_f",
     "days_above_90f", "nights_below_32f", "rainy_days", "snow_days",
     "climate_point", "climate_station_id", "climate_station_dist_mi", "climate_station_count",
+    "koppen",
     # derived
     "home_value_to_income", "rent_to_income", "price_to_rent", "real_income",
     "property_tax_effective_rate",
@@ -193,5 +194,7 @@ def build() -> pd.DataFrame:
     """Full join + derive pipeline."""
     df = build_wide_table()
     df = add_derived_columns(df)
+    from .climate import add_koppen  # monthly normals -> Köppen type (Phase 6)
+    df = add_koppen(df)
     df = order_columns(df)
     return df.sort_values("fips").reset_index(drop=True)

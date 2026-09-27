@@ -721,6 +721,35 @@ def test_monthly_climate() -> None:
     check(any(s == "FAIL" and "no monthly rows" in m for s, m in climate.check(monthly, nochart)),
           "a county with climate numbers but no chart FAILs")
 
+    print("\nKöppen classification (Peel et al. 2007 rules)")
+    f2c = lambda f: (f - 32) * 5 / 9  # noqa: E731
+    mm = lambda i: i * 25.4  # noqa: E731
+    # Real 1991–2020 normals (monthly mean °F, precip in), rounded.
+    austin = ([52, 56, 63, 69, 77, 83, 86, 86, 81, 72, 61, 54],
+              [2.2, 2.0, 2.8, 2.3, 4.6, 4.2, 1.9, 2.3, 3.2, 3.9, 2.8, 2.6])
+    phoenix = ([56, 59, 65, 72, 81, 91, 95, 94, 88, 76, 64, 55],
+               [0.9, 0.9, 0.9, 0.3, 0.1, 0.0, 1.0, 0.9, 0.6, 0.6, 0.6, 0.9])
+    seattle = ([42, 44, 47, 51, 57, 62, 67, 68, 62, 53, 46, 41],
+               [5.8, 3.8, 4.2, 3.3, 2.0, 1.6, 0.6, 0.9, 1.6, 3.8, 6.3, 5.8])
+    minneapolis = ([16, 20, 33, 47, 59, 69, 74, 71, 62, 48, 33, 20],
+                   [0.9, 0.8, 1.9, 3.0, 3.9, 4.6, 4.0, 4.3, 3.1, 2.6, 1.6, 1.2])
+    miami = ([69, 70, 73, 76, 80, 83, 84, 84, 83, 80, 75, 71],
+             [1.8, 2.1, 2.5, 3.4, 6.1, 10.5, 7.5, 9.6, 10.2, 7.1, 3.0, 2.2])
+    barrow = ([-12, -14, -13, 1, 22, 36, 42, 40, 32, 18, 3, -8],
+              [0.2, 0.2, 0.2, 0.2, 0.2, 0.3, 1.0, 1.1, 0.7, 0.5, 0.2, 0.2])
+    for name, (t, p), want in [("Austin", austin, "Cfa"), ("Phoenix", phoenix, "BWh"),
+                               ("Seattle", seattle, "Csb"), ("Minneapolis", minneapolis, "Dfa"),
+                               ("Miami", miami, "Am"), ("Utqiagvik", barrow, "ET")]:
+        got = climate.koppen([f2c(x) for x in t], [mm(x) for x in p])
+        check(got == want, f"{name} is {want}", f"got {got}")
+    check(set(climate.KOPPEN_SPOT.values()) <= set(climate.KOPPEN_NAMES), "spot-check types are named")
+    kc = climate.koppen_column(monthly)
+    check(len(kc) == 2 and set(kc["koppen"]) <= set(climate.KOPPEN_NAMES),
+          "koppen_column types every county with full months")
+    bad = annual.assign(koppen=["Cfa", "Xyz"])
+    check(any(s == "FAIL" and "not in KOPPEN_NAMES" in m for s, m in climate.check_koppen(bad)),
+          "an unnamed Köppen type FAILs")
+
     payload = climate.to_payload(monthly, ["06075", "01001", "99999"], {"01001": 4.24, "06075": float("nan")})
     check(payload["stationMi"] == {"01001": 4.2}, "station distance rounded; unknown distance omitted")
     check(list(payload["counties"]) == ["06075", "01001"], "published in county order; unknown county skipped")

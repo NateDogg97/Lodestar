@@ -46,7 +46,7 @@ export function PlaceOverview({ score: s, data, input }: Props) {
         rule:
           f.accept.length === 0
             ? "nothing allowed"
-            : `${f.accept.length === 1 ? "must be" : "one of"} ${f.accept.map((a) => categoryLabel(f.category, a)).join(", ")}`,
+            : `${f.accept.length === 1 ? "must be" : "one of"} ${listLabels(f.accept.map((a) => categoryLabel(f.category, a)))}`,
         value: v === null ? "No data" : categoryLabel(f.category, v),
       };
     }),
@@ -205,6 +205,11 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
       {children}
     </h3>
   );
+}
+
+/** "A, B, C, D +3 more" — long accepted lists stay readable. */
+function listLabels(labels: string[], max = 4): string {
+  return labels.length <= max ? labels.join(", ") : `${labels.slice(0, max).join(", ")} +${labels.length - max} more`;
 }
 
 function nanToNull(v: number): number | null {

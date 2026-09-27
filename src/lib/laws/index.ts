@@ -7,7 +7,7 @@
  * (`checked`). The app must show all three wherever it shows a value.
  */
 
-import { CATEGORY_KEYS, STATE_METRIC_KEYS, type CountyDataset } from "@/lib/scoring";
+import { STATE_CATEGORY_KEYS, STATE_METRIC_KEYS, type CountyDataset } from "@/lib/scoring";
 
 export const LAWS_FORMAT = "laws-v1";
 
@@ -190,7 +190,7 @@ export function applyStateLaws(data: CountyDataset, laws: LawData | null): Count
     values[key] = arr;
   }
   const categories = { ...data.categories };
-  for (const key of CATEGORY_KEYS) {
+  for (const key of STATE_CATEGORY_KEYS) {
     categories[key] = Array.from({ length: data.n }, (_, i) => factFor(i, key)?.v ?? null);
   }
   return { ...data, values, categories };

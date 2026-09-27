@@ -1,10 +1,13 @@
 /**
- * Policy filters (LAWS.md §3): laws whose values are categories, not
- * numbers. They are never weighted — a county either has an acceptable
- * value or is ruled out, like a limit. Each county takes its state's value
- * from the law table (see `applyStateLaws` in src/lib/laws).
+ * Category filters: values that are categories, not numbers. They are never
+ * weighted — a county either has an acceptable value or is ruled out, like a
+ * limit. Two kinds:
+ * - `scope: "state"` — policies (LAWS.md §3): each county takes its state's
+ *   value from the law table (`applyStateLaws` in src/lib/laws); `value`
+ *   matches law_values.csv.
+ * - `scope: "county"` — a column of counties.json (the Köppen climate type).
  *
- * `options` are in display order; `value` matches law_values.csv.
+ * `options` are in display order.
  */
 
 export interface CategoryOption {
@@ -17,6 +20,7 @@ export interface CategoryOption {
 export interface CategoryDef {
   key: string;
   label: string;
+  scope: "state" | "county";
   /** How the filter is drawn: checkboxes (pick any) or require yes / no / don't care. */
   control: "multi" | "boolean";
   options: readonly CategoryOption[];
@@ -26,6 +30,7 @@ export const CATEGORIES = [
   {
     key: "marijuana_status",
     label: "Marijuana",
+    scope: "state",
     control: "multi",
     options: [
       { value: "recreational", label: "Legal for adults" },
@@ -37,6 +42,7 @@ export const CATEGORIES = [
   {
     key: "abortion_access",
     label: "Abortion access",
+    scope: "state",
     control: "multi",
     options: [
       { value: "protected", label: "Legal to viability or later" },
@@ -48,10 +54,51 @@ export const CATEGORIES = [
   {
     key: "permitless_carry",
     label: "Permitless carry",
+    scope: "state",
     control: "boolean",
     options: [
       { value: "true", label: "Yes — no permit needed", short: "Permitless only" },
       { value: "false", label: "No — permit required", short: "Permit required only" },
+    ],
+  },
+  {
+    // Köppen–Geiger, computed by the ETL from the monthly normals (etl/climate.py,
+    // Peel et al. 2007 rules). Names match KOPPEN_NAMES there.
+    key: "koppen",
+    label: "Climate type (Köppen)",
+    scope: "county",
+    control: "multi",
+    options: [
+      { value: "Af", label: "Tropical rainforest (Af)" },
+      { value: "Am", label: "Tropical monsoon (Am)" },
+      { value: "Aw", label: "Tropical savanna (Aw)" },
+      { value: "BWh", label: "Hot desert (BWh)" },
+      { value: "BWk", label: "Cold desert (BWk)" },
+      { value: "BSh", label: "Hot semi-arid (BSh)" },
+      { value: "BSk", label: "Cold semi-arid (BSk)" },
+      { value: "Csa", label: "Hot-summer Mediterranean (Csa)" },
+      { value: "Csb", label: "Warm-summer Mediterranean (Csb)" },
+      { value: "Csc", label: "Cold-summer Mediterranean (Csc)" },
+      { value: "Cwa", label: "Monsoon-influenced humid subtropical (Cwa)" },
+      { value: "Cwb", label: "Subtropical highland (Cwb)" },
+      { value: "Cwc", label: "Cold subtropical highland (Cwc)" },
+      { value: "Cfa", label: "Humid subtropical (Cfa)" },
+      { value: "Cfb", label: "Oceanic (Cfb)" },
+      { value: "Cfc", label: "Subpolar oceanic (Cfc)" },
+      { value: "Dsa", label: "Hot, dry-summer continental (Dsa)" },
+      { value: "Dsb", label: "Warm, dry-summer continental (Dsb)" },
+      { value: "Dsc", label: "Dry-summer subarctic (Dsc)" },
+      { value: "Dsd", label: "Very cold dry-summer subarctic (Dsd)" },
+      { value: "Dwa", label: "Hot, dry-winter continental (Dwa)" },
+      { value: "Dwb", label: "Warm, dry-winter continental (Dwb)" },
+      { value: "Dwc", label: "Dry-winter subarctic (Dwc)" },
+      { value: "Dwd", label: "Very cold dry-winter subarctic (Dwd)" },
+      { value: "Dfa", label: "Hot-summer humid continental (Dfa)" },
+      { value: "Dfb", label: "Warm-summer humid continental (Dfb)" },
+      { value: "Dfc", label: "Subarctic (Dfc)" },
+      { value: "Dfd", label: "Extremely cold subarctic (Dfd)" },
+      { value: "ET", label: "Tundra (ET)" },
+      { value: "EF", label: "Ice cap (EF)" },
     ],
   },
 ] as const satisfies readonly CategoryDef[];
@@ -59,6 +106,10 @@ export const CATEGORIES = [
 export type CategoryKey = (typeof CATEGORIES)[number]["key"];
 
 export const CATEGORY_KEYS: readonly CategoryKey[] = CATEGORIES.map((c) => c.key);
+/** Categories filled from the law table, by state. */
+export const STATE_CATEGORY_KEYS: readonly CategoryKey[] = CATEGORIES.filter((c) => c.scope === "state").map((c) => c.key);
+/** Categories read from a counties.json column. */
+export const COUNTY_CATEGORY_KEYS: readonly CategoryKey[] = CATEGORIES.filter((c) => c.scope === "county").map((c) => c.key);
 
 const BY_KEY = new Map<string, CategoryDef>(CATEGORIES.map((c) => [c.key, c]));
 

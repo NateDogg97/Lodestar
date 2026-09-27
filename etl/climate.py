@@ -154,9 +154,34 @@ def check(monthly: pd.DataFrame, df: pd.DataFrame) -> list[tuple[str, str]]:
             out.append(("FAIL", f"{annual} disagrees with its monthly {how} in {len(off)} counties "
                                 f"(worst {off.max():.2f}, e.g. {list(off.index[:3])})"))
 
+    out += check_koppen(df)
+
     if not any(s == "FAIL" for s, _ in out):
         out.append(("INFO", f"Monthly climate: {len(set(counts.index) & fips)} counties × 12 months, "
                             f"consistent with the annual columns"))
+    return out
+
+
+# Well-known places whose Köppen type isn't in doubt. A mismatch means the
+# classifier or the month order broke, not a borderline county.
+KOPPEN_SPOT = {"48453": "Cfa", "04013": "BWh", "53033": "Csb", "27053": "Dfa", "08031": "BSk"}
+
+
+def check_koppen(df: pd.DataFrame) -> list[tuple[str, str]]:
+    if "koppen" not in df.columns:
+        return []
+    out = []
+    k = df.set_index("fips")["koppen"]
+    unknown = sorted(set(k.dropna()) - set(KOPPEN_NAMES))
+    if unknown:
+        out.append(("FAIL", f"Köppen types not in KOPPEN_NAMES: {unknown}"))
+    climate_rows = df["hottest_month_high_f"].notna()
+    missing = df.loc[climate_rows & df["koppen"].isna(), "fips"].tolist()
+    if missing:
+        out.append(("FAIL", f"{len(missing)} counties with climate data have no Köppen type (e.g. {missing[:5]})"))
+    wrong = {f: (k.get(f), want) for f, want in KOPPEN_SPOT.items() if f in k.index and k.get(f) != want}
+    if wrong:
+        out.append(("FAIL", f"Köppen spot checks failed (got, expected): {wrong}"))
     return out
 
 
@@ -170,3 +195,112 @@ def publish(df: pd.DataFrame, monthly: pd.DataFrame | None = None) -> Path:
         json.dump(payload, fh, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
     log.info("published %s (%d counties)", PUBLISH_PATH, len(payload["counties"]))
     return PUBLISH_PATH
+
+
+# ---------------------------------------------------------------------------
+# Köppen–Geiger climate type
+# ---------------------------------------------------------------------------
+# Computed from the same monthly normals, with the rules of Peel, Finlayson &
+# McMahon (2007), "Updated world map of the Köppen-Geiger climate
+# classification" (Hydrol. Earth Syst. Sci. 11, 1633–1644), Table 1:
+#   E  polar        hottest month < 10 °C (ET if > 0 °C, else EF) — checked first,
+#                   so dry Arctic Alaska is tundra, not desert
+#   B  arid         annual precip < 10 × threshold (BW < 5 ×, else BS);
+#                   h if mean annual temp ≥ 18 °C else k
+#   A  tropical     coldest month ≥ 18 °C (f / m / w by the driest month)
+#   C  temperate    coldest month 0–18 °C;  D continental: coldest month ≤ 0 °C
+#      then s (dry summer) / w (dry winter) / f, and a / b / c / d by summer heat.
+# Northern hemisphere: summer = Apr–Sep.
+#
+# Monthly mean temperature is (high + low) / 2 — how NOAA defines its TAVG
+# normal — so a county always gets a type when it has highs, lows and precip.
+
+KOPPEN_NAMES = {
+    "Af": "Tropical rainforest", "Am": "Tropical monsoon", "Aw": "Tropical savanna",
+    "BWh": "Hot desert", "BWk": "Cold desert", "BSh": "Hot semi-arid", "BSk": "Cold semi-arid",
+    "Csa": "Hot-summer Mediterranean", "Csb": "Warm-summer Mediterranean",
+    "Csc": "Cold-summer Mediterranean",
+    "Cwa": "Monsoon-influenced humid subtropical", "Cwb": "Subtropical highland",
+    "Cwc": "Cold subtropical highland",
+    "Cfa": "Humid subtropical", "Cfb": "Oceanic", "Cfc": "Subpolar oceanic",
+    "Dsa": "Hot, dry-summer continental", "Dsb": "Warm, dry-summer continental",
+    "Dsc": "Dry-summer subarctic", "Dsd": "Very cold dry-summer subarctic",
+    "Dwa": "Hot, dry-winter continental", "Dwb": "Warm, dry-winter continental",
+    "Dwc": "Dry-winter subarctic", "Dwd": "Very cold dry-winter subarctic",
+    "Dfa": "Hot-summer humid continental", "Dfb": "Warm-summer humid continental",
+    "Dfc": "Subarctic", "Dfd": "Extremely cold subarctic",
+    "ET": "Tundra", "EF": "Ice cap",
+}
+
+SUMMER = [3, 4, 5, 6, 7, 8]          # Apr–Sep, 0-based month indexes
+WINTER = [9, 10, 11, 0, 1, 2]        # Oct–Mar
+
+
+def koppen(t_c: list[float], p_mm: list[float]) -> str:
+    """Köppen–Geiger type from 12 monthly mean temperatures (°C) and precipitation totals (mm)."""
+    mat = sum(t_c) / 12
+    map_ = sum(p_mm)
+    t_hot, t_cold = max(t_c), min(t_c)
+    months_over_10 = sum(1 for t in t_c if t > 10)
+
+    if t_hot < 10:
+        return "ET" if t_hot > 0 else "EF"
+
+    p_summer = sum(p_mm[i] for i in SUMMER)
+    p_winter = sum(p_mm[i] for i in WINTER)
+    if map_ > 0 and p_winter >= 0.7 * map_:
+        threshold = 2 * mat
+    elif map_ > 0 and p_summer >= 0.7 * map_:
+        threshold = 2 * mat + 28
+    else:
+        threshold = 2 * mat + 14
+    if map_ < 10 * threshold:
+        return ("BW" if map_ < 5 * threshold else "BS") + ("h" if mat >= 18 else "k")
+
+    if t_cold >= 18:
+        p_dry = min(p_mm)
+        if p_dry >= 60:
+            return "Af"
+        return "Am" if p_dry >= 100 - map_ / 25 else "Aw"
+
+    ps_dry = min(p_mm[i] for i in SUMMER)
+    ps_wet = max(p_mm[i] for i in SUMMER)
+    pw_dry = min(p_mm[i] for i in WINTER)
+    pw_wet = max(p_mm[i] for i in WINTER)
+    if ps_dry < 40 and ps_dry < pw_wet / 3:
+        second = "s"
+    elif pw_dry < ps_wet / 10:
+        second = "w"
+    else:
+        second = "f"
+
+    group = "C" if t_cold > 0 else "D"
+    if t_hot >= 22:
+        third = "a"
+    elif months_over_10 >= 4:
+        third = "b"
+    elif group == "D" and t_cold < -38:
+        third = "d"
+    else:
+        third = "c"
+    return group + second + third
+
+
+def koppen_column(monthly: pd.DataFrame) -> pd.DataFrame:
+    """fips -> koppen, for counties with all 12 months of highs, lows and precipitation."""
+    rows = []
+    for code, g in monthly.groupby("fips"):
+        g = g.sort_values("month")
+        if len(g) != 12 or g[["tmax_f", "tmin_f", "precip_in"]].isna().any().any():
+            continue
+        t_c = [((hi + lo) / 2 - 32) * 5 / 9 for hi, lo in zip(g["tmax_f"], g["tmin_f"])]
+        p_mm = [p * 25.4 for p in g["precip_in"]]
+        rows.append((code, koppen(t_c, p_mm)))
+    return pd.DataFrame(rows, columns=["fips", "koppen"])
+
+
+def add_koppen(df: pd.DataFrame) -> pd.DataFrame:
+    """Join the Köppen type onto the county table (no-op without the monthly file)."""
+    if not monthly_path().exists():
+        return df
+    return df.merge(koppen_column(load_monthly()), on="fips", how="left")

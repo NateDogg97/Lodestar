@@ -3,7 +3,14 @@
 import { useState, type ReactNode } from "react";
 
 import type { LawData } from "@/lib/laws";
-import { formatValue, type CountyDataset, type CountyScore, type MetricKey, type ScoringInput } from "@/lib/scoring";
+import {
+  categoryLabel,
+  formatValue,
+  type CountyDataset,
+  type CountyScore,
+  type MetricKey,
+  type ScoringInput,
+} from "@/lib/scoring";
 
 import { ClimateTab } from "./climate-tab";
 import { LawsSection } from "./laws-section";
@@ -94,12 +101,13 @@ export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
   const facts = QUICK_FACTS.map((f) => ({ ...f, value: data.values[f.metric][s.index] })).filter(
     (f) => !Number.isNaN(f.value),
   );
+  const koppen = data.categories.koppen[s.index];
 
   return (
     <div>
       <div className="px-4 pt-3">
         {withIdentity && <PlaceIdentity {...props} />}
-        {facts.length > 0 && (
+        {(facts.length > 0 || koppen) && (
           <ul className={`flex flex-wrap gap-1.5 ${withIdentity ? "mt-3" : ""}`}>
             {facts.map((f) => (
               <li
@@ -110,6 +118,12 @@ export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
                 <span className="font-medium tabular-nums">{formatValue(f.metric, f.value)}</span>
               </li>
             ))}
+            {koppen && (
+              <li className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs dark:bg-neutral-900">
+                <span className="text-neutral-500">Climate</span>{" "}
+                <span className="font-medium">{categoryLabel("koppen", koppen)}</span>
+              </li>
+            )}
           </ul>
         )}
       </div>

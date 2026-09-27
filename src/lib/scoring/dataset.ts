@@ -7,7 +7,7 @@
  * metric. Missing values are `NaN`, never 0: a missing value is unknown.
  */
 
-import { CATEGORY_KEYS, type CategoryKey } from "./categories";
+import { CATEGORY_KEYS, COUNTY_CATEGORY_KEYS, type CategoryKey } from "./categories";
 import { METRIC_KEYS, STATE_METRIC_KEYS, type MetricKey } from "./metrics";
 
 export const PAYLOAD_FORMAT = "counties-columnar-v1";
@@ -100,10 +100,14 @@ export function parseCountyPayload(payload: unknown): CountyDataset {
     state: text("state") as string[],
     rppGeoLevel: text("rpp_geo_level"),
     values,
-    categories: Object.fromEntries(CATEGORY_KEYS.map((k) => [k, new Array<string | null>(n).fill(null)])) as Record<
-      CategoryKey,
-      (string | null)[]
-    >,
+    // County-level categories come from their column; state-level ones are
+    // filled later from the law table (applyStateLaws).
+    categories: Object.fromEntries(
+      CATEGORY_KEYS.map((k) => [
+        k,
+        COUNTY_CATEGORY_KEYS.includes(k) && col.has(k) ? text(k) : new Array<string | null>(n).fill(null),
+      ]),
+    ) as Record<CategoryKey, (string | null)[]>,
     indexByFips: new Map(fips.map((f, i) => [f, i])),
     missingColumns,
   };

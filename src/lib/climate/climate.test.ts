@@ -3,7 +3,8 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { parseCountyPayload } from "@/lib/scoring";
+import { applyStateLaws } from "@/lib/laws";
+import { categoryLabel, getCategory, parseCountyPayload } from "@/lib/scoring";
 
 import { isAllZero, MEASURE_KEYS, parseClimatePayload, summarize } from ".";
 
@@ -52,5 +53,33 @@ describe("summarize", () => {
   it("knows Miami gets no snow", () => {
     expect(isAllZero(climate.byFips.get("12086")!.snow_in)).toBe(true);
     expect(isAllZero(climate.byFips.get("27053")!.snow_in)).toBe(false);
+  });
+});
+
+describe("Köppen climate type", () => {
+  const def = getCategory("koppen");
+  const codes = new Set(def.options.map((o) => o.value));
+
+  it("every county with climate data has a type the app can label", () => {
+    const types = counties.categories.koppen;
+    for (const fips of climate.byFips.keys()) {
+      const t = types[counties.indexByFips.get(fips)!];
+      expect(t, fips).not.toBeNull();
+      expect(codes.has(t!), `${fips}: ${t}`).toBe(true);
+    }
+  });
+
+  it("classifies well-known places as expected", () => {
+    const at = (fips: string) => counties.categories.koppen[counties.indexByFips.get(fips)!];
+    expect(at("48453")).toBe("Cfa"); // Austin
+    expect(at("04013")).toBe("BWh"); // Phoenix
+    expect(at("53033")).toBe("Csb"); // Seattle
+    expect(at("27053")).toBe("Dfa"); // Minneapolis
+    expect(categoryLabel("koppen", "Cfa")).toBe("Humid subtropical (Cfa)");
+  });
+
+  it("survives the law join (county-level, not overwritten by state data)", () => {
+    const joined = applyStateLaws(counties, null);
+    expect(joined.categories.koppen[counties.indexByFips.get("48453")!]).toBe("Cfa");
   });
 });
