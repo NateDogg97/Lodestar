@@ -90,6 +90,8 @@ function subscribeWide(onChange: () => void) {
 const useIsWide = () =>
   useSyncExternalStore(subscribeWide, () => window.matchMedia(WIDE_QUERY).matches, () => true);
 
+const COMPARE_KEY = "nhf.compareFips";
+
 const isPlaceEntry = (state: unknown) => Boolean((state as { nhfPlace?: boolean } | null)?.nhfPlace);
 
 /** Where the phone sheet opens, and where it goes when a county is picked. */
@@ -127,6 +129,24 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     return out;
   }, [laws]);
   const [selectedFips, setSelectedFips] = useState<string | null>(null);
+  // The Climate tab's comparison county, kept across places and sessions
+  // (a per-device convenience, like the saved search).
+  const [compareFips, setCompareFips] = useState<string | null>(() => {
+    try {
+      return window.localStorage.getItem(COMPARE_KEY);
+    } catch {
+      return null;
+    }
+  });
+  const compareWith = (fips: string | null) => {
+    setCompareFips(fips);
+    try {
+      if (fips) window.localStorage.setItem(COMPARE_KEY, fips);
+      else window.localStorage.removeItem(COMPARE_KEY);
+    } catch {
+      // storage blocked: the comparison just isn't remembered
+    }
+  };
   // The Results panel shows the ranked list or one county's place view (plan
   // Phase 6). Returning to the list keeps the county highlighted.
   const [view, setView] = useState<"list" | "place">("list");
@@ -266,6 +286,8 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         rel: relative.get(selected.fips),
         laws,
         input: scoringInput,
+        compareFips,
+        onCompare: compareWith,
         onBack: backToList,
       }
     : null;

@@ -30,3 +30,24 @@ body {
 .map-inset .maplibregl-ctrl-bottom-right {
   bottom: var(--map-inset, 0px);
 }
+
+/* Chart tokens (dataviz reference palette, validated against these surfaces:
+   slot 1 blue = the selected county, slot 2 orange = the comparison county). */
+.viz-root {
+  --viz-surface: #ffffff;
+  --viz-s1: #2a78d6;
+  --viz-s2: #eb6834;
+  --viz-grid: #e1e0d9;
+  --viz-axis: #c3c2b7;
+  --viz-muted: #898781;
+}
+@media (prefers-color-scheme: dark) {
+  .viz-root {
+    --viz-surface: #0a0a0a;
+    --viz-s1: #3987e5;
+    --viz-s2: #d95926;
+    --viz-grid: #2c2c2a;
+    --viz-axis: #383835;
+    --viz-muted: #898781;
+  }
+}

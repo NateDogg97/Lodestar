@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react";
 import type { LawData } from "@/lib/laws";
 import { formatValue, type CountyDataset, type CountyScore, type MetricKey, type ScoringInput } from "@/lib/scoring";
 
+import { ClimateTab } from "./climate-tab";
 import { LawsSection } from "./laws-section";
 import { PlaceOverview } from "./place-overview";
 import { ScoreBadge, StatusBadges } from "./results-list";
@@ -16,10 +17,11 @@ import { ScoreBadge, StatusBadges } from "./results-list";
  * (the parent remounts this per county).
  */
 
-type PlaceTab = "overview" | "laws";
+type PlaceTab = "overview" | "climate" | "laws";
 
 const TABS: { id: PlaceTab; label: string }[] = [
   { id: "overview", label: "Overview" },
+  { id: "climate", label: "Climate" },
   { id: "laws", label: "Laws & taxes" },
 ];
 
@@ -42,6 +44,9 @@ export interface PlaceProps {
   laws: LawData | null;
   /** The search the county was scored against (for the Overview's filter list). */
   input: ScoringInput;
+  /** The county the Climate tab compares against, if any (remembered across places). */
+  compareFips: string | null;
+  onCompare: (fips: string | null) => void;
   onBack: () => void;
 }
 
@@ -84,7 +89,7 @@ export function PlaceIdentity({ score: s, data, rank, total, rel, onBack }: Plac
  * lives in the sheet header instead.
  */
 export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
-  const { score: s, data, laws, input, withIdentity } = props;
+  const { score: s, data, laws, input, compareFips, onCompare, withIdentity } = props;
   const [tab, setTab] = useState<PlaceTab>("overview");
   const facts = QUICK_FACTS.map((f) => ({ ...f, value: data.values[f.metric][s.index] })).filter(
     (f) => !Number.isNaN(f.value),
@@ -136,6 +141,9 @@ export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
 
       <div id="place-tabpanel" role="tabpanel" aria-labelledby={`place-tab-${tab}`} className="px-4 py-3">
         {tab === "overview" && <PlaceOverview score={s} data={data} input={input} />}
+        {tab === "climate" && (
+          <ClimateTab fips={s.fips} data={data} compareFips={compareFips} onCompare={onCompare} />
+        )}
         {tab === "laws" &&
           (laws ? (
             <LawsSection laws={laws} data={data} index={s.index} />

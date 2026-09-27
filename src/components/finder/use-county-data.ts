@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { parseClimatePayload, type ClimateData } from "@/lib/climate";
 import { parseLawPayload, type LawData } from "@/lib/laws";
 import { parseCountyPayload, type CountyDataset } from "@/lib/scoring";
 
@@ -86,6 +87,49 @@ export function useLawData(): { settled: boolean; data: LawData | null } {
         console.warn("[laws]", err);
         if (!cancelled) setState({ settled: true, data: null });
       },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return state;
+}
+
+// ---------------------------------------------------------------------------
+// Monthly climate (Climate tab). Loaded the first time the tab opens, not at
+// startup; precached by the service worker, so it also works offline.
+
+export const CLIMATE_DATA_URL = "/data/climate.json";
+
+let climatePending: Promise<ClimateData> | null = null;
+
+function loadClimateData(): Promise<ClimateData> {
+  climatePending ??= fetch(CLIMATE_DATA_URL)
+    .then((res) => {
+      if (!res.ok) throw new Error(`Could not load climate data (HTTP ${res.status})`);
+      return res.json();
+    })
+    .then(parseClimatePayload)
+    .catch((err: unknown) => {
+      climatePending = null;
+      throw err;
+    });
+  return climatePending;
+}
+
+export type ClimateDataState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; data: ClimateData };
+
+export function useClimateData(): ClimateDataState {
+  const [state, setState] = useState<ClimateDataState>({ status: "loading" });
+  useEffect(() => {
+    let cancelled = false;
+    loadClimateData().then(
+      (data) => !cancelled && setState({ status: "ready", data }),
+      (err: unknown) =>
+        !cancelled && setState({ status: "error", message: err instanceof Error ? err.message : String(err) }),
     );
     return () => {
       cancelled = true;

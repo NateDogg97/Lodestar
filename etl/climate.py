@@ -13,7 +13,8 @@ of the monthly highs, days above 90°F is the sum of the monthly counts.
 Payload:
     {"format": "climate-monthly-v1",
      "source": {...}, "measures": [{"key", "label", "unit"}, ...],
-     "counties": {"48453": [[12 tmax], [12 tmin], [12 precip], ...], ...}}
+     "counties": {"48453": [[12 tmax], [12 tmin], [12 precip], ...], ...},
+     "stationMi": {"48453": 4.2, ...}}   # distance to the nearest temperature station
 
 Measures are in `MEASURES` order; each is 12 values, January first, rounded
 to one decimal; null where a station doesn't report it. Counties with no
@@ -77,8 +78,11 @@ def _round(v: object) -> float | None:
     return None if math.isnan(f) else round(f, 1)
 
 
-def to_payload(monthly: pd.DataFrame, fips: list[str]) -> dict:
-    """Payload for the counties in `fips` (the published county order) that have monthly data."""
+def to_payload(monthly: pd.DataFrame, fips: list[str], station_mi: dict[str, float] | None = None) -> dict:
+    """Payload for the counties in `fips` (the published county order) that have monthly data.
+
+    `station_mi`: distance from each county's search point to its nearest
+    temperature station, shown next to the chart as a confidence cue."""
     keep = set(fips)
     counties = {}
     for code, g in monthly[monthly["fips"].isin(keep)].groupby("fips", sort=False):
@@ -94,6 +98,9 @@ def to_payload(monthly: pd.DataFrame, fips: list[str]) -> dict:
         },
         "measures": [{"key": col, "label": label, "unit": unit} for col, label, unit, _ in MEASURES],
         "counties": {code: counties[code] for code in fips if code in counties},
+        "stationMi": {code: round(float(station_mi[code]), 1) for code in fips
+                      if code in counties and station_mi and code in station_mi
+                      and not math.isnan(float(station_mi[code]))},
     }
 
 
@@ -155,7 +162,9 @@ def check(monthly: pd.DataFrame, df: pd.DataFrame) -> list[tuple[str, str]]:
 
 def publish(df: pd.DataFrame, monthly: pd.DataFrame | None = None) -> Path:
     monthly = load_monthly() if monthly is None else monthly
-    payload = to_payload(monthly, df["fips"].astype(str).tolist())
+    station = (dict(zip(df["fips"].astype(str), df["climate_station_dist_mi"]))
+               if "climate_station_dist_mi" in df.columns else None)
+    payload = to_payload(monthly, df["fips"].astype(str).tolist(), station)
     PUBLISH_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(PUBLISH_PATH, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, separators=(",", ":"), ensure_ascii=False, allow_nan=False)

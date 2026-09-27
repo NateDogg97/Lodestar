@@ -721,7 +721,8 @@ def test_monthly_climate() -> None:
     check(any(s == "FAIL" and "no monthly rows" in m for s, m in climate.check(monthly, nochart)),
           "a county with climate numbers but no chart FAILs")
 
-    payload = climate.to_payload(monthly, ["06075", "01001", "99999"])
+    payload = climate.to_payload(monthly, ["06075", "01001", "99999"], {"01001": 4.24, "06075": float("nan")})
+    check(payload["stationMi"] == {"01001": 4.2}, "station distance rounded; unknown distance omitted")
     check(list(payload["counties"]) == ["06075", "01001"], "published in county order; unknown county skipped")
     series = payload["counties"]["01001"]
     check(len(series) == len(climate.MEASURES) and all(len(x) == 12 for x in series),

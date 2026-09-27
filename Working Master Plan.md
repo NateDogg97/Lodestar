@@ -874,7 +874,16 @@ first place view, not at startup. One file, not per state, because the envelope 
       here", "Your filters" (✓/✕/? with your rule in words and the county's value, limits and
       policies alike), and "How it's scored" as rows with a 0–100 points bar, percentile,
       direction, weight and effect. Rows, not a table, so it fits a phone.
-- [ ] Climate tab: monthly chart, key numbers, source; compare-with overlay
+- [x] Climate tab: monthly chart, key numbers, source; compare-with overlay — 2026-09-27
+      (`climate-tab.tsx`, `month-chart.tsx`, `src/lib/climate`). Seven one-measure charts on a
+      shared month axis (no dual axes): temperature range, precipitation, rainy days, snowfall,
+      snowy days, days > 90°F, nights < 32°F — a chart is dropped when both counties are zero
+      all year ("None all year: …"). Eight key-number tiles (from the same months; tested to
+      match the county columns). Hover/tap/arrow keys read a month; a Chart / Table switch gives
+      the full table. "Compare with…" search picks a second county (orange vs blue, palette
+      validated light and dark), remembered across places and sessions. Source line: NOAA
+      normals + nearest-station distance, with a caution past 25 mi. climate.json is loaded on
+      first use of the tab and now also carries station distances (1.40 MB).
 - [ ] Köppen climate type (computed from monthly normals) as a label and filter
 - [x] ~~Add `days_above_90f` / `days_below_32f`~~ Moved to Phase 3 (§6 *Climate preferences*)
 - [ ] **Month-by-month climate envelope** — an acceptable range per month; a county passes if
