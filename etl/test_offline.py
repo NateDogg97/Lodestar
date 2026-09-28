@@ -759,6 +759,67 @@ def test_monthly_climate() -> None:
     check(series[0][0] == 61.0 and series[0][11] == 72.0, "January first, values rounded")
 
 
+def test_phase5_sources() -> None:
+    print("\nPhase 5: FEMA NRI, BLS LAUS, distances")
+    import numpy as np
+    from .sources import bls, distances, nri
+
+    # NRI: "Not Applicable" is a real zero; any other blank stays unknown.
+    def haz(prefix: str, pct, rating) -> dict:
+        return {f"{prefix}_ALR_NPCTL": pct, f"{prefix}_RISKR": rating}
+    row = {"STCOFIPS": "12086", "ALR_NPCTL": 79.8, "NRI_VER": "December 2025"}
+    for p in ("HRCN", "WFIR", "IFLD", "ERQK", "TRND"):
+        row.update(haz(p, 50.0, "Relatively Low"))
+    row.update(haz("CFLD", None, "Not Applicable"))
+    inland = dict(row, STCOFIPS="08031", **haz("HRCN", None, "Insufficient Data"))
+    out = nri.parse(pd.DataFrame([row, inland])).set_index("fips")
+    check(out.at["12086", "hazard_coastal_flood"] == 0.0, "NRI: 'Not Applicable' hazard is 0")
+    check(pd.isna(out.at["08031", "hazard_hurricane"]), "NRI: 'Insufficient Data' stays unknown")
+    check(out.at["12086", "hazard_risk"] == 79.8, "NRI: composite from ALR_NPCTL (loss rate), not RISK_SCORE")
+    try:
+        nri.parse(pd.DataFrame([{"STCOFIPS": "01001"}]))
+        check(False, "NRI: missing columns raise")
+    except ValueError:
+        check(True, "NRI: missing columns raise")
+
+    # BLS: parse annual averages (M13), skip "-", pick the newest near-complete year.
+    payload = {"Results": {"series": [
+        {"seriesID": "LAUCN484530000000003", "data": [
+            {"year": "2025", "period": "M13", "value": "3.4"},
+            {"year": "2025", "period": "M12", "value": "3.1"},
+            {"year": "2024", "period": "M13", "value": "3.6"}]},
+        {"seriesID": "LAUCN060750000000003", "data": [
+            {"year": "2025", "period": "M13", "value": "-"},
+            {"year": "2024", "period": "M13", "value": "4.3"}]},
+    ]}}
+    annual = bls.parse([payload])
+    check(len(annual) == 3 and set(annual["year"]) == {2024, 2025}, "BLS: only annual averages, '-' skipped")
+    check(bls.latest_complete_year(annual, 2) == 2024, "BLS: a half-covered newer year is skipped")
+    check(bls.series_id("09190") == "LAUCN091900000000003", "BLS: series id keeps the FIPS string")
+
+    # Distances
+    csv = ("ident,type,name,latitude_deg,longitude_deg,iso_country,scheduled_service,iata_code\n"
+           + "".join(f"K{i:03},large_airport,A{i},{30 + i * 0.1},{-100 + i * 0.1},US,yes,A{i:02}\n" for i in range(60))
+           + "KSML,small_airport,Small,40,-100,US,yes,SML\nCYYZ,large_airport,Toronto,43.7,-79.6,CA,yes,YYZ\n"
+           + "KMIL,large_airport,Military,35,-90,US,no,\n")
+    ap = distances.large_airports(csv)
+    check(len(ap) == 60, "airports: large, US, scheduled service only")
+    lat = np.array([55.0, 45.5, 60.0, 43.9, 44.8])
+    lon = np.array([-85.0, -73.6, -150.0, -69.0, -67.0])
+    check(distances.keep_coast_vertex(lat, lon).tolist() == [False, False, True, True, True],
+          "coast: drops Hudson Bay and the St. Lawrence river; keeps Alaska, Maine")
+    dense = distances.densify([[-80.0, 30.0], [-80.0, 31.0]], step_mi=10)
+    check(len(dense) >= 7 and np.allclose(dense[-1], [-80.0, 31.0]), "coast: segments densified end to end")
+    xwalk = pd.DataFrame({"fips": ["01001", "01003", "01005"], "cbsa": ["1", "1", "2"],
+                          "cbsa_name": ["Big", "Big", "Small"],
+                          "metro_type": ["Metropolitan Statistical Area"] * 2 + ["Micropolitan Statistical Area"]})
+    pts = pd.DataFrame({"fips": ["01001", "01003", "01005"], "lat": [30.0, 32.0, 35.0], "lon": [-90.0, -90.0, -90.0]})
+    pop = pd.DataFrame({"fips": ["01001", "01003", "01005"], "population": [300_000.0, 300_000.0, 900_000.0]})
+    m = distances.big_metros(xwalk, pts, pop)
+    check(len(m) == 1 and m.at[0, "cbsa_name"] == "Big" and abs(m.at[0, "lat"] - 31.0) < 1e-9,
+          "metros: metropolitan only, summed population, population-weighted center")
+
+
 def main() -> int:
     print("=" * 70)
     print("OFFLINE TEST SUITE — no network required")
@@ -784,6 +845,7 @@ def main() -> int:
         test_population_center_search_points()
         test_boundaries_must_match_data()
         test_monthly_climate()
+        test_phase5_sources()
         test_gazetteer_encoding_guard()
         test_app_payload_is_compact_and_lossless_where_it_matters()
 

@@ -60,6 +60,9 @@ BOUNDARY_PUBLISH_PATH = ETL_DIR.parent / "public" / "data" / "counties.topo.json
 
 CENSUS_API_KEY = os.environ.get("CENSUS_API_KEY", "").strip()
 BEA_API_KEY = os.environ.get("BEA_API_KEY", "").strip()
+# Free: https://data.bls.gov/registrationEngine/ . Without it BLS allows only
+# 25 requests/day, not enough for 3,144 counties (sources/bls.py).
+BLS_API_KEY = os.environ.get("BLS_API_KEY", "").strip()
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +135,29 @@ BOUNDARY_URL = (
 )
 BOUNDARY_SIMPLIFY = "5%"      # of vertices kept; ~810 KB TopoJSON with state outlines
 MAPSHAPER_VERSION = "0.7.68"  # pinned: build output should not drift between runs
+
+# --- Phase 5 sources ---------------------------------------------------------
+
+# FEMA National Risk Index, county table (sources/nri.py). The version is in
+# the path; a new release means a new URL (check the OpenFEMA NRI page).
+NRI_VERSION = "v1.20 (December 2025)"
+NRI_COUNTIES_URL = (
+    "https://www.fema.gov/about/reports-and-data/openfema/nri/v120/NRI_Table_Counties.zip"
+)
+# FEMA's CDN rejects bot User-Agents; this is used for that request only.
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+)
+
+# BLS Local Area Unemployment Statistics via the public API v2 (sources/bls.py).
+BLS_API_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
+BLS_SERIES_PER_REQUEST = 50   # the registered-key limit
+
+# Distances (sources/distances.py)
+OURAIRPORTS_URL = "https://davidmegginson.github.io/ourairports-data/airports.csv"
+COASTLINE_URL = "https://naciscdn.org/naturalearth/10m/physical/ne_10m_coastline.zip"
+METRO_MIN_POPULATION = 500_000
 
 # NOAA 1991-2020 monthly normals, one CSV per station (~15,600 of them).
 # Station inventory lives alongside the data files.
@@ -236,7 +262,14 @@ PLAUSIBLE_RANGES = {
     "median_home_value": (10_000, 3_000_000),
     "median_household_income": (5_000, 300_000),
     "median_gross_rent": (150, 5_000),
-    "property_tax_effective_rate": (0.05, 4.0),
+    "unemployment_rate": (0.5, 30),
+    "hazard_risk": (0, 100), "hazard_hurricane": (0, 100), "hazard_wildfire": (0, 100),
+    "hazard_inland_flood": (0, 100), "hazard_coastal_flood": (0, 100),
+    "hazard_earthquake": (0, 100), "hazard_tornado": (0, 100),
+    "dist_airport_mi": (0, 1_000),   # remote Alaska: the Aleutians are ~830 mi out
+    "dist_coast_mi": (0, 1_300),     # northwest Minnesota is ~1,160 mi from tidal water
+    "dist_metro_mi": (0, 2_200),     # Alaska has no 500k+ metro: Seattle is 1,400–2,000 mi
+    "property_tax_effective_rate": (0.0, 4.0),  # unorganized Alaska boroughs levy ~none
     "rpp_all": (70, 140),
     "rpp_rents": (30, 220),
     "rpp_utilities": (50, 220),

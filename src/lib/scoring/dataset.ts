@@ -12,6 +12,10 @@ import { METRIC_KEYS, STATE_METRIC_KEYS, type MetricKey } from "./metrics";
 
 export const PAYLOAD_FORMAT = "counties-columnar-v1";
 
+/** Text columns kept for display: the nearest major airport (IATA code) and 500k+ metro (name). */
+export const TEXT_COLUMNS = ["nearest_airport", "nearest_metro"] as const;
+export type TextColumn = (typeof TEXT_COLUMNS)[number];
+
 export interface CountyDataset {
   /** Number of counties. */
   n: number;
@@ -25,6 +29,8 @@ export interface CountyDataset {
   values: Record<MetricKey, Float64Array>;
   /** One array per policy category (a law value such as "medical"), null where unknown. */
   categories: Record<CategoryKey, (string | null)[]>;
+  /** Descriptive text columns (not scored), null where unknown. */
+  text: Record<TextColumn, (string | null)[]>;
   /** Row index by FIPS. */
   indexByFips: Map<string, number>;
   /**
@@ -108,6 +114,7 @@ export function parseCountyPayload(payload: unknown): CountyDataset {
         COUNTY_CATEGORY_KEYS.includes(k) && col.has(k) ? text(k) : new Array<string | null>(n).fill(null),
       ]),
     ) as Record<CategoryKey, (string | null)[]>,
+    text: Object.fromEntries(TEXT_COLUMNS.map((c) => [c, text(c)])) as Record<TextColumn, (string | null)[]>,
     indexByFips: new Map(fips.map((f, i) => [f, i])),
     missingColumns,
   };
@@ -137,6 +144,7 @@ export function subsetDataset(data: CountyDataset, keep: (index: number) => bool
     rppGeoLevel: pick(data.rppGeoLevel),
     values,
     categories,
+    text: Object.fromEntries(TEXT_COLUMNS.map((c) => [c, pick(data.text[c])])) as Record<TextColumn, (string | null)[]>,
     indexByFips: new Map(fips.map((f, i) => [f, i])),
     missingColumns: data.missingColumns,
   };

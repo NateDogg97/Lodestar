@@ -100,6 +100,7 @@ def http_get(
     binary: bool = False,
     cache_hint: str | None = None,
     check: Callable[[Any], None] | None = None,
+    user_agent: str | None = None,
 ) -> bytes | str:
     """
     GET with retry, exponential backoff, and an on-disk cache.
@@ -113,6 +114,9 @@ def http_get(
     cache, and a previously cached body that fails `check` is deleted and
     re-fetched. This is what stops one transient API error from poisoning
     every later run. A 204 or an empty body is rejected the same way.
+
+    `user_agent` overrides the project's honest bot identifier for the few
+    publishers that refuse it (FEMA's CDN answers it with 403).
 
     Rejections are not retried: they are deterministic answers from the
     server, not transport failures, and the caller decides what to do.
@@ -150,7 +154,7 @@ def http_get(
                 url,
                 params=params,
                 timeout=config.HTTP_TIMEOUT,
-                headers={"User-Agent": config.HTTP_USER_AGENT},
+                headers={"User-Agent": user_agent or config.HTTP_USER_AGENT},
             )
             # 404 is usually meaningful (vintage not published yet), so surface
             # it immediately rather than burning retries on it. Re-raise with a

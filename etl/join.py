@@ -66,6 +66,9 @@ SOURCES = [
     ("seda", "SEDA school achievement", False),
     ("popcenter", "Census 2020 centers of population", False),
     ("noaa", "NOAA climate normals", False),
+    ("nri", "FEMA National Risk Index", False),
+    ("bls", "BLS unemployment (LAUS)", False),
+    ("distances", "Distances to airport, coast, metro", False),
 ]
 
 
@@ -173,11 +176,18 @@ COLUMN_ORDER = [
     "days_above_90f", "nights_below_32f", "rainy_days", "snow_days",
     "climate_point", "climate_station_id", "climate_station_dist_mi", "climate_station_count",
     "koppen",
+    # FEMA NRI (loss-rate percentiles)
+    "hazard_risk", "hazard_hurricane", "hazard_wildfire", "hazard_inland_flood",
+    "hazard_coastal_flood", "hazard_earthquake", "hazard_tornado",
+    # BLS
+    "unemployment_rate",
+    # distances
+    "dist_airport_mi", "nearest_airport", "dist_coast_mi", "dist_metro_mi", "nearest_metro",
     # derived
     "home_value_to_income", "rent_to_income", "price_to_rent", "real_income",
     "property_tax_effective_rate",
     # provenance
-    "acs_vintage", "rpp_vintage",
+    "acs_vintage", "rpp_vintage", "nri_version", "unemployment_year",
 ]
 
 

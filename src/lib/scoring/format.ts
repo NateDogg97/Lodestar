@@ -32,6 +32,10 @@ export function formatValue(metric: MetricKey, value: number | null): string {
       return `${whole.format(value)} nights`;
     case "%":
       return `${value.toFixed(2)}%`;
+    case "pctl":
+      return `${ordinal(value)} pctl`;
+    case "mi":
+      return `${whole.format(value)} mi`;
     case "¢/kWh":
       return `${value.toFixed(1)}¢/kWh`;
     case "ratio":

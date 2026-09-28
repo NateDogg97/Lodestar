@@ -8,6 +8,9 @@
 > Last updated: 2026-09-26
 >
 > **Changelog**
+> - 2026-09-27 — **Phase 5 complete; Phase 7 (polish) entered.** FEMA National Risk Index
+>   (loss-rate percentiles, not the size-driven risk score), BLS 2025 unemployment (API key),
+>   and distances to a major airport, the coast (incl. tidal water) and a 500k+ metro.
 > - 2026-09-27 — **Phase 6 complete.** Place view (Overview / Climate / Laws & taxes), monthly
 >   climate charts with a compare county, and a Köppen climate type label and filter. The
 >   month-by-month envelope and "climate like a place I know" moved to §10 (deferred).
@@ -806,8 +809,43 @@ Known rough edges to expect:
   frames). The map itself has to be checked by eye.
 
 
-### Phase 5 — Full metric set
-- [ ] Expand ETL: FEMA NRI, BLS unemployment, precomputed distances
+### Phase 5 — Full metric set ✅ **DONE 2026-09-27**
+- [x] Expand ETL: FEMA NRI, BLS unemployment, precomputed distances — **built 2026-09-27**
+  (`etl/sources/nri.py`, `bls.py`, `distances.py`; all 3,144 counties join; Kalawao HI has no
+  BLS series). App: "Natural hazards (FEMA)" and "Location" groups in Place, unemployment in
+  People & income, and always-on Location + Natural hazards sections in the place view's
+  Overview. Built as planned, with two findings: Natural Earth's coastline follows tidal
+  estuaries (Potomac to DC, Delaware to Philadelphia), kept and labeled "ocean, bays, tidal
+  water"; it also runs up the freshwater St. Lawrence past Montreal, cut above Quebec City.
+  Validation spot-checks well-known places (New Orleans hurricane > 90, Austin → AUS < 25 mi,
+  Denver > 600 mi from the coast, Miami < 15, Chicago < 15 mi from its metro center).
+  counties.json 1.27 MB (~400 KB gzipped). **Plan (2026-09-27):**
+  - **FEMA National Risk Index v1.20 (Dec 2025)** — `etl/sources/nri.py`, county CSV from
+    OpenFEMA (`fema.gov/about/reports-and-data/openfema/nri/v120/NRI_Table_Counties.zip`;
+    needs a browser User-Agent, 403 otherwise). All 3,144 counties join, CT regions included.
+    **Use the expected annual loss *rate* percentiles (`*_ALR_NPCTL`), not the headline
+    `RISK_SCORE`**: the risk score is total dollars at risk, so it tracks county size (LA 100,
+    Austin 98); the loss rate is loss per dollar of buildings/people, which is what someone
+    moving there faces (New Orleans 96, Austin 21). Columns: `hazard_risk` (composite) plus
+    hurricane, wildfire, inland flooding, coastal flooding, earthquake, tornado. A hazard
+    FEMA rates "Not Applicable" (no coast, no hurricanes) is 0; insufficient data stays
+    unknown. New "Hazards" group in Place, lower is better.
+  - **BLS LAUS unemployment rate** — `etl/sources/bls.py`, latest annual average (2025; BLS
+    notes 2025 is an 11-month average — October wasn't collected in the shutdown) via the BLS
+    API v2 with a free `BLS_API_KEY` (63 requests of 50 series; unregistered access allows only
+    25 requests/day). BLS file downloads need a contact email in the User-Agent — declined;
+    USDA's republished copy stops at 2023 — declined. "People & income" group.
+  - **Distances** — `etl/sources/distances.py`, from each county's population center (internal
+    point for CT's 9 regions), haversine miles:
+    - nearest **large US airport with scheduled service** (OurAirports `airports.csv`,
+      `type=large_airport`);
+    - nearest **ocean coastline** (Natural Earth 1:10m coastline, converted with the pinned
+      `npx mapshaper`; Great Lakes shores are not ocean coast);
+    - nearest **metro area of 500k+ people** (OMB CBSA delineation already used for BEA +
+      ACS populations; distance to the metro's population-weighted center).
+    New "Location" group in Place, lower is better (flip for "remote").
+  - Each: validation (join rate, plausible ranges, well-known-place spot checks), offline
+    tests, metric entries, formatting, and the source listed in the app header.
 - [x] **Property tax rate** (2026-09-27) — county metric from ACS aggregates (B25090 ÷ B25082),
       in the Housing group. Aggregates, not medians: the median-taxes variable is top-coded.
 - [x] **State laws: sourced, refreshed, displayed** (2026-09-27, `LAWS.md`). 9 laws, 456
@@ -822,7 +860,7 @@ Known rough edges to expect:
       Permit required — policies are never weighted, only rule out. Income tax structure,
       grocery tax and minimum wage are info only (county card). Engine: state-level metrics
       (`scope: "state"`) and category filters, joined from laws.json per county (LAWS.md §10).
-- [ ] Each new metric = one column + one slider
+- [x] Each new metric = one column + one slider
 
 ### Phase 6 — Place view and climate ✅ **DONE 2026-09-27**
 
@@ -901,7 +939,7 @@ first place view, not at startup. One file, not per state, because the envelope 
       *Explicitly deferred* on 2026-09-27 when Phase 6 closed; the Climate tab's compare overlay
       covers the everyday need.
 
-### Phase 7 — Polish *(always last)*
+### Phase 7 — Polish *(always last)* ⬅️ **IN PROGRESS** (entered 2026-09-27)
 - [ ] **"New version available" prompt.** After a deploy, the first visit shows the previously
       cached version while the new service worker installs in the background; the update
       appears on the next load. Standard PWA behaviour, but confusing — show a small

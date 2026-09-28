@@ -214,6 +214,18 @@ Monthly values (12 per county) are kept separately in
 
 State laws and taxes are a separate pipeline — see `LAWS.md` and `etl/laws/`.
 
+### Phase 5 columns
+
+| Column | Source | Notes |
+|---|---|---|
+| `hazard_risk`, `hazard_hurricane`, `hazard_wildfire`, `hazard_inland_flood`, `hazard_coastal_flood`, `hazard_earthquake`, `hazard_tornado` | FEMA National Risk Index v1.20 (Dec 2025), `sources/nri.py` | National percentile (0–100) of the expected annual **loss rate** (`*_ALR_NPCTL`) — not the dollar-driven `RISK_SCORE`, which tracks county size. "Not Applicable" = 0; "Insufficient Data" = null. |
+| `unemployment_rate`, `unemployment_year` | BLS LAUS via API v2, `sources/bls.py` | Latest annual average (2025 = 11 months; October 2025 wasn't collected). Needs `BLS_API_KEY`. |
+| `dist_airport_mi`, `nearest_airport` | OurAirports, `sources/distances.py` | Large US airports with scheduled service. |
+| `dist_coast_mi` | Natural Earth 1:10m coastline | Ocean, bays and tidal estuaries; not the Great Lakes, Hudson Bay, or the St. Lawrence above Quebec City. |
+| `dist_metro_mi`, `nearest_metro` | OMB CBSA delineation + ACS population | Center (population-weighted) of the nearest metro of 500k+. |
+
+All distances are great-circle miles from the county's 2020 population center.
+
 ### Monthly climate — `public/data/climate.json` (`etl/climate.py`)
 
 The Climate tab's chart data: every county's 12 monthly NOAA 1991–2020 normals for 8

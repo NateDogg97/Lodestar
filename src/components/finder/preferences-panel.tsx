@@ -27,6 +27,8 @@ const GROUPS: { id: MetricGroup; label: string; tab: FiltersTab }[] = [
   { id: "housing", label: "Housing", tab: "place" },
   { id: "schools", label: "Schools", tab: "place" },
   { id: "climate", label: "Climate", tab: "place" },
+  { id: "hazards", label: "Natural hazards (FEMA)", tab: "place" },
+  { id: "location", label: "Location", tab: "place" },
   { id: "people", label: "People & income", tab: "place" },
   { id: "taxes", label: "Taxes", tab: "laws" },
 ];

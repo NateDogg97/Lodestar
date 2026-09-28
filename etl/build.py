@@ -64,6 +64,11 @@ PIPELINE = [
     # Before NOAA: the station search starts from these points when present.
     ("popcenter", "etl.sources.popcenter", False),
     ("noaa", "etl.sources.noaa", False),
+    # Phase 5
+    ("nri", "etl.sources.nri", False),
+    ("bls", "etl.sources.bls", False),
+    # After spine, popcenter and acs: measures from population centers, sizes metros.
+    ("distances", "etl.sources.distances", False),
     # Map shapes. Not joined — written as its own file and published beside
     # the data after validation confirms both cover the same counties.
     ("boundaries", "etl.sources.boundaries", False),
@@ -210,6 +215,10 @@ COLUMN_DECIMALS = {
     "climate_station_dist_mi": 1, "climate_station_count": 0,
     "rent_to_income": 4,
     "property_tax_effective_rate": 3,
+    "hazard_risk": 1, "hazard_hurricane": 1, "hazard_wildfire": 1, "hazard_inland_flood": 1,
+    "hazard_coastal_flood": 1, "hazard_earthquake": 1, "hazard_tornado": 1,
+    "unemployment_rate": 1, "unemployment_year": 0,
+    "dist_airport_mi": 1, "dist_coast_mi": 1, "dist_metro_mi": 1,
     "acs_vintage": 0, "rpp_vintage": 0,
 }
 

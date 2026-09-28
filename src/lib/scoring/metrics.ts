@@ -22,7 +22,7 @@ export type Direction = "higher" | "lower" | "middle";
 
 export const DIRECTIONS: readonly Direction[] = ["lower", "middle", "higher"];
 
-export type MetricGroup = "people" | "housing" | "cost" | "schools" | "climate" | "taxes";
+export type MetricGroup = "people" | "housing" | "cost" | "schools" | "climate" | "hazards" | "location" | "taxes";
 
 export interface MetricDef {
   key: string;
@@ -43,6 +43,8 @@ export const METRICS = [
   { key: "population", label: "Population", unit: "people", group: "people", defaultDirection: "higher" },
   { key: "median_household_income", label: "Median household income", unit: "$", group: "people", defaultDirection: "higher" },
   { key: "real_income", label: "Income adjusted for local prices", unit: "$", group: "people", defaultDirection: "higher" },
+  // BLS LAUS, latest annual average
+  { key: "unemployment_rate", label: "Unemployment rate", unit: "%", group: "people", defaultDirection: "lower" },
 
   // housing
   { key: "median_home_value", label: "Median home value", unit: "$", group: "housing", defaultDirection: "lower" },
@@ -80,6 +82,21 @@ export const METRICS = [
   { key: "fall_mean_f", label: "Fall average", unit: "°F", group: "climate", defaultDirection: "higher" },
   { key: "annual_precip_in", label: "Annual precipitation", unit: "in", group: "climate", defaultDirection: "lower" },
   { key: "annual_snow_in", label: "Annual snowfall", unit: "in", group: "climate", defaultDirection: "lower" },
+
+  // natural hazards (FEMA National Risk Index): national percentile of the
+  // expected annual LOSS RATE — the share of what's there lost in a typical year
+  { key: "hazard_risk", label: "Natural hazard risk (all)", unit: "pctl", group: "hazards", defaultDirection: "lower" },
+  { key: "hazard_hurricane", label: "Hurricanes", unit: "pctl", group: "hazards", defaultDirection: "lower" },
+  { key: "hazard_wildfire", label: "Wildfire", unit: "pctl", group: "hazards", defaultDirection: "lower" },
+  { key: "hazard_inland_flood", label: "Inland flooding", unit: "pctl", group: "hazards", defaultDirection: "lower" },
+  { key: "hazard_coastal_flood", label: "Coastal flooding", unit: "pctl", group: "hazards", defaultDirection: "lower" },
+  { key: "hazard_earthquake", label: "Earthquakes", unit: "pctl", group: "hazards", defaultDirection: "lower" },
+  { key: "hazard_tornado", label: "Tornadoes", unit: "pctl", group: "hazards", defaultDirection: "lower" },
+
+  // location: miles from where people live (population center)
+  { key: "dist_airport_mi", label: "Distance to a major airport", unit: "mi", group: "location", defaultDirection: "lower" },
+  { key: "dist_coast_mi", label: "Distance to the coast", unit: "mi", group: "location", defaultDirection: "lower" },
+  { key: "dist_metro_mi", label: "Distance to a 500k+ metro", unit: "mi", group: "location", defaultDirection: "lower" },
 
   // state taxes (LAWS.md; Tax Foundation) — shown in the Laws & taxes tab
   { key: "income_tax_top_rate", label: "Income tax (top rate)", unit: "%", group: "taxes", defaultDirection: "lower", scope: "state" },

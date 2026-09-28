@@ -344,6 +344,38 @@ def _check_boundaries(df: pd.DataFrame) -> list[Finding]:
     return [Finding("INFO", f"Boundaries cover exactly the {len(shapes)} counties in the data")]
 
 
+# (fips, column, test, description) — well-known places whose values aren't
+# in doubt. A miss means a broken join, column or distance, not a borderline case.
+PHASE5_SPOT = [
+    ("22071", "hazard_hurricane", lambda v: v > 90, "New Orleans hurricane loss-rate percentile > 90"),
+    ("48453", "nearest_airport", lambda v: v == "AUS", "Austin's nearest large airport is AUS"),
+    ("48453", "dist_airport_mi", lambda v: v < 25, "Austin is < 25 mi from AUS"),
+    ("08031", "dist_coast_mi", lambda v: v > 600, "Denver is > 600 mi from the coast"),
+    ("12086", "dist_coast_mi", lambda v: v < 15, "Miami-Dade is < 15 mi from the coast"),
+    ("17031", "dist_metro_mi", lambda v: v < 15, "Cook County is < 15 mi from Chicago's metro center"),
+    ("06075", "unemployment_rate", lambda v: 1 < v < 15, "San Francisco unemployment is 1–15%"),
+]
+
+
+def _check_phase5(df: pd.DataFrame) -> list[Finding]:
+    """Hazards, unemployment and distances: coverage and well-known places."""
+    findings: list[Finding] = []
+    idx = df.set_index("fips")
+    for fips, col, ok, what in PHASE5_SPOT:
+        if col not in idx.columns or fips not in idx.index:
+            continue
+        v = idx.at[fips, col]
+        if pd.isna(v) or not ok(v):
+            findings.append(Finding("FAIL", f"Spot check failed: {what} (got {v!r})"))
+    for col, min_share in (("hazard_risk", 0.99), ("unemployment_rate", 0.99), ("dist_airport_mi", 1.0),
+                           ("dist_coast_mi", 1.0), ("dist_metro_mi", 1.0)):
+        if col in df.columns:
+            share = float(df[col].notna().mean())
+            if share < min_share:
+                findings.append(Finding("FAIL", f"{col} covers only {share:.1%} of counties"))
+    return findings
+
+
 def _check_monthly_climate(df: pd.DataFrame) -> list[Finding]:
     """The Climate tab's monthly file must cover the same counties, and agree
     with the annual climate columns it shares stations with (etl/climate.py)."""
@@ -369,6 +401,7 @@ def validate(df: pd.DataFrame) -> tuple[list[Finding], bool]:
     findings += _check_derived_sanity(df)
     findings += _check_boundaries(df)
     findings += _check_monthly_climate(df)
+    findings += _check_phase5(df)
 
     passed = not any(f.severity == "FAIL" for f in findings)
     return findings, passed

@@ -96,6 +96,9 @@ export function PlaceOverview({ score: s, data, input }: Props) {
         </section>
       )}
 
+      <LocationFacts data={data} index={s.index} />
+      <HazardFacts data={data} index={s.index} />
+
       <section>
         <SectionTitle>How it&rsquo;s scored</SectionTitle>
         {rows.length === 0 ? (
@@ -117,6 +120,81 @@ export function PlaceOverview({ score: s, data, input }: Props) {
         )}
       </section>
     </div>
+  );
+}
+
+/** Where it is: nearest major airport and big metro, and the coast. Always shown. */
+function LocationFacts({ data, index: i }: { data: CountyDataset; index: number }) {
+  const mi = (v: number) => (Number.isNaN(v) ? null : formatValue("dist_airport_mi", v));
+  const rows = [
+    { label: "Nearest major airport", name: data.text.nearest_airport[i], dist: mi(data.values.dist_airport_mi[i]) },
+    { label: "Nearest metro of 500k+", name: data.text.nearest_metro[i], dist: mi(data.values.dist_metro_mi[i]) },
+    { label: "Coast (ocean, bays, tidal water)", name: null, dist: mi(data.values.dist_coast_mi[i]) },
+  ].filter((r) => r.dist !== null);
+  if (rows.length === 0) return null;
+  return (
+    <section>
+      <SectionTitle>Location</SectionTitle>
+      <ul className="space-y-1 text-sm">
+        {rows.map((r) => (
+          <li key={r.label} className="flex items-baseline justify-between gap-3">
+            <span className="text-neutral-600 dark:text-neutral-400">{r.label}</span>
+            <span className="text-right">
+              {r.name && <span className="mr-1.5">{r.name}</span>}
+              <span className="font-medium tabular-nums">{r.dist}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 text-[11px] text-neutral-500">
+        Straight-line miles from where people in the county live. Airports: OurAirports (large, scheduled
+        service). Coast: Natural Earth.
+      </p>
+    </section>
+  );
+}
+
+const HAZARD_KEYS = [
+  "hazard_risk",
+  "hazard_hurricane",
+  "hazard_wildfire",
+  "hazard_inland_flood",
+  "hazard_coastal_flood",
+  "hazard_earthquake",
+  "hazard_tornado",
+] as const;
+
+/** FEMA's five-step wording for a percentile. */
+function hazardWord(p: number): string {
+  return p < 20 ? "Very low" : p < 40 ? "Low" : p < 60 ? "Moderate" : p < 80 ? "High" : "Very high";
+}
+
+/** Natural hazards (FEMA NRI loss-rate percentiles), always shown, weighted or not. */
+function HazardFacts({ data, index: i }: { data: CountyDataset; index: number }) {
+  const rows = HAZARD_KEYS.map((k) => ({ k, v: data.values[k][i] })).filter((r) => !Number.isNaN(r.v));
+  if (rows.length === 0) return null;
+  return (
+    <section>
+      <SectionTitle>Natural hazards</SectionTitle>
+      <ul className="space-y-1 text-sm">
+        {rows.map(({ k, v }) => (
+          <li key={k} className="flex items-baseline justify-between gap-3">
+            <span className={k === "hazard_risk" ? "font-medium" : "text-neutral-600 dark:text-neutral-400"}>
+              {getMetric(k).label}
+            </span>
+            <span className="text-right">
+              <span className="mr-1.5">{v === 0 ? "None" : hazardWord(v)}</span>
+              <span className="text-xs tabular-nums text-neutral-500">{v === 0 ? "" : formatValue(k, v)}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 text-[11px] text-neutral-500">
+        FEMA National Risk Index (Dec 2025): where the county ranks nationally on the share of its buildings,
+        people and farms expected to be lost to each hazard in a typical year. &ldquo;None&rdquo; = the hazard
+        doesn&rsquo;t occur there.
+      </p>
+    </section>
   );
 }
 
