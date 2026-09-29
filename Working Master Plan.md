@@ -8,6 +8,9 @@
 > Last updated: 2026-09-26
 >
 > **Changelog**
+> - 2026-09-28 — **Phase 7a: UI reorganization planned** — filters move to a large modal split
+>   into Priorities and Must-haves, Off–5 importance buttons, a Settings screen with About the
+>   data, a type/spacing pass with "i" popovers. New features paused until it's done.
 > - 2026-09-27 — **Phase 5 complete; Phase 7 (polish) entered.** FEMA National Risk Index
 >   (loss-rate percentiles, not the size-driven risk score), BLS 2025 unemployment (API key),
 >   and distances to a major airport, the coast (incl. tidal water) and a 500k+ metro.
@@ -940,6 +943,47 @@ first place view, not at startup. One file, not per state, because the envelope 
       covers the everyday need.
 
 ### Phase 7 — Polish *(always last)* ⬅️ **IN PROGRESS** (entered 2026-09-27)
+
+**7a — UI reorganization (decided 2026-09-28; features paused until it's done).** The app feels
+jumbled and cramped: filters, results and place details all squeeze into ~350 px panels, setting
+up a search (occasional) competes with browsing (constant) for the same space, explanations sit
+in the reading path at 11 px, and settings hide in two "⋯" menus. On phones, scrolling the
+filter list moves any slider the finger lands on.
+
+Decisions:
+- **Filters leave the side panel for a large modal** — centered over a dimmed map on desktop,
+  full-screen on phones — opened from a **Filters** button (with an active-count badge) in the
+  top bar. Category rail on the left, cards on the right, a live "N counties match" count and
+  **Show N** / Reset in the footer. Changes apply live.
+- **Priorities vs Must-haves.** *Priorities* = what to rank by: per metric, importance and
+  "lower / average / higher is better". *Must-haves* = what to rule out: min/max limits,
+  policies, climate types. Active filters show as removable **chips** above the results.
+- **Importance is six tap targets — Off 1 2 3 4 5 — not a slider.** Exact, and a scrolling
+  finger can't change it (nothing drags).
+- **Settings screen** (gear in the top bar): include Alaska / Hawaii, show unknown counties,
+  default compare county, theme (system / light / dark), and **About the data** — every
+  source with its date and method, plus the laws disclaimer. Replaces the "⋯" menus.
+- **Breathing room.** One small type scale (12 caption / 14 secondary / 16 body / 18–20
+  headings) instead of today's 10/11/12 px mix; more padding between sections; **"i" icons**
+  that open a short popover for explanations (how it's scored, FEMA, NOAA, law notes) instead
+  of paragraphs in the reading path. Place view key numbers as a stat grid. Results rows
+  taller, two reason chips instead of four.
+- **Layout.** Desktop: top bar (name · Filters · chips · gear), one wider (~440 px) results /
+  place panel, map fills the rest. Phone: top bar (Filters · gear) and the existing bottom
+  sheet.
+
+Build order:
+- [ ] Foundations: type scale and spacing tokens; an `InfoTip` popover; a `Modal` (focus
+      trap, Escape, scroll lock, full-screen on phones)
+- [ ] Filters modal: Priorities / Must-haves, Off–5 importance, live count; remove the Filters
+      side panel; Filters button + badge in the top bar (desktop and phone)
+- [ ] Active-filter chips above the results
+- [ ] Settings screen + About the data + theme switch; remove the "⋯" menus
+- [ ] Place view and results list: spacing and type pass, stat grid, "i" icons
+- [ ] Desktop layout: wider single panel, header cleanup
+- [ ] Phone pass and a light-mode check by eye
+
+**7b — paused features** (from the original list):
 - [ ] **"New version available" prompt.** After a deploy, the first visit shows the previously
       cached version while the new service worker installs in the background; the update
       appears on the next load. Standard PWA behaviour, but confusing — show a small
