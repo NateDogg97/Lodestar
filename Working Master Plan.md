@@ -8,6 +8,15 @@
 > Last updated: 2026-09-30
 >
 > **Changelog**
+> - 2026-09-30 — **Phase 8 refined (owner answers):** crime from the FBI Crime Data Explorer by
+>   police jurisdiction; schools ranked both nationally and within the county; housing market
+>   from Redfin/Zillow (MLS isn't usable by a public app); low confidence as a caution icon
+>   with details on hover; 8b displays data only, filters inside the county wait for 8e.
+> - 2026-09-30 — **Phase 8 planned: inside the county.** After shipping the county MVP, the
+>   next goal is areas within a county (census tracts): open a county, "Explore inside", and
+>   rank its tracts on home values, housing style, walkability, schools (by district),
+>   distances, hazards and families. Per-county files loaded on demand; pilot on Travis
+>   County first. Tracts moved out of §10 (deferred).
 > - 2026-09-30 — **MVP feature-complete.** "New version available" notice, README rewritten
 >   for Lodestar, domain lodestarmap.com. Left before launch: GitHub remote, hosting that
 >   redeploys on push, `EIA_API_KEY` secret, DNS, and a real-phone pass.
@@ -220,8 +229,8 @@ lower 48 + DC, 3,109 counties.
 constantly. SEDA publishes county-level rollups, so this is handled for MVP, but we are
 approximating. Revisit if district-level precision becomes important.
 
-**Deferred:** the "area specificity" filter (state → county → city → neighborhood). Each level is
-a separate join key, boundary file, and data-availability problem.
+**Beyond counties: Phase 8** (planned 2026-09-30) — rank counties, then drill into one
+county's census tracts. See §9 Phase 8.
 
 ### Geography roadmap
 
@@ -972,7 +981,7 @@ first place view, not at startup. One file, not per state, because the envelope 
       *Explicitly deferred* on 2026-09-27 when Phase 6 closed; the Climate tab's compare overlay
       covers the everyday need.
 
-### Phase 7 — Polish *(always last)* ⬅️ **IN PROGRESS** (entered 2026-09-27)
+### Phase 7 — Polish *(always last)* ✅ **MVP SHIPPED 2026-09-30** at www.lodestarmap.com (open: real-phone pass, shortlist)
 
 **7a — UI reorganization (decided 2026-09-28; features paused until it's done).** The app feels
 jumbled and cramped: filters, results and place details all squeeze into ~350 px panels, setting
@@ -1064,15 +1073,122 @@ Build order:
 > any time after Phase 3. **Polish stays last** (decided 2026-09-22): new features and data go
 > in before finishing touches.
 
+### Phase 8 — Inside the county (census tracts) ⬅️ **NEXT** (planned 2026-09-30)
+
+**Why.** Counties proved the idea, but a county is not where you live. Travis County, TX is
+the owner's example: the east side is near the airport; the west side (Westlake, Lake Travis)
+has much stronger schools and higher home values; central Travis is downtown Austin — high
+incomes, high-rise condos, walkable city life; south Austin is suburban and family-oriented.
+One county row averages all of that away.
+
+**Decision: a drill-down, not a new map of the whole country.**
+1. **Stage 1 (today):** rank counties. Filters that don't vary inside a county (state laws and
+   taxes, climate, metro prices for goods and services) do their work here.
+2. **Stage 2 (new):** open a county → **"Explore inside"** loads that county's **census
+   tracts** (~1,200–8,000 people each; ~290 in Travis) and ranks *areas* with the same
+   priorities. The map switches to tract shapes inside the county; the list shows areas; each
+   area has a place view like a county's.
+
+**Why tracts.** They are the smallest unit with the full ACS (income, home value, rent,
+housing type, commute, households with children) and FEMA hazard data, and they're stable
+(2020 vintage). In a city a tract is roughly a neighborhood; in the country it can be the
+whole county, which is fine — there's nothing finer to distinguish there. (§3 has the full
+geography table; block groups are too noisy, parcels need paid data.)
+
+**Architecture: per-county files, loaded on demand.** The ETL writes one small file per
+county: `public/data/tracts/{fips}.json` (metrics) + `{fips}.topo.json` (shapes). Travis is
+~290 rows — tens of KB — so the browser scores it instantly with the existing engine. Only
+the counties someone opens are fetched (and cached by the service worker for offline). This
+replaces the earlier idea of national vector tiles (§3), which was for a nationwide tract
+map this design doesn't need. **Measure total size in 8c** (~85k tracts across ~3,100
+counties); if the repo or deploy gets heavy, move the files to object storage (R2).
+
+**Scoring inside a county.** Percentiles against **all US tracts** (so "strong schools" means
+strong nationally), using precomputed national breakpoints per metric (a small file of
+quantiles) rather than loading 85k rows. The map colors areas **relative to each other within
+the county**, like today's top-50 coloring. Filters that are constant within the county are
+shown as "applies to the whole county" and don't affect area ranking.
+
+#### What varies inside a county, and where it comes from
+
+| What | Source (free) | Unit | Notes |
+|---|---|---|---|
+| Home value, rent, income, price/rent to income | Census ACS 5-year | Tract | B25077, B25064, B19013. Margins of error grow in small tracts: flag low-confidence values. |
+| **Cost of living, housing part** | ACS tract rent + BEA metro components | Tract | The §4 recombination: keep metro goods/utilities/services, swap in tract rent. Already designed for this. |
+| **Housing style / urban form** | ACS | Tract | Share of units in 20+ unit buildings (high-rise), single-family detached share, owner vs renter, median year built, population density. |
+| **Walkability** | EPA National Walkability Index (2021) | Block group → tract | 2019 block groups: needs a crosswalk to 2020 tracts (Census relationship files), population-weighted. |
+| **Family orientation** | ACS | Tract | Households with children under 18, median age. |
+| Commute | ACS | Tract | Mean travel time to work, share working from home. |
+| **Schools (primary)** | NCES school district boundaries + SEDA district scores | District → tract | Districts split counties — exactly the east/west Travis story (Austin, Eanes, Lake Travis, Manor, Del Valle, Pflugerville ISDs…). Boundaries are official and current. |
+| Schools (detail) | NCES school locations + SEDA school-level scores | School | "Schools near this area" list with scores. **Not** attendance zones: the only national zone data (NCES SABS) stopped in 2015-16 and was experimental, so we never claim which school a street is zoned to. Check each SEDA file's latest school year. |
+| | | | **Show both comparisons (owner, 2026-09-30):** where a school or district ranks **nationally** (percentile) *and* **within the county** (e.g. "Top 12% nationally · 3rd of 41 elementary schools in Travis County"). |
+| **Housing market** | Redfin Data Center; Zillow Research | ZIP / neighborhood / city | Median sale price, days on market, inventory, sale-to-list (Redfin); home values and rents (Zillow ZHVI / ZORI). Free downloads, attribution required. ZIP → tract via ZCTA crosswalk. **Not MLS** (see below). |
+| **Distances** (airport, metro center, coast) | Census 2020 **tract** population centers + existing distance code | Tract | Same method as counties, from where people in the tract live. Add "distance to downtown" (the metro's principal city). |
+| Natural hazards | FEMA National Risk Index | Tract | NRI publishes tracts; same metrics as the county view. |
+| Health (optional) | CDC PLACES | Tract | Later, if wanted. |
+| Current home values (optional) | Zillow ZHVI | ZIP / neighborhood | Fresher than ACS (which lags 2–5 years). Free with attribution. ZIP → tract via ZCTA crosswalk. |
+| Climate | NOAA (existing) | County | Stays county-level; differences within a county are small except in mountains. |
+| **Crime** | FBI Crime Data Explorer (API, NIBRS) | Police agency → jurisdiction | Reported by **agency**, not by neighborhood: a city's police department covers the city; the sheriff covers unincorporated areas. So a tract gets its **jurisdiction's** rate (Austin PD vs Travis County Sheriff vs Pflugerville PD vs West Lake Hills PD). Coarser than tracts but still inside the county. Caveats: data lags 1–2 years; some agencies report partial years or not at all (→ low confidence); rates use the FBI's population served. Needs a free data.gov API key (ETL only). Map agencies (ORI) to Census places by name + state; skip campus and transit agencies. |
+
+**Why not MLS (asked 2026-09-30).** MLS data isn't a public database: there are hundreds of
+regional MLSs, each with its own rules, and access requires a licensed agent or broker to sign
+a data license (IDX/VOW, usually through a vendor on the RESO Web API) that forbids
+republishing the data outside approved uses. A free public app can't use it. Redfin and
+Zillow publish free aggregates from the same market activity, which is what this app needs.
+
+#### Low confidence (decided 2026-09-30)
+A small **yellow caution icon** next to an area, in the list and its detail view. Hover (tap on
+phones) shows **"Low confidence"** and lists each affected value and why, e.g. "Median home
+value: Census margin of error ±38%", "Crime: agency reported 7 of 12 months". Same pattern as
+the laws' confidence badges. Thresholds are set in 8a (a starting point: the Census Bureau
+treats a coefficient of variation above ~30–40% as unreliable).
+
+#### Naming areas (tracts are only numbers)
+Label each tract with names people know: its **city or town** (Census places), a
+**neighborhood** name where one exists (Zillow's 2017 neighborhood boundaries, ~17,000
+neighborhoods in ~650 cities, Creative Commons — verify the exact license; Who's On First as a
+fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, East Austin · 78702".
+
+#### Build order (strict, like Phases 1–4)
+- [ ] **8a — Prove it on Travis County.** Tract ETL for one county, end to end: 2020 tract
+      spine, ACS metrics, tract population centers and distances, NRI, district assignment +
+      SEDA scores, walkability crosswalk, names. **Check against what the owner knows**:
+      east vs west schools and home values, downtown incomes and high-rise share, south Austin
+      households with children. If the data doesn't tell that story, stop and fix it before
+      building UI. Add two contrasting counties (a rural one, and one big city, e.g. Cook, IL).
+- [ ] **8b — Show it: drill-down UI on the pilot counties, display first.** "Explore inside"
+      in the county view; tract map inside the county, area list, area place view ("applies
+      to the whole county" facts, schools nearby with both rankings, distances, crime by
+      jurisdiction, housing market, low-confidence icon). **No filters inside the county
+      yet** (owner, 2026-09-30): get the data on screen, look at it, then decide.
+      Try a few ways of handling very large counties here (see open questions). URLs:
+      `place=` accepts an 11-digit tract ID.
+- [ ] **8c — All counties.** Run the tract ETL nationwide, measure file sizes, decide on
+      hosting (repo vs R2). Precompute national tract percentile breakpoints.
+- [ ] **8d — Extras, as wanted.** CDC PLACES health, OSM amenities (parks, groceries),
+      neighborhood names beyond Zillow's cities.
+- [ ] **8e — Filters and must-haves inside the county.** Decide after 8b, with the data on
+      screen: which priorities rank areas, which county-level must-haves also hide areas.
+
+#### Open questions for Phase 8
+- ~~Schools: national or within the county?~~ **Both** (owner, 2026-09-30).
+- ~~How to show low confidence?~~ **Caution icon + hover details** (owner, 2026-09-30).
+- Tract percentiles for the other metrics: national (proposed), or within the metro? Try
+  both on Travis in 8a.
+- Filters inside the county: **deferred to 8e** (owner, 2026-09-30), after seeing the data.
+- Do very large counties need a middle level (city/town) between county and tract, e.g. Los
+  Angeles County with 2,500 tracts? **Test a few solutions in 8b** (owner, 2026-09-30).
+- Crime: how well do FBI agencies map onto places? Measure in 8a on Travis (Austin PD,
+  sheriff, suburban PDs); decide how to show areas whose agency didn't report.
+
 ---
 
 ## 10. Explicitly deferred
 
 Not in MVP. Do not build these until the above ships.
 
-- Census tracts / neighborhoods / any sub-county geography (but the RPP decomposition above keeps
-  the door open)
-- The state→neighborhood specificity filter
+- ~~Census tracts / neighborhoods / any sub-county geography~~ — **now Phase 8** (2026-09-30).
+- A nationwide tract map (all 85k tracts at once). Phase 8 drills into one county at a time.
 - User accounts and auth
 - Natural language search
 - **Month-by-month climate envelope** (from Phase 6) — an acceptable range per month; a county
