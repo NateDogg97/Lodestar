@@ -2,6 +2,8 @@
 
 import {
   categoryLabel,
+  climateFamily,
+  describeClimateFilter,
   describeLimit,
   explainScore,
   formatValue,
@@ -14,6 +16,8 @@ import {
   type MetricContribution,
   type ScoringInput,
 } from "@/lib/scoring";
+
+import { InfoTip } from "@/components/ui/info-tip";
 
 import { Reasons } from "./results-list";
 
@@ -40,6 +44,16 @@ export function PlaceOverview({ score: s, data, input }: Props) {
     ...(input.categoryFilters ?? []).map((f) => {
       const def = getCategory(f.category);
       const v = data.categories[f.category][s.index];
+      // Climate type speaks in families (the Must-haves cards), not Köppen codes.
+      if (f.category === "koppen") {
+        const present = new Set(data.categories.koppen.filter((k): k is string => k !== null));
+        return {
+          key: f.category as FilterKey,
+          label: "Climate",
+          rule: describeClimateFilter(f.accept, present),
+          value: v === null ? "No data" : (climateFamily(v)?.name ?? v),
+        };
+      }
       return {
         key: f.category as FilterKey,
         label: def.label,
@@ -74,7 +88,7 @@ export function PlaceOverview({ score: s, data, input }: Props) {
             {filterRows.map((f) => {
               const state = failed.has(f.key) ? "fail" : unknown.has(f.key) ? "unknown" : "pass";
               return (
-                <li key={f.key} className="flex items-start gap-2 py-2 text-sm">
+                <li key={f.key} className="flex items-start gap-2 py-2 text-label">
                   <FilterIcon state={state} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-3">
@@ -87,7 +101,7 @@ export function PlaceOverview({ score: s, data, input }: Props) {
                         {f.value}
                       </span>
                     </div>
-                    <p className="text-xs text-neutral-500">Yours: {f.rule}</p>
+                    <p className="text-caption text-neutral-500">Yours: {f.rule}</p>
                   </div>
                 </li>
               );
@@ -100,9 +114,16 @@ export function PlaceOverview({ score: s, data, input }: Props) {
       <HazardFacts data={data} index={s.index} />
 
       <section>
-        <SectionTitle>How it&rsquo;s scored</SectionTitle>
+        <SectionTitle
+          tip={
+            rows.length > 0 &&
+            "Each weighted metric gives 0–100 points by where this county sits among all counties (flipped when lower is better; closest to the typical county when average is better). The score is the weighted average of the points. Effect = weight × (points − 50): how far that metric pushed the score up or down."
+          }
+        >
+          How it&rsquo;s scored
+        </SectionTitle>
         {rows.length === 0 ? (
-          <p className="text-sm text-neutral-500">Nothing is weighted yet, so there is no score to break down.</p>
+          <p className="text-label text-neutral-500">Nothing is weighted yet, so there is no score to break down.</p>
         ) : (
           <>
             <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
@@ -110,12 +131,6 @@ export function PlaceOverview({ score: s, data, input }: Props) {
                 <ContributionRow key={c.metric} c={c} />
               ))}
             </ul>
-            <p className="mt-2 text-[11px] leading-snug text-neutral-500">
-              Each weighted metric gives 0–100 points by where this county sits among all counties
-              (flipped when lower is better; closest to the typical county when average is better). The
-              score is the weighted average of the points. Effect = weight × (points − 50): how far
-              that metric pushed the score up or down.
-            </p>
           </>
         )}
       </section>
@@ -134,8 +149,10 @@ function LocationFacts({ data, index: i }: { data: CountyDataset; index: number 
   if (rows.length === 0) return null;
   return (
     <section>
-      <SectionTitle>Location</SectionTitle>
-      <ul className="space-y-1 text-sm">
+      <SectionTitle tip="Straight-line miles from where people in the county live. Airports: OurAirports (large, scheduled service). Coast: Natural Earth.">
+        Location
+      </SectionTitle>
+      <ul className="space-y-1 text-label">
         {rows.map((r) => (
           <li key={r.label} className="flex items-baseline justify-between gap-3">
             <span className="text-neutral-600 dark:text-neutral-400">{r.label}</span>
@@ -146,10 +163,6 @@ function LocationFacts({ data, index: i }: { data: CountyDataset; index: number 
           </li>
         ))}
       </ul>
-      <p className="mt-1 text-[11px] text-neutral-500">
-        Straight-line miles from where people in the county live. Airports: OurAirports (large, scheduled
-        service). Coast: Natural Earth.
-      </p>
     </section>
   );
 }
@@ -175,8 +188,10 @@ function HazardFacts({ data, index: i }: { data: CountyDataset; index: number })
   if (rows.length === 0) return null;
   return (
     <section>
-      <SectionTitle>Natural hazards</SectionTitle>
-      <ul className="space-y-1 text-sm">
+      <SectionTitle tip="FEMA National Risk Index (Dec 2025): where the county ranks nationally on the share of its buildings, people and farms expected to be lost to each hazard in a typical year. “None” = the hazard doesn’t occur there.">
+        Natural hazards
+      </SectionTitle>
+      <ul className="space-y-1 text-label">
         {rows.map(({ k, v }) => (
           <li key={k} className="flex items-baseline justify-between gap-3">
             <span className={k === "hazard_risk" ? "font-medium" : "text-neutral-600 dark:text-neutral-400"}>
@@ -184,16 +199,11 @@ function HazardFacts({ data, index: i }: { data: CountyDataset; index: number })
             </span>
             <span className="text-right">
               <span className="mr-1.5">{v === 0 ? "None" : hazardWord(v)}</span>
-              <span className="text-xs tabular-nums text-neutral-500">{v === 0 ? "" : formatValue(k, v)}</span>
+              <span className="text-caption tabular-nums text-neutral-500">{v === 0 ? "" : formatValue(k, v)}</span>
             </span>
           </li>
         ))}
       </ul>
-      <p className="mt-1 text-[11px] text-neutral-500">
-        FEMA National Risk Index (Dec 2025): where the county ranks nationally on the share of its buildings,
-        people and farms expected to be lost to each hazard in a typical year. &ldquo;None&rdquo; = the hazard
-        doesn&rsquo;t occur there.
-      </p>
     </section>
   );
 }
@@ -202,7 +212,7 @@ function StatusLine({ score: s, filterCount }: { score: CountyScore; filterCount
   if (s.status === "excluded") {
     const n = s.failedFilters.length;
     return (
-      <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-900 dark:bg-rose-950 dark:text-rose-200">
+      <p className="rounded-lg bg-rose-50 px-3 py-2 text-label text-rose-900 dark:bg-rose-950 dark:text-rose-200">
         Ruled out — fails {n === 1 ? "1 of your filters" : `${n} of your filters`}.
       </p>
     );
@@ -210,14 +220,14 @@ function StatusLine({ score: s, filterCount }: { score: CountyScore; filterCount
   if (s.status === "unknown") {
     const n = s.unknownFilters.length;
     return (
-      <p className="rounded-lg bg-neutral-100 px-3 py-2 text-sm text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300">
+      <p className="rounded-lg bg-neutral-100 px-3 py-2 text-label text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300">
         No data for {n === 1 ? "1 of your filters" : `${n} of your filters`} — kept as unknown, not guessed.
       </p>
     );
   }
   if (filterCount === 0) return null;
   return (
-    <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+    <p className="rounded-lg bg-emerald-50 px-3 py-2 text-label text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
       Passes all {filterCount === 1 ? "1 of your filters" : `${filterCount} of your filters`}.
     </p>
   );
@@ -227,13 +237,13 @@ function ContributionRow({ c }: { c: MetricContribution }) {
   const def = getMetric(c.metric);
   const better = c.direction === "middle" ? "average is better" : c.direction === "lower" ? "lower is better" : "higher is better";
   return (
-    <li className="py-2 text-sm">
+    <li className="py-2 text-label">
       <div className="flex items-baseline justify-between gap-3">
         <span>{def.label}</span>
         <span className="shrink-0 font-medium tabular-nums">{formatValue(c.metric, c.value)}</span>
       </div>
       {c.percentile === null ? (
-        <p className="text-xs text-neutral-500">No data — left out of this county&rsquo;s score (weight {c.weight}).</p>
+        <p className="text-caption text-neutral-500">No data — left out of this county&rsquo;s score (weight {c.weight}).</p>
       ) : (
         <>
           <div className="mt-1 flex items-center gap-2">
@@ -247,9 +257,9 @@ function ContributionRow({ c }: { c: MetricContribution }) {
                 style={{ width: `${Math.max(2, c.percentile)}%` }}
               />
             </div>
-            <span className="w-14 text-right text-xs tabular-nums text-neutral-500">{Math.round(c.percentile)} pts</span>
+            <span className="w-14 text-right text-caption tabular-nums text-neutral-500">{Math.round(c.percentile)} pts</span>
           </div>
-          <p className="mt-0.5 text-xs text-neutral-500">
+          <p className="mt-0.5 text-caption text-neutral-500">
             {ordinal(c.rawPercentile ?? 0)} percentile · {better} · weight {c.weight} ·{" "}
             <span className={(c.impact ?? 0) >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}>
               effect {(c.impact ?? 0) >= 0 ? "+" : "−"}
@@ -270,18 +280,20 @@ function FilterIcon({ state }: { state: "pass" | "fail" | "unknown" }) {
   }[state];
   const label = { pass: "Passes", fail: "Fails", unknown: "No data" }[state];
   return (
-    <span className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-xs font-bold ${cls}`} title={label}>
+    <span className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-caption font-bold ${cls}`} title={label}>
       <span aria-hidden>{state === "pass" ? "✓" : state === "fail" ? "✕" : "?"}</span>
       <span className="sr-only">{label}</span>
     </span>
   );
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
+/** A section heading, with an "i" for its explanation when there is one. */
+function SectionTitle({ children, tip }: { children: React.ReactNode; tip?: React.ReactNode }) {
   return (
-    <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-      {children}
-    </h3>
+    <div className="mb-2 flex items-center gap-1">
+      <h3 className="text-caption font-semibold tracking-wide text-neutral-500 uppercase dark:text-neutral-400">{children}</h3>
+      {tip && <InfoTip label={String(children)}>{tip}</InfoTip>}
+    </div>
   );
 }
 

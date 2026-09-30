@@ -29,7 +29,11 @@ rather than leaving it stale. Record new decisions or open questions there, not 
 - `src/components/pwa-provider.tsx` — registers the service worker on the client.
 - `serwist.config.mjs` — builds `public/sw.js` after `next build` (generated, git-ignored).
 - `src/lib/scoring/` — the scoring engine (plan §6). Pure TS, no UI imports; tests beside it.
-- `src/components/finder/` — the UI: panels, results list, and `county-map.tsx` (MapLibre).
+- `src/components/finder/` — the UI: filters modal, results list, place view, and
+  `county-map.tsx` (MapLibre).
+- `src/components/ui/` — generic pieces (`Modal`, `InfoTip`, `theme.ts`). Dark mode is `<html data-theme>`
+  (use `dark:` as usual; never `prefers-color-scheme` directly). Type sizes and spacing are tokens
+  in `globals.css` (`text-caption`/`label`/`body`/`title`/`heading`); don't use `text-[11px]`.
 - `scripts/copy-maplibre-worker.mjs` — runs on `predev`/`prebuild`; copies MapLibre's web
   worker into `public/maplibre/` (generated, git-ignored). The map breaks without it.
 - `public/data/counties.json` and `counties.topo.json` — the dataset and county shapes,

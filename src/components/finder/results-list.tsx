@@ -31,8 +31,8 @@ export function ResultsList({ ranked, data, relative, selectedFips, onSelect }: 
 
   if (ranked.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-500 dark:border-neutral-700">
-        No county passes every limit. Loosen a limit to see results.
+      <p className="rounded-lg border border-dashed border-neutral-300 p-8 text-center text-label text-neutral-500 dark:border-neutral-700">
+        No county passes every must-have. Loosen one in Filters to see results.
       </p>
     );
   }
@@ -95,12 +95,12 @@ function ResultRow({
         type="button"
         onClick={onSelect}
         aria-pressed={selected}
-        className="grid w-full grid-cols-[2rem_1fr_auto] items-start gap-2 px-2 py-3 text-left hover:bg-neutral-100 dark:hover:bg-neutral-900"
+        className="grid w-full grid-cols-[2rem_1fr_auto] items-start gap-2 px-2 py-3.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-900"
       >
-        <span className="pt-0.5 text-sm tabular-nums text-neutral-500">{rank}</span>
+        <span className="pt-0.5 text-label tabular-nums text-neutral-500">{rank}</span>
 
         <span className="min-w-0">
-          <span className="block font-medium">
+          <span className="block text-body font-medium">
             {data.countyName[s.index]}, {data.state[s.index]}
             <StatusBadges score={s} />
           </span>
@@ -113,16 +113,18 @@ function ResultRow({
   );
 }
 
+/**
+ * Two reasons at most — the biggest strength and the biggest weakness (or
+ * two strengths when there's no weakness). The place view has the rest.
+ */
 export function Reasons({ score }: { score: CountyScore }) {
-  const { strengths, weaknesses } = explainScore(score);
-  if (strengths.length === 0 && weaknesses.length === 0) return null;
+  const { strengths, weaknesses } = explainScore(score, 2);
+  const shown = [...strengths.slice(0, weaknesses.length ? 1 : 2).map((c) => ({ c, good: true })), ...weaknesses.slice(0, strengths.length ? 1 : 2).map((c) => ({ c, good: false }))];
+  if (shown.length === 0) return null;
   return (
-    <span className="mt-1 flex flex-wrap gap-1.5 text-xs">
-      {strengths.map((c) => (
-        <Reason key={c.metric} c={c} good />
-      ))}
-      {weaknesses.map((c) => (
-        <Reason key={c.metric} c={c} good={false} />
+    <span className="mt-1.5 flex flex-wrap gap-1.5 text-caption">
+      {shown.map(({ c, good }) => (
+        <Reason key={c.metric} c={c} good={good} />
       ))}
     </span>
   );
@@ -135,7 +137,7 @@ export function StatusBadges({ score: s }: { score: CountyScore }) {
       {s.status === "unknown" && (
         <span
           title={`No data for: ${names(s.unknownFilters)}`}
-          className="ml-2 rounded bg-neutral-200 px-1.5 py-0.5 align-middle text-[11px] font-normal text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+          className="ml-2 rounded bg-neutral-200 px-1.5 py-0.5 align-middle text-caption font-normal text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
         >
           Unknown for a limit
         </span>
@@ -143,7 +145,7 @@ export function StatusBadges({ score: s }: { score: CountyScore }) {
       {s.missingMetrics.length > 0 && (
         <span
           title={`Scored without: ${names(s.missingMetrics)}`}
-          className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 align-middle text-[11px] font-normal text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+          className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 align-middle text-caption font-normal text-amber-900 dark:bg-amber-950 dark:text-amber-200"
         >
           Partial data
         </span>

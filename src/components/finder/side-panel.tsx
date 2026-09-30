@@ -11,18 +11,14 @@ interface Props {
   onToggle: () => void;
   /** Width when open, as a Tailwind class for md+ screens. */
   widthClass: string;
-  /** A PanelMenu (the "⋯" settings dropdown), shown beside the title. */
-  menu?: ReactNode;
-  headerExtra?: ReactNode;
   children: ReactNode;
 }
 
 /**
- * A left-hand panel that collapses to a thin labelled rail. Panels collapse
- * independently (plan §9 Phase 4, decision 2). Desktop only — phones use the
- * top-bar filters and the results BottomSheet.
+ * The desktop results panel; collapses to a thin labelled rail to give the
+ * map the whole width. Phones use the results BottomSheet instead.
  */
-export function SidePanel({ id, title, badge, open, onToggle, widthClass, menu, headerExtra, children }: Props) {
+export function SidePanel({ id, title, badge, open, onToggle, widthClass, children }: Props) {
   if (!open) {
     return (
       <button
@@ -49,12 +45,11 @@ export function SidePanel({ id, title, badge, open, onToggle, widthClass, menu, 
       className={`absolute inset-y-0 left-0 z-20 flex w-full flex-col border-r border-neutral-200 bg-white md:static md:z-auto md:shrink-0 ${widthClass} dark:border-neutral-800 dark:bg-neutral-950`}
     >
       <header className="flex items-center justify-between gap-2 border-b border-neutral-200 px-4 py-2.5 dark:border-neutral-800">
-        <div className="flex items-center gap-1">
-          <h2 className="text-sm font-semibold">{title}</h2>
-          {menu}
+        <div className="flex items-baseline gap-1.5">
+          <h2 className="text-title font-semibold">{title}</h2>
+          {badge && <span className="text-label text-neutral-500">{badge}</span>}
         </div>
         <div className="flex items-center gap-3">
-          {headerExtra}
           <button
             type="button"
             onClick={onToggle}

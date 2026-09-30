@@ -1,7 +1,13 @@
 "use client";
 
+import { useState, type ReactNode } from "react";
+
+import { InfoTip } from "@/components/ui/info-tip";
+import { Modal } from "@/components/ui/modal";
 import { formatDay, formatLaw, isGap, isStale, type LawData, type LawDef, type LawFact, type LawGap } from "@/lib/laws";
 import { formatValue, type CountyDataset } from "@/lib/scoring";
+
+import { LawSourcesList } from "./data-sources";
 
 interface Props {
   laws: LawData;
@@ -10,23 +16,43 @@ interface Props {
 }
 
 /**
- * The place view's "Laws & taxes" tab (LAWS.md §10). Every value shows its
- * source (linked), the source's own date, and when we last checked it — the
- * app never shows a legal or tax fact without them. Stale values are marked;
- * a deliberately blank value says why.
+ * The place view's "Laws & taxes" tab (LAWS.md §10). Every value's source
+ * (linked), the source's own date, and when we last checked it sit in the
+ * "i" beside it, with its notes; "Sources" lists every law's source. Stale
+ * values are marked; a deliberately blank value says why.
  */
 export function LawsSection({ laws, data, index }: Props) {
   const state = data.state[index];
   const facts = laws.states[state] ?? {};
   const propertyTax = data.values.property_tax_effective_rate[index];
   const propertySource = laws.countySources.property_tax_effective_rate;
+  const [sourcesOpen, setSourcesOpen] = useState(false);
 
   return (
     <section aria-label="Laws and taxes">
-      <p className="text-xs text-neutral-500">
-        State laws apply to every county in {state}; property tax is this county&rsquo;s own.
-      </p>
-      <ul className="-mx-3 mt-2 divide-y divide-neutral-200 dark:divide-neutral-800">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-label text-neutral-500 dark:text-neutral-400">
+          State laws apply to every county in {state}; property tax is this county&rsquo;s own.
+        </p>
+        <button
+          type="button"
+          onClick={() => setSourcesOpen(true)}
+          aria-haspopup="dialog"
+          className="shrink-0 rounded-full border border-neutral-300 px-3 py-1 text-label font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+        >
+          Sources
+        </button>
+      </div>
+      <Modal open={sourcesOpen} onClose={() => setSourcesOpen(false)} title="Law & tax sources" size="medium">
+        <div className="px-gutter py-4 md:px-6">
+          <p className="text-label text-neutral-600 dark:text-neutral-400">
+            The source most states&rsquo; values come from. A state whose value came from elsewhere names its own
+            source in the “i” beside that value.
+          </p>
+          <LawSourcesList laws={laws} />
+        </div>
+      </Modal>
+      <ul className="-mx-2 mt-3 divide-y divide-neutral-200 dark:divide-neutral-800">
         {propertySource && (
           <Row
             name="Property tax rate (this county)"
@@ -41,7 +67,7 @@ export function LawsSection({ laws, data, index }: Props) {
           return isGap(f) ? <GapRow key={def.key} def={def} gap={f} /> : <FactRow key={def.key} def={def} fact={f} />;
         })}
       </ul>
-      <p className="mt-2 border-t border-neutral-200 pt-2 text-[11px] leading-snug text-neutral-500 dark:border-neutral-800">
+      <p className="mt-3 border-t border-neutral-200 pt-3 text-caption text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
         {laws.disclaimer}
       </p>
     </section>
@@ -95,54 +121,55 @@ function Row({
   name: string;
   value: string;
   muted?: boolean;
-  badges?: React.ReactNode;
+  badges?: ReactNode;
   source?: { name: string; url: string; asOf?: string; checked?: string };
   detail?: string;
   quote?: string;
 }) {
   return (
-    <li className="px-3 py-2 text-sm">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-neutral-700 dark:text-neutral-300">{name}</span>
-        <span className={`shrink-0 text-right font-medium tabular-nums ${muted ? "text-neutral-400" : ""}`}>{value}</span>
-      </div>
-      {badges && <div className="mt-1 flex flex-wrap gap-1">{badges}</div>}
-      {source && (
-        <p className="mt-0.5 text-[11px] text-neutral-500">
-          Source:{" "}
-          <a href={source.url} target="_blank" rel="noopener noreferrer" className="underline decoration-neutral-300 underline-offset-2 hover:text-neutral-800 dark:hover:text-neutral-200">
-            {source.name}
-          </a>
-          {source.asOf && <>, as of {formatDay(source.asOf)}</>}
-          {source.checked && <> · checked {formatDay(source.checked)}</>}
-        </p>
-      )}
-      {(detail || quote) && (
-        <details className="mt-0.5 text-[11px] text-neutral-500">
-          <summary className="cursor-pointer select-none hover:text-neutral-700 dark:hover:text-neutral-300">Details</summary>
-          {detail && <p className="mt-1 whitespace-pre-line">{linkify(detail)}</p>}
-          {quote && (
-            <p className="mt-1 border-l-2 border-neutral-200 pl-2 italic dark:border-neutral-700">
-              Source says: “{quote}”
-            </p>
+    <li className="px-2 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-label text-neutral-700 dark:text-neutral-300">{name}</span>
+        <span className="flex shrink-0 items-center gap-1">
+          <span className={`text-right text-label font-semibold tabular-nums ${muted ? "text-neutral-400" : ""}`}>{value}</span>
+          {(source || detail || quote) && (
+            <InfoTip label={name}>
+              {source && (
+                <p>
+                  Source:{" "}
+                  <a href={source.url} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+                    {source.name}
+                  </a>
+                  {source.asOf && <>, as of {formatDay(source.asOf)}</>}
+                  {source.checked && <>. Checked {formatDay(source.checked)}</>}.
+                </p>
+              )}
+              {detail && <p className={`whitespace-pre-line ${source ? "mt-2" : ""}`}>{linkify(detail)}</p>}
+              {quote && (
+                <p className="mt-2 border-l-2 border-neutral-300 pl-2 italic dark:border-neutral-600">
+                  Source says: &ldquo;{quote}&rdquo;
+                </p>
+              )}
+            </InfoTip>
           )}
-        </details>
-      )}
+        </span>
+      </div>
+      {badges && <div className="mt-1.5 flex flex-wrap gap-1">{badges}</div>}
     </li>
   );
 }
 
-function Badge({ tone, children }: { tone: "amber" | "rose" | "neutral"; children: React.ReactNode }) {
+function Badge({ tone, children }: { tone: "amber" | "rose" | "neutral"; children: ReactNode }) {
   const cls = {
     amber: "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200",
     rose: "bg-rose-100 text-rose-900 dark:bg-rose-950 dark:text-rose-200",
     neutral: "bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300",
   }[tone];
-  return <span className={`rounded px-1.5 py-0.5 text-[11px] ${cls}`}>{children}</span>;
+  return <span className={`rounded px-1.5 py-0.5 text-caption ${cls}`}>{children}</span>;
 }
 
 /** Turn bare URLs in a note (e.g. a pinned Wikipedia revision) into links. */
-function linkify(text: string): React.ReactNode[] {
+function linkify(text: string): ReactNode[] {
   return text.split(/(https:\/\/[^\s)]*[^\s).,])/g).map((part, i) =>
     part.startsWith("https://") ? (
       <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">

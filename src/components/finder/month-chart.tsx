@@ -217,7 +217,7 @@ export function MonthChart({ title, kind, series, format }: Props) {
               </p>
             );
           })}
-          {kind === "range" && <p className="mt-0.5 text-[10px] text-neutral-500">average high / low</p>}
+          {kind === "range" && <p className="mt-0.5 text-caption text-neutral-500">average high / low</p>}
         </div>
       )}
     </figure>

@@ -13,7 +13,8 @@ import { METRIC_KEYS, STATE_METRIC_KEYS, type MetricKey } from "./metrics";
 export const PAYLOAD_FORMAT = "counties-columnar-v1";
 
 /** Text columns kept for display: the nearest major airport (IATA code) and 500k+ metro (name). */
-export const TEXT_COLUMNS = ["nearest_airport", "nearest_metro"] as const;
+// rpp_source_geo: the metro (or state) whose price parity a county carries.
+export const TEXT_COLUMNS = ["nearest_airport", "nearest_metro", "rpp_source_geo"] as const;
 export type TextColumn = (typeof TEXT_COLUMNS)[number];
 
 export interface CountyDataset {

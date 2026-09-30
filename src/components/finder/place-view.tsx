@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react";
 import type { LawData } from "@/lib/laws";
 import {
   categoryLabel,
+  climateFamily,
   formatValue,
   type CountyDataset,
   type CountyScore,
@@ -12,6 +13,9 @@ import {
   type ScoringInput,
 } from "@/lib/scoring";
 
+import { InfoTip } from "@/components/ui/info-tip";
+
+import { ClimateIcon } from "./climate-icons";
 import { ClimateTab } from "./climate-tab";
 import { LawsSection } from "./laws-section";
 import { PlaceOverview } from "./place-overview";
@@ -70,16 +74,16 @@ export function PlaceIdentity({ score: s, data, rank, total, rel, onBack }: Plac
       <button
         type="button"
         onClick={onBack}
-        className="-ml-1 rounded px-1 text-xs font-medium text-emerald-700 hover:underline dark:text-emerald-400"
+        className="-ml-1 rounded px-1 text-label font-medium text-emerald-700 hover:underline dark:text-emerald-400"
       >
         ← All results
       </button>
       <div className="mt-1 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="truncate text-base font-semibold leading-tight">
+          <h2 className="truncate text-heading font-semibold">
             {data.countyName[s.index]}, {data.state[s.index]}
           </h2>
-          <p className="mt-0.5 text-xs text-neutral-500">
+          <p className="mt-0.5 text-label text-neutral-500">
             {where}
             <StatusBadges score={s} />
           </p>
@@ -105,33 +109,32 @@ export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
 
   return (
     <div>
-      <div className="px-4 pt-3">
+      <div className="px-gutter pt-4">
         {withIdentity && <PlaceIdentity {...props} />}
         {(facts.length > 0 || koppen) && (
-          <ul className={`flex flex-wrap gap-1.5 ${withIdentity ? "mt-3" : ""}`}>
+          <dl className={`grid grid-cols-2 gap-2 ${withIdentity ? "mt-4" : ""}`}>
             {facts.map((f) => (
-              <li
+              <Stat
                 key={f.metric}
-                className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs dark:bg-neutral-900"
+                label={f.label}
+                tip={f.metric === "rpp_all" ? <CostOfLivingNote value={f.value} data={data} index={s.index} /> : undefined}
               >
-                <span className="text-neutral-500">{f.label}</span>{" "}
-                <span className="font-medium tabular-nums">{formatValue(f.metric, f.value)}</span>
-              </li>
+                <span className="tabular-nums">{formatValue(f.metric, f.value)}</span>
+              </Stat>
             ))}
             {koppen && (
-              <li className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs dark:bg-neutral-900">
-                <span className="text-neutral-500">Climate</span>{" "}
-                <span className="font-medium">{categoryLabel("koppen", koppen)}</span>
-              </li>
+              <Stat label="Climate" wide>
+                <ClimateSummary code={koppen} />
+              </Stat>
             )}
-          </ul>
+          </dl>
         )}
       </div>
 
       <div
         role="tablist"
         aria-label="County details"
-        className="sticky top-0 z-10 mt-3 flex border-b border-neutral-200 bg-white px-2 dark:border-neutral-800 dark:bg-neutral-950"
+        className="sticky top-0 z-10 mt-4 grid grid-cols-3 border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950"
       >
         {TABS.map((t) => (
           <button
@@ -142,7 +145,7 @@ export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
             aria-selected={tab === t.id}
             aria-controls="place-tabpanel"
             onClick={() => setTab(t.id)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+            className={`-mb-px border-b-2 px-2 py-3 text-center text-label font-medium ${
               tab === t.id
                 ? "border-emerald-600 text-neutral-900 dark:text-neutral-100"
                 : "border-transparent text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
@@ -153,7 +156,7 @@ export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
         ))}
       </div>
 
-      <div id="place-tabpanel" role="tabpanel" aria-labelledby={`place-tab-${tab}`} className="px-4 py-3">
+      <div id="place-tabpanel" role="tabpanel" aria-labelledby={`place-tab-${tab}`} className="px-gutter py-4">
         {tab === "overview" && <PlaceOverview score={s} data={data} input={input} />}
         {tab === "climate" && (
           <ClimateTab fips={s.fips} data={data} compareFips={compareFips} onCompare={onCompare} />
@@ -166,6 +169,77 @@ export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
           ))}
       </div>
     </div>
+  );
+}
+
+function Stat({
+  label,
+  wide = false,
+  tip,
+  children,
+}: {
+  label: string;
+  wide?: boolean;
+  /** An explanation behind an "i" beside the label. */
+  tip?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className={`rounded-lg bg-neutral-100 px-3 py-2 dark:bg-neutral-900 ${wide ? "col-span-2" : ""}`}>
+      <dt className="flex items-center gap-1 text-caption text-neutral-500 dark:text-neutral-400">
+        {label}
+        {tip && <InfoTip label={label}>{tip}</InfoTip>}
+      </dt>
+      <dd className="mt-0.5 text-body font-semibold">{children}</dd>
+    </div>
+  );
+}
+
+/**
+ * What the cost-of-living number is: BEA's Regional Price Parity, an index
+ * where 100 is the US average price level — read here as a percentage.
+ */
+function CostOfLivingNote({ value, data, index }: { value: number; data: CountyDataset; index: number }) {
+  const diff = Math.round(Math.abs(value - 100) * 10) / 10;
+  const where = data.rppGeoLevel[index] === "metro" ? "metro" : "state";
+  const area = data.text.rpp_source_geo[index];
+  return (
+    <>
+      <p>
+        An index of local prices where <strong>100 = the US average</strong>.{" "}
+        {diff < 0.5 ? (
+          <>Prices here are about the same as the US average.</>
+        ) : (
+          <>
+            {formatValue("rpp_all", value)} means prices here are about <strong>{diff}% {value > 100 ? "above" : "below"}</strong>{" "}
+            the US average.
+          </>
+        )}
+      </p>
+      <p className="mt-2">
+        Covers rent, goods, utilities and services (BEA Regional Price Parities, 2024). BEA publishes it for metro
+        areas and states only;{" "}
+        {where === "metro"
+          ? `this county uses its metro’s figure${area ? ` (${area})` : ""}.`
+          : `this county isn’t in a metro, so it uses ${area ?? "its state"}’s statewide figure, which runs high for rural areas.`}
+      </p>
+    </>
+  );
+}
+
+/** "💧 Humid South · Hot, humid summers; mild winters", Köppen type underneath. */
+function ClimateSummary({ code }: { code: string }) {
+  const family = climateFamily(code);
+  if (!family) return <>{categoryLabel("koppen", code)}</>;
+  return (
+    <span className="flex items-start gap-2">
+      <ClimateIcon family={family.id} className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700 dark:text-emerald-400" />
+      <span>
+        {family.name}
+        <span className="font-normal text-neutral-600 dark:text-neutral-400"> · {family.description}</span>
+        <span className="block text-caption font-normal text-neutral-500">{categoryLabel("koppen", code)}</span>
+      </span>
+    </span>
   );
 }
 

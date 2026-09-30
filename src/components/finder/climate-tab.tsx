@@ -11,7 +11,9 @@ import {
   type CountyClimate,
   type MeasureKey,
 } from "@/lib/climate";
-import { categoryLabel, type CountyDataset } from "@/lib/scoring";
+import { climateLabel, type CountyDataset } from "@/lib/scoring";
+
+import { InfoTip } from "@/components/ui/info-tip";
 
 import { MonthChart, type ChartSeries } from "./month-chart";
 import { useClimateData } from "./use-county-data";
@@ -87,7 +89,7 @@ export function ClimateTab({ fips, data, compareFips, onCompare }: Props) {
   const typeOf = (f: string) => {
     const i = data.indexByFips.get(f);
     const k = i === undefined ? null : data.categories.koppen[i];
-    return k ? categoryLabel("koppen", k) : null;
+    return k ? climateLabel(k) : null;
   };
   const counties: { name: string; color: string; c: CountyClimate }[] = [
     { name: name(fips), color: "var(--viz-s1)", c: here },
@@ -129,7 +131,7 @@ export function ClimateTab({ fips, data, compareFips, onCompare }: Props) {
       )}
 
       <div>
-        <p className="text-sm">
+        <div className="flex flex-wrap items-center gap-x-1 text-label">
           <span className="text-neutral-500">Climate type:</span>{" "}
           <span className="font-semibold">{typeOf(fips) ?? "Unknown"}</span>
           {other && compareFips && (
@@ -138,19 +140,19 @@ export function ClimateTab({ fips, data, compareFips, onCompare }: Props) {
               · {name(compareFips)}: {typeOf(compareFips) ?? "Unknown"}
             </span>
           )}
-        </p>
-        <p className="mt-0.5 text-[11px] leading-snug text-neutral-500">
-          <a
-            href="https://en.wikipedia.org/wiki/K%C3%B6ppen_climate_classification"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline decoration-neutral-300 underline-offset-2"
-          >
-            Köppen–Geiger
-          </a>{" "}
-          type, computed from these normals with the Peel et al. (2007) rules. A county near a boundary
-          between types may differ from published maps.
-        </p>
+          <InfoTip label="climate type">
+            <a
+              href="https://en.wikipedia.org/wiki/K%C3%B6ppen_climate_classification"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2"
+            >
+              Köppen–Geiger
+            </a>{" "}
+            type, computed from these normals with the Peel et al. (2007) rules. A county near a boundary
+            between types may differ from published maps.
+          </InfoTip>
+        </div>
       </div>
 
       <KeyNumbers counties={counties} />
@@ -168,7 +170,7 @@ function KeyNumbers({ counties }: { counties: { name: string; color: string; c: 
     <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
       {TILES.map((t) => (
         <div key={t.key}>
-          <dt className="text-[11px] text-neutral-500">{t.label}</dt>
+          <dt className="text-caption text-neutral-500">{t.label}</dt>
           {sums.map((s, k) => {
             const v = s[t.key];
             return (
@@ -247,7 +249,7 @@ function ClimateTable({ counties }: { counties: { name: string; color: string; c
               <tr key={`${r.key}-${k}`} className={k === 0 ? "border-t border-neutral-200 dark:border-neutral-800" : ""}>
                 <th scope="row" className="sticky left-0 bg-white py-1 pr-2 text-left font-normal dark:bg-neutral-950">
                   {k === 0 ? r.label : <span className="text-neutral-500">{c.name}</span>}
-                  {counties.length > 1 && k === 0 && <span className="block text-[10px] text-neutral-500">{c.name}</span>}
+                  {counties.length > 1 && k === 0 && <span className="block text-caption text-neutral-500">{c.name}</span>}
                 </th>
                 {c.c[r.key].map((v, i) => (
                   <td key={i} className={`px-1.5 py-1 text-right ${k > 0 ? "text-neutral-500" : ""}`}>
@@ -381,7 +383,7 @@ function SourceLine({
     .filter((s): s is { f: string; mi: number } => s.mi !== undefined && s.mi > STATION_CAUTION_MI);
   const mi = climate.stationMi.get(fips);
   return (
-    <div className="border-t border-neutral-200 pt-2 text-[11px] leading-snug text-neutral-500 dark:border-neutral-800">
+    <div className="border-t border-neutral-200 pt-2 text-caption leading-snug text-neutral-500 dark:border-neutral-800">
       <p>
         Source:{" "}
         <a href={climate.source.url} target="_blank" rel="noopener noreferrer" className="underline decoration-neutral-300 underline-offset-2">

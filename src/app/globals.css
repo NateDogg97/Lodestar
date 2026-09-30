@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Dark mode follows <html data-theme>, set before paint from the Settings
+   choice or the OS (src/components/ui/theme.ts), not the media query alone. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -12,11 +16,28 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Type scale and spacing (plan §9 Phase 7a). Use these instead of arbitrary
+   sizes like text-[11px]: nothing in the app is smaller than a caption. */
+@theme {
+  --text-caption: 0.75rem; /* 12 — hints, units, chart labels */
+  --text-caption--line-height: 1rem;
+  --text-label: 0.875rem; /* 14 — secondary text, controls, list rows */
+  --text-label--line-height: 1.25rem;
+  --text-body: 1rem; /* 16 — reading text */
+  --text-body--line-height: 1.5rem;
+  --text-title: 1.125rem; /* 18 — panel and card titles */
+  --text-title--line-height: 1.5rem;
+  --text-heading: 1.25rem; /* 20 — the place name, modal titles */
+  --text-heading--line-height: 1.75rem;
+
+  --spacing-gutter: 1rem; /* panel side padding */
+  --spacing-stack: 0.75rem; /* between rows inside a section */
+  --spacing-section: 1.5rem; /* between sections */
+}
+
+[data-theme="dark"] {
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
 
 body {
@@ -41,13 +62,12 @@ body {
   --viz-axis: #c3c2b7;
   --viz-muted: #898781;
 }
-@media (prefers-color-scheme: dark) {
-  .viz-root {
-    --viz-surface: #0a0a0a;
-    --viz-s1: #3987e5;
-    --viz-s2: #d95926;
-    --viz-grid: #2c2c2a;
-    --viz-axis: #383835;
-    --viz-muted: #898781;
-  }
+[data-theme="dark"] .viz-root {
+  --viz-surface: #0a0a0a;
+  --viz-s1: #3987e5;
+  --viz-s2: #d95926;
+  --viz-grid: #2c2c2a;
+  --viz-axis: #383835;
+  --viz-muted: #898781;
 }
+

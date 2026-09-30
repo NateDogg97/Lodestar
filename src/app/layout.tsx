@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { PwaProvider } from "@/components/pwa-provider";
+import { THEME_SCRIPT } from "@/components/ui/theme";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -49,7 +50,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      // THEME_SCRIPT sets data-theme and color-scheme before React hydrates.
+      suppressHydrationWarning
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className="min-h-full flex flex-col">
         <PwaProvider>{children}</PwaProvider>
       </body>

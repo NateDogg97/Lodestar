@@ -5,9 +5,22 @@
 > If something here conflicts with what you actually built, the code is right and this file is
 > stale — fix the file.
 >
-> Last updated: 2026-09-26
+> Last updated: 2026-09-30
 >
 > **Changelog**
+> - 2026-09-30 — **Climate type filter → plain-language climate cards.** 85% of counties sit in
+>   three Köppen types, so the 21 jargon checkboxes became 9 families (Humid South, Four
+>   seasons, Northern cold, Dry & sunny, Desert, West Coast, Mountain West, Tropical,
+>   Highlands & Alaska), each with an icon, a one-line description, example places and a
+>   county count; tap to rule one out. Still stored as Köppen codes, so saved searches work.
+>   Definitions in `src/lib/scoring/climate-families.ts`. Place view and filter rows speak in
+>   families too. Also: a cost-of-living "i" in the place view, and the Material gear icon.
+> - 2026-09-28 — **Phase 7a: settings, theme, quieter UI.** Active-filter chips skipped for
+>   now (user call). Settings screen (gear) with a System/Light/Dark switch, the unknown and
+>   Alaska/Hawaii toggles, and About the data; the "⋯" menus and the header's source line are
+>   gone. Dark basemap relabelled for contrast. Laws tab: Sources list + per-value "i".
+> - 2026-09-28 — **Phase 7a steps 1–2 done:** type/spacing tokens, `Modal` and `InfoTip`, and
+>   the Filters modal (Priorities / Must-haves, Off–5 importance) replacing the Filters panel.
 > - 2026-09-28 — **Phase 7a: UI reorganization planned** — filters move to a large modal split
 >   into Priorities and Must-haves, Off–5 importance buttons, a Settings screen with About the
 >   data, a type/spacing pass with "i" popovers. New features paused until it's done.
@@ -973,15 +986,42 @@ Decisions:
   sheet.
 
 Build order:
-- [ ] Foundations: type scale and spacing tokens; an `InfoTip` popover; a `Modal` (focus
-      trap, Escape, scroll lock, full-screen on phones)
-- [ ] Filters modal: Priorities / Must-haves, Off–5 importance, live count; remove the Filters
-      side panel; Filters button + badge in the top bar (desktop and phone)
-- [ ] Active-filter chips above the results
-- [ ] Settings screen + About the data + theme switch; remove the "⋯" menus
-- [ ] Place view and results list: spacing and type pass, stat grid, "i" icons
-- [ ] Desktop layout: wider single panel, header cleanup
-- [ ] Phone pass and a light-mode check by eye
+- [x] Foundations: type scale and spacing tokens; an `InfoTip` popover; a `Modal` (focus
+      trap, Escape, scroll lock, full-screen on phones) — *done 2026-09-28.* Tokens are
+      `text-caption/label/body/title/heading` and `gutter/stack/section` spacing in
+      `globals.css`; `src/components/ui/` holds `Modal` (native `<dialog>` + `showModal()`)
+      and `InfoTip` (native Popover API, top layer, closes on scroll).
+- [x] Filters modal: Priorities / Must-haves, Off–5 importance, live count; remove the Filters
+      side panel; Filters button + badge in the top bar (desktop and phone) — *done
+      2026-09-28* (`filters-modal.tsx`). The rail switches sections (one at a time) rather
+      than scroll-spying; "Better" appears only once a metric has importance; state-level
+      source lines moved into "i" tips. The desktop header moved from `page.tsx` into the
+      finder. Alaska / Hawaii sit in the Results "⋯" menu until the Settings step.
+- [ ] ~~Active-filter chips above the results~~ — *skipped for now (2026-09-28, user call):*
+      the Filters badge and the per-section counts in the modal cover it. Revisit if the
+      search gets hard to read at a glance.
+- [x] Settings screen + About the data + theme switch; remove the "⋯" menus — *done
+      2026-09-28* (`settings-modal.tsx`, `data-sources.tsx`, `src/components/ui/theme.ts`).
+      The theme is `<html data-theme>`, set before paint by an inline script and read by
+      Tailwind's `dark:` variant; the choice is per device (localStorage). The map rebuilds on
+      a theme switch and keeps its view. **Guiding rule (user, 2026-09-28): the ranked list,
+      map and place view are the main UI; settings, explanations and sources stay one tap
+      away, not in view.**
+- [x] Place view and results list: spacing and type pass, stat grid, "i" icons — *done
+      2026-09-28.* Place tabs split the panel width evenly; quick facts are a stat grid;
+      explanations (scoring, location, FEMA, Köppen) moved into "i" tips; result rows show
+      two reason chips. Laws tab: a **Sources** list, and each value's source, notes and quote
+      in its "i" (LAWS.md §10 updated). Dark basemap: labels, roads, water and borders lifted
+      for contrast (`DARK_OVERRIDES` in `county-map.tsx`); county fills now sit above roads
+      and below labels.
+- [x] Climate type as family cards (2026-09-30, see changelog). Possible follow-up: a tiny US
+      map on each card with that family's counties shaded, if the cards still feel abstract.
+- [x] Desktop layout: wider single panel, header cleanup — *done 2026-09-28:* 440 px results
+      panel; header is name · Filters · gear. The "Maximize map" button is gone (the panel's
+      own collapse does it).
+- [ ] Phone pass and a light-mode check by eye — layouts checked in a 390 px frame and light
+      mode on desktop 2026-09-28; the light map after a theme switch confirmed 2026-09-30.
+      **Still wants a real-phone pass.**
 
 **7b — paused features** (from the original list):
 - [ ] **"New version available" prompt.** After a deploy, the first visit shows the previously

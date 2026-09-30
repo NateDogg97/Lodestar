@@ -96,13 +96,51 @@ function loadShapes(): Promise<Shapes> {
   return shapesPromise;
 }
 
+/**
+ * OpenFreeMap's dark style draws labels and roads in greys a few steps above
+ * a near-black background, which is hard to read. Lift them (by layer id; a
+ * layer the style no longer has is skipped) so places and roads read at a
+ * glance while staying quieter than the county colors on top.
+ */
+const DARK_OVERRIDES: Record<string, Record<string, unknown>> = {
+  background: { "background-color": "#161616" },
+  water: { "fill-color": "#1c2a38" },
+  waterway: { "line-color": "#1c2a38" },
+  landcover_wood: { "fill-color": "#1d211d" },
+  landuse_park: { "fill-color": "#1d211d" },
+  landuse_residential: { "fill-color": "#1b1b1b" },
+  highway_path: { "line-color": "#2e2e2e" },
+  highway_minor: { "line-color": "#333333" },
+  highway_major_inner: { "line-color": "#3d3d3d" },
+  highway_major_subtle: { "line-color": "#404040" },
+  highway_motorway_subtle: { "line-color": "#4a4a4a" },
+  boundary_state: { "line-color": "#5c5c5c" },
+  "boundary_country_z0-4": { "line-color": "#6b6b6b" },
+  "boundary_country_z5-": { "line-color": "#6b6b6b" },
+  water_name: { "text-color": "#7f9cb8", "text-halo-color": "#161616" },
+  highway_name_other: { "text-color": "#9a9a9a", "text-halo-color": "#161616" },
+  highway_name_motorway: { "text-color": "#a8a8a8" },
+};
+const DARK_PLACE_LABEL = { "text-color": "#d4d4d4", "text-halo-color": "rgba(0,0,0,0.85)", "text-halo-width": 1.2 };
+
+function brightenDark(style: StyleSpecification): StyleSpecification {
+  return {
+    ...style,
+    layers: style.layers.map((l) => {
+      const extra = DARK_OVERRIDES[l.id] ?? (l.type === "symbol" && l.id.startsWith("place_") ? DARK_PLACE_LABEL : null);
+      return extra ? ({ ...l, paint: { ...(l as { paint?: object }).paint, ...extra } } as typeof l) : l;
+    }),
+  };
+}
+
 async function pickStyle(dark: boolean): Promise<{ style: string | StyleSpecification; online: boolean }> {
   const url = dark ? BASEMAP_STYLES.dark : BASEMAP_STYLES.light;
   if (typeof navigator !== "undefined" && !navigator.onLine) return { style: fallbackStyle(dark), online: false };
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(BASEMAP_TIMEOUT_MS) });
     if (!res.ok) throw new Error(String(res.status));
-    return { style: (await res.json()) as StyleSpecification, online: true };
+    const style = (await res.json()) as StyleSpecification;
+    return { style: dark ? brightenDark(style) : style, online: true };
   } catch {
     return { style: fallbackStyle(dark), online: false };
   }
@@ -141,6 +179,8 @@ interface Props {
   focus: { fips: string } | null;
   /** Height of whatever covers the bottom of the map (the phone results sheet), in px. */
   bottomInset: number;
+  /** Dark basemap and line colors. Changing it rebuilds the map in place. */
+  dark: boolean;
   onSelect: (fips: string | null) => void;
 }
 
@@ -152,6 +192,7 @@ export default function CountyMap({
   selectedFips,
   focus,
   bottomInset,
+  dark,
   onSelect,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
@@ -167,12 +208,15 @@ export default function CountyMap({
     latest.current = { data, scoresByFips, rankByFips, onSelect, bottomInset };
   });
 
-  // Create the map once.
+  // Where the camera was when the map was last torn down (a theme switch), so
+  // the rebuilt map opens on the same view.
+  const camera = useRef<{ center: [number, number]; zoom: number } | null>(null);
+
+  // Create the map, and again when the theme changes.
   useEffect(() => {
     if (!container.current) return;
     let cancelled = false;
     let map: MapLibreMap | null = null;
-    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
 
     Promise.all([pickStyle(dark), loadShapes()]).then(
       ([{ style, online }, shapes]) => {
@@ -182,8 +226,7 @@ export default function CountyMap({
         map = new MapLibreMap({
           container: container.current,
           style,
-          bounds: CONTIGUOUS_US,
-          fitBoundsOptions: { padding: 20 },
+          ...(camera.current ?? { bounds: CONTIGUOUS_US, fitBoundsOptions: { padding: 20 } }),
           attributionControl: { compact: true },
           dragRotate: false,
           pitchWithRotate: false,
@@ -194,8 +237,12 @@ export default function CountyMap({
 
         map.on("load", () => {
           const m = map!;
-          // Draw counties under the basemap's labels so city names stay readable.
-          const firstLabel = m.getStyle().layers.find((l) => l.type === "symbol")?.id;
+          // Draw counties above roads and water but under the place and road
+          // labels, so names stay readable and roads show faintly through the
+          // color. (Styles put a water-name label early; skip past it.)
+          const layers = m.getStyle().layers;
+          const lastShape = layers.findLastIndex((l) => l.type !== "symbol");
+          const firstLabel = layers.slice(lastShape + 1).find((l) => l.type === "symbol")?.id;
           m.addSource("counties", { type: "geojson", data: shapes.counties, promoteId: "GEOID" });
           m.addSource("states", { type: "geojson", data: shapes.states });
           m.addLayer(
@@ -277,11 +324,15 @@ export default function CountyMap({
 
     return () => {
       cancelled = true;
+      if (map) {
+        const c = map.getCenter();
+        camera.current = { center: [c.lng, c.lat], zoom: map.getZoom() };
+      }
       map?.remove();
       mapRef.current = null;
       setReady(false);
     };
-  }, []);
+  }, [dark]);
 
   // Recolor on every re-score: feature state only, geometry is never re-uploaded.
   // Every county is written so a county that drops out of the top is cleared.
@@ -307,10 +358,13 @@ export default function CountyMap({
 
   // A pick from the list always zooms to the county — kept above the phone
   // sheet, which may cover most of the map.
+  // Each pick zooms once — not again when a theme switch rebuilds the map.
+  const zoomedFor = useRef<typeof focus>(null);
   useEffect(() => {
     const map = mapRef.current;
     const b = focus && shapesRef.current?.bounds.get(focus.fips);
-    if (!ready || !map || !b) return;
+    if (!ready || !map || !b || zoomedFor.current === focus) return;
+    zoomedFor.current = focus;
     const height = map.getContainer().clientHeight;
     const inset = Math.min(latest.current.bottomInset, height * 0.6);
     const pad = Math.max(16, Math.min(60, (height - inset) / 6));
@@ -347,7 +401,7 @@ export default function CountyMap({
       )}
       {ready && relative.size > 0 && <Legend count={relative.size} />}
       {basemapOnline === false && (
-        <p className="pointer-events-none absolute bottom-[calc(var(--map-inset)+0.5rem)] left-2 rounded bg-white/85 px-2 py-1 text-[11px] text-neutral-700 dark:bg-neutral-900/85 dark:text-neutral-300">
+        <p className="pointer-events-none absolute bottom-[calc(var(--map-inset)+0.5rem)] left-2 rounded bg-white/85 px-2 py-1 text-caption text-neutral-700 dark:bg-neutral-900/85 dark:text-neutral-300">
           Offline — showing county lines only
         </p>
       )}
@@ -357,7 +411,7 @@ export default function CountyMap({
 
 function Legend({ count }: { count: number }) {
   return (
-    <div className="pointer-events-none absolute right-2 bottom-[calc(var(--map-inset)+2rem)] w-48 rounded-md bg-white/90 px-2.5 py-2 text-[11px] text-neutral-700 shadow-sm dark:bg-neutral-900/90 dark:text-neutral-300">
+    <div className="pointer-events-none absolute right-2 bottom-[calc(var(--map-inset)+2rem)] w-48 rounded-md bg-white/90 px-2.5 py-2 text-caption text-neutral-700 shadow-sm dark:bg-neutral-900/90 dark:text-neutral-300">
       <p className="font-medium">Top {count} results</p>
       <div
         className="mt-1 h-2 rounded-sm"

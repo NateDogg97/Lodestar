@@ -422,15 +422,17 @@ Built 2026-09-27 as the **Laws & taxes** section of the selected-county card
 (`src/components/finder/laws-section.tsx`, data from `public/data/laws.json`,
 `src/lib/laws/`):
 
-- **Every value shows its source (a link), the source's own date, and when it was last
-  checked** — "Source: Tax Foundation, as of Apr 28, 2026 · checked Sep 27, 2026".
+- **Every value has its source (a link), the source's own date, and when it was last
+  checked** — "Source: Tax Foundation, as of Apr 28, 2026. Checked Sep 27, 2026." Since
+  2026-09-28 (Phase 7a) this sits in the "i" beside the value, one tap away, and a
+  **Sources** button at the top of the tab lists every law's main source with its dates.
 - **A value past its cadence threshold is muted and badged** "Not re-checked since …".
   Past the hard expiry it is not published at all.
 - `enjoined` / `scheduled` statuses and low confidence are badged.
 - **A deliberately blank value is shown as "Not shown", with the reason** (e.g. the two
   sources' figures) — never silently omitted.
-- "Details" opens the notes (thresholds, court history, cross-check) and the source row
-  quoted.
+- The same "i" holds the notes (thresholds, court history, cross-check) and the source row
+  quoted (formerly a "Details" dropdown).
 - The county's property tax rate is shown with its Census source and method.
 - **A standing disclaimer** closes the section: compiled automatically from the linked
   sources, re-checked about monthly, verify anything you'd act on.
