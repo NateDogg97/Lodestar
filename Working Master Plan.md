@@ -8,6 +8,9 @@
 > Last updated: 2026-09-30
 >
 > **Changelog**
+> - 2026-09-30 — **MVP feature-complete.** "New version available" notice, README rewritten
+>   for Lodestar, domain lodestarmap.com. Left before launch: GitHub remote, hosting that
+>   redeploys on push, `EIA_API_KEY` secret, DNS, and a real-phone pass.
 > - 2026-09-30 — **Shareable searches.** The URL now carries the whole search and the open
 >   county (readable params: `?v=1&w=…&lim=…&cat=…&place=…`, `search-url.ts`), kept live in
 >   the address bar; **Copy link** in the header copies it and shows "Copied". A link wins
@@ -1038,7 +1041,10 @@ Build order:
       **Still wants a real-phone pass.**
 
 **7b — paused features** (from the original list):
-- [ ] **"New version available" prompt.** After a deploy, the first visit shows the previously
+- [x] **"New version available" prompt.** — *done 2026-09-30* (`pwa-provider.tsx`): a notice
+      with Reload when a new worker takes over (Serwist `controlling` + `isUpdate`), plus an
+      update check when the app returns to the foreground, at most hourly. Tested across two
+      production builds. After a deploy, the first visit shows the previously
       cached version while the new service worker installs in the background; the update
       appears on the next load. Standard PWA behaviour, but confusing — show a small
       "Update available — reload" notice when a new worker is waiting.
