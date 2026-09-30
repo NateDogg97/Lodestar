@@ -1,0 +1,7 @@
+# Only the Next.js app deploys. The Python ETL runs offline (locally and in
+# the monthly GitHub Action); its output is committed in public/data/.
+etl/
+brand/
+.claude/
+.github/
+*.md
