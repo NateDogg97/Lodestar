@@ -21,7 +21,10 @@ import {
 import { InfoTip } from "@/components/ui/info-tip";
 import { Modal } from "@/components/ui/modal";
 
+import { Icon } from "@/components/ui/icons";
+
 import { ClimateIcon } from "./climate-icons";
+import { SavedSearches } from "./saved-searches";
 import type { Preferences } from "./preferences";
 
 /**
@@ -117,6 +120,8 @@ interface Props {
   sources: Record<string, LawSourceSummary>;
   /** Per category: how many states (policies) or counties (climate type) have each value. */
   categoryCounts: Partial<Record<CategoryKey, Record<string, number>>>;
+  /** Open a saved or recent search from the Saved tab. */
+  onOpenSearch: (prefs: Preferences) => void;
 }
 
 export function FiltersModal({
@@ -131,8 +136,12 @@ export function FiltersModal({
   ranges,
   sources,
   categoryCounts,
+  onOpenSearch,
 }: Props) {
   const [mode, setMode] = useState<FiltersMode>("priorities");
+  // The Saved button swaps the body for saved and recent searches; the tabs,
+  // or the button again, bring the filters back.
+  const [savedOpen, setSavedOpen] = useState(false);
   const [section, setSection] = useState<SectionId>("cost");
   const pane = useRef<HTMLDivElement>(null);
   const active = countActiveFilters(prefs);
@@ -189,10 +198,13 @@ export function FiltersModal({
               key={m}
               type="button"
               role="tab"
-              aria-selected={mode === m}
-              onClick={() => setMode(m)}
-              className={`rounded-full px-3 py-1.5 text-label font-medium ${
-                mode === m
+              aria-selected={mode === m && !savedOpen}
+              onClick={() => {
+                setMode(m);
+                setSavedOpen(false);
+              }}
+              className={`rounded-full px-2.5 py-1.5 text-label font-medium whitespace-nowrap sm:px-3 ${
+                mode === m && !savedOpen
                   ? "bg-white shadow-sm dark:bg-neutral-700"
                   : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
               }`}
@@ -202,9 +214,39 @@ export function FiltersModal({
             </button>
           ))}
         </div>
-        <InfoTip label={mode === "priorities" ? "priorities" : "must-haves"}>{MODE_TIPS[mode]}</InfoTip>
+        {!savedOpen && (
+          <InfoTip label={mode === "priorities" ? "priorities" : "must-haves"}>{MODE_TIPS[mode]}</InfoTip>
+        )}
+        <button
+          type="button"
+          onClick={() => setSavedOpen((o) => !o)}
+          aria-pressed={savedOpen}
+          title="Saved and recent searches"
+          className={`ml-auto flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1.5 text-label font-medium sm:px-3 ${
+            savedOpen
+              ? "border-neutral-900 bg-neutral-900 text-white dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900"
+              : "border-neutral-300 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+          }`}
+        >
+          <Icon name="bookmarks" className="h-5 w-5" />
+          {/* Icon only on phones, where the tabs need the width. */}
+          <span className="max-sm:sr-only">Saved</span>
+        </button>
       </div>
 
+      {savedOpen ? (
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <SavedSearches
+            prefs={prefs}
+            onOpen={(p) => {
+              onOpenSearch(p);
+              // Back to the filters, showing what was just opened.
+              setSavedOpen(false);
+              setMode("priorities");
+            }}
+          />
+        </div>
+      ) : (
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <nav
           aria-label="Categories"
@@ -284,6 +326,7 @@ export function FiltersModal({
           </div>
         </div>
       </div>
+      )}
     </Modal>
   );
 }

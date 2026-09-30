@@ -8,6 +8,12 @@
 > Last updated: 2026-09-30
 >
 > **Changelog**
+> - 2026-09-30 — **Shareable searches.** The URL now carries the whole search and the open
+>   county (readable params: `?v=1&w=…&lim=…&cat=…&place=…`, `search-url.ts`), kept live in
+>   the address bar; **Copy link** in the header copies it and shows "Copied". A link wins
+>   over the saved search, and the search it replaces goes to Recent. Filters has a **Saved**
+>   button (beside the Priorities / Must-haves tabs): name and save the current search, reopen saved or recent ones (up to 8,
+>   recorded when Filters closes), all in localStorage (`searches-store.ts`).
 > - 2026-09-30 — **Light is the default theme** (no saved choice = light; "System" follows
 >   the OS only once picked). Settings ends with "© <current year> Planet X Devs".
 > - 2026-09-30 — **Branding: the app is now "Lodestar".** Brand kit in `brand/` (mark,
@@ -15,8 +21,7 @@
 >   (Source Serif 4 Semibold); favicon, `icon.svg`, apple icon, PWA icons and the Open Graph
 >   image come from the kit; theme color is now neutral-950 `#0a0a0a` (was slate-900). The
 >   kit's `icon.svg` had lost its style block, so `src/app/icon.svg` is a corrected copy.
->   **Open:** set `metadataBase` once there's a production URL, or share cards point at
->   localhost.
+>   Domain: **lodestarmap.com** (`metadataBase` in `layout.tsx`, 2026-09-30).
 > - 2026-09-30 — **Climate type filter → plain-language climate cards.** 85% of counties sit in
 >   three Köppen types, so the 21 jargon checkboxes became 9 families (Humid South, Four
 >   seasons, Northern cold, Dry & sunny, Desert, West Coast, Mountain West, Tropical,
@@ -1039,9 +1044,12 @@ Build order:
       "Update available — reload" notice when a new worker is waiting.
 - [x] ~~Selected-result detail view~~ Moved to Phase 6 as the **place view** (2026-09-27) —
       the climate section needs it.
-- [ ] URL-encoded filter state. *(The search is already saved in `localStorage` since
-      2026-09-26. The URL adds shareable links and should win over the saved search when both
-      are present.)*
+- [x] URL-encoded filter state — *done 2026-09-30.* Readable query params, live in the
+      address bar (debounced `replaceState`), plus the open county (`place=`), which opens and
+      zooms on arrival. Copy link button. The URL wins over the saved search; the replaced
+      search is kept in Recent.
+- [x] Saved and recent searches (2026-09-30) — a **Saved** button inside the Filters modal,
+      beside the tabs (user call, after trying a header "Searches" button and a third tab). Stored as the same query strings.
 - [x] PWA shell + service worker
 - [ ] `localStorage` shortlist
 

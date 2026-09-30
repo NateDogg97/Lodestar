@@ -142,14 +142,19 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
   return out;
 }
 
-/** The saved search, or the defaults if there is none (or storage is blocked). */
-export function loadPreferences(): Preferences {
+/** The last search saved on this device, or null if there is none (or storage is blocked). */
+export function readSavedPreferences(): Preferences | null {
   try {
     const saved = window.localStorage.getItem(STORAGE_KEY);
-    return (saved && sanitizePreferences(JSON.parse(saved))) || DEFAULT_PREFERENCES;
+    return saved ? sanitizePreferences(JSON.parse(saved)) : null;
   } catch {
-    return DEFAULT_PREFERENCES;
+    return null;
   }
+}
+
+/** The saved search, or the defaults if there is none. */
+export function loadPreferences(): Preferences {
+  return readSavedPreferences() ?? DEFAULT_PREFERENCES;
 }
 
 export function savePreferences(prefs: Preferences): void {

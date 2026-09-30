@@ -21,6 +21,7 @@ import {
   type MetricKey,
 } from "@/lib/scoring";
 
+import { CopyLinkButton } from "@/components/ui/copy-link-button";
 import { InfoTip } from "@/components/ui/info-tip";
 import { LodestarLogo } from "@/components/ui/lodestar-logo";
 import { useTheme } from "@/components/ui/theme";
@@ -31,12 +32,13 @@ import {
   DEFAULT_PREFERENCES,
   EMPTY_PREFERENCES,
   excludedStates,
-  loadPreferences,
   savePreferences,
   toScoringInput,
   type Preferences,
 } from "./preferences";
 import { ResultsList } from "./results-list";
+import { addRecent, initialSearch } from "./searches-store";
+import { encodeSearch } from "./search-url";
 import { PlaceIdentity, PlaceView, type PlaceProps } from "./place-view";
 import { SettingsModal } from "./settings-modal";
 import { SidePanel } from "./side-panel";
@@ -104,8 +106,14 @@ const SHEET_START = 1; // 50%
 
 function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   const wide = useIsWide();
-  // The search is remembered between sessions (localStorage; plan Phase 7 adds the URL).
-  const [prefs, setPrefs] = useState<Preferences>(loadPreferences);
+  // The search is remembered between sessions (localStorage) and lives in the
+  // URL, so a link opens the same search and county; a link wins over the
+  // saved search (plan Phase 7b).
+  const [initial] = useState(() => {
+    const { prefs, place } = initialSearch();
+    return { prefs, place: place && data.indexByFips.has(place) ? place : null };
+  });
+  const [prefs, setPrefs] = useState<Preferences>(initial.prefs);
   useEffect(() => savePreferences(prefs), [prefs]);
   const [resetKey, setResetKey] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -135,7 +143,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     }
     return out;
   }, [laws]);
-  const [selectedFips, setSelectedFips] = useState<string | null>(null);
+  const [selectedFips, setSelectedFips] = useState<string | null>(initial.place);
   // The Climate tab's comparison county, kept across places and sessions
   // (a per-device convenience, like the saved search).
   const [compareFips, setCompareFips] = useState<string | null>(() => {
@@ -156,7 +164,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   };
   // The Results panel shows the ranked list or one county's place view (plan
   // Phase 6). Returning to the list keeps the county highlighted.
-  const [view, setView] = useState<"list" | "place">("list");
+  const [view, setView] = useState<"list" | "place">(initial.place ? "place" : "list");
   // A history entry marks the place view, so the Back gesture returns to the list.
   useEffect(() => {
     const onPop = (e: PopStateEvent) => {
@@ -166,7 +174,10 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
   // Bumped by a pick in the list: the map zooms to that county every time.
-  const [focus, setFocus] = useState<{ fips: string; n: number } | null>(null);
+  // A linked county is zoomed to once the map is ready.
+  const [focus, setFocus] = useState<{ fips: string; n: number } | null>(
+    initial.place ? { fips: initial.place, n: 1 } : null,
+  );
 
   // Desktop: the results panel collapses to give the map the whole width.
   const [resultsOpen, setResultsOpen] = useState(true);
@@ -265,6 +276,28 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   // A selected county in a state that was just turned off is simply unselected.
   const selected = selectedFips ? (scoresByFips.get(selectedFips) ?? null) : null;
   const showPlace = view === "place" && selected !== null;
+  const placeInUrl = showPlace ? selectedFips : null;
+
+  // Keep the address bar on the current search, so it can be copied or
+  // bookmarked as is. Debounced: Safari throttles rapid replaceState calls.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const url = `${window.location.pathname}?${encodeSearch(prefs, placeInUrl)}${window.location.hash}`;
+      if (url !== window.location.pathname + window.location.search + window.location.hash) {
+        window.history.replaceState(window.history.state, "", url);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [prefs, placeInUrl]);
+  const shareUrl = () => `${window.location.origin}${window.location.pathname}?${encodeSearch(prefs, placeInUrl)}`;
+
+  // Opening a saved or recent search (Filters → Saved) keeps the one it
+  // replaces in Recent.
+  const openSearch = (next: Preferences) => {
+    addRecent(prefs);
+    addRecent(next);
+    reset(next);
+  };
 
   // Escape leaves the place view (unless typing in a field).
   useEffect(() => {
@@ -321,7 +354,10 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   const filtersModal = (
     <FiltersModal
       open={filtersOpen}
-      onClose={() => setFiltersOpen(false)}
+      onClose={() => {
+        setFiltersOpen(false);
+        addRecent(prefs);
+      }}
       prefs={prefs}
       onChange={setPrefs}
       onDefaults={() => reset(DEFAULT_PREFERENCES)}
@@ -331,6 +367,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       ranges={ranges}
       sources={lawSources}
       categoryCounts={categoryCounts}
+      onOpenSearch={openSearch}
     />
   );
 
@@ -441,7 +478,10 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
           <h1 className="flex min-w-0 flex-1 justify-center">
             <LodestarLogo size="sm" />
           </h1>
-          {settingsButton}
+          <div className="flex shrink-0 items-center">
+            <CopyLinkButton getUrl={shareUrl} compact />
+            {settingsButton}
+          </div>
         </div>
 
         <div ref={area} className="relative min-h-0 flex-1 overflow-hidden">
@@ -482,7 +522,10 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
           <LodestarLogo />
         </h1>
         {filtersButton}
-        <div className="ml-auto">{settingsButton}</div>
+        <div className="ml-auto flex items-center gap-2">
+          <CopyLinkButton getUrl={shareUrl} />
+          {settingsButton}
+        </div>
       </header>
       <div className="relative flex min-h-0 flex-1">
         <SidePanel

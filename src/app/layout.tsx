@@ -23,8 +23,11 @@ const sourceSerif = Source_Serif_4({
 
 const APP_NAME = "Lodestar";
 const DESCRIPTION = "Compare and shortlist the places our family might move to next.";
+// Absolute URLs for the share image (og:image, twitter:image).
+const SITE_URL = "https://lodestarmap.com";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   applicationName: APP_NAME,
   title: {
     default: APP_NAME,

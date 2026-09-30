@@ -17,7 +17,9 @@ interface Props {
 
 const SIZES = {
   large: "md:h-[min(85dvh,52rem)] md:w-[min(92vw,60rem)]",
-  medium: "md:h-auto md:max-h-[min(85dvh,52rem)] md:w-[min(92vw,36rem)]",
+  // fit, not auto: a modal <dialog> is fixed with inset 0, so an auto height
+  // stretches to the viewport (the UA default is fit-content for that reason).
+  medium: "md:h-fit md:max-h-[min(85dvh,52rem)] md:w-[min(92vw,36rem)]",
 };
 
 /**
