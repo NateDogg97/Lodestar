@@ -1156,6 +1156,38 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
       east vs west schools and home values, downtown incomes and high-rise share, south Austin
       households with children. If the data doesn't tell that story, stop and fix it before
       building UI. Add two contrasting counties (a rural one, and one big city, e.g. Cook, IL).
+      **Progress 2026-09-30 (`etl/tracts/`, `python -m etl.tracts.build --pilot`):**
+      - [x] Tract shapes (2024 cartographic, via mapshaper), 2020 tract population centers,
+            distances (airport, 500k+ metro center, coast) from where people live.
+      - [x] ACS tract metrics **with margins of error**: home value, household and
+            per-person income, rent, high-rise and single-family share, owner share,
+            households with kids, median age, bachelor's+, work from home, commute, year
+            built, density. Low-confidence flags per value (CV > 40%, share MOE > 15 pts).
+      - [x] FEMA NRI hazards by tract (national 635 MB table, read in chunks).
+      - [x] All three pilots build: Travis 290 tracts, Cook 1,331, Zavala 4. Travis
+            shapes 57 KB, Cook 228 KB (simplified TopoJSON).
+      - [x] **Story check, Travis** (`python -m etl.tracts.report 48453`), population-
+            weighted medians by region around City Hall: East is nearest the airport (7 mi
+            vs 14 west) with the lowest home values ($318k vs $667k west); West has the
+            highest household income ($146k) and bachelor's share (74%); Downtown has the
+            highest home values ($751k), per-person income ($80k), high-rise share (60%) and
+            density, the shortest commutes and the fewest kids (7%). **Matches the owner's
+            description**, except "south = family-oriented": households with kids are 26%
+            south vs 30–39% elsewhere. Compass regions are crude (78704 and Circle C are both
+            "south"); revisit with neighborhood names.
+      - Findings: household income understates downtown earnings (one-person households),
+        so **per-person income** was added. The "metro center" distance is the metro's
+        population center, 4.5 mi from downtown Austin: **a real downtown distance is
+        needed** (principal-city center or a curated point). Low confidence is common at
+        tract level (33% of Travis tracts have some flagged value; ~7% on a headline
+        value), so the list's caution icon should probably consider headline values only
+        (decide in 8b).
+      - [ ] Schools: district assignment (Census TIGER school districts) + SEDA district and
+            school scores, ranked nationally and within the county. Needs the SEDA district
+            and school files (manual download, like the county file).
+      - [ ] Walkability (EPA, block group → tract), neighborhood names, crime (needs a free
+            data.gov API key), Redfin/Zillow market data.
+
 - [ ] **8b — Show it: drill-down UI on the pilot counties, display first.** "Explore inside"
       in the county view; tract map inside the county, area list, area place view ("applies
       to the whole county" facts, schools nearby with both rankings, distances, crime by

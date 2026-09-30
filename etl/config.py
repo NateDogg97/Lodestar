@@ -301,3 +301,75 @@ HTTP_USER_AGENT = (
 
 # NOAA is ~10,000 individual station files. Be polite.
 NOAA_REQUEST_DELAY = 0.05  # seconds between station fetches
+
+
+# ---------------------------------------------------------------------------
+# Census tracts — Phase 8 "inside the county" (etl/tracts/)
+# ---------------------------------------------------------------------------
+# One county at a time: `python -m etl.tracts.build --county 48453`. Output
+# goes to data/out/tracts/{county fips}.csv (and later to public/data/tracts/).
+# Tract GEOIDs are 11-character strings: state(2) + county(3) + tract(6).
+
+TRACT_OUT_DIR = OUT_DIR / "tracts"
+
+# The pilot counties for Phase 8a (plan §9): the owner's example, one big
+# city, one rural county.
+TRACT_PILOT_COUNTIES = {
+    "48453": "Travis County, TX",
+    "17031": "Cook County, IL",
+    "48507": "Zavala County, TX",
+}
+
+# 2024 cartographic tract boundaries, one zip per state ({state} = 2-digit FIPS).
+TRACT_BOUNDARY_URL = "https://www2.census.gov/geo/tiger/GENZ2024/shp/cb_2024_{state}_tract_500k.zip"
+# 2020 tract population centers, one file per state.
+TRACT_POPCENTER_URL = (
+    "https://www2.census.gov/geo/docs/reference/cenpop2020/tract/CenPop2020_Mean_TR{state}.txt"
+)
+# FEMA NRI tract table: national only (~635 MB zip, v1.20). Downloaded once
+# into data/raw/ and read column-by-column; FEMA has no per-state tract files.
+NRI_TRACTS_URL = "https://www.fema.gov/about/reports-and-data/openfema/nri/v120/NRI_Table_CensusTracts.zip"
+
+# ACS 5-year tract variables. Each is pulled as estimate (E) and margin of
+# error (M): small tracts have wide margins, and the app marks those values
+# "low confidence" (plan §9 Phase 8). Labels verified 2026-09-30 against
+# https://api.census.gov/data/2023/acs/acs5/variables.html
+ACS_TRACT_VARIABLES = {
+    "B01003_001": "population",
+    "B25077_001": "median_home_value",       # owner-occupied; top-coded at $2,000,001
+    "B19013_001": "median_household_income",
+    # Per person, not per household: downtowns are mostly one-person
+    # households, which makes household income understate what people earn.
+    "B19301_001": "per_capita_income",
+    "B25064_001": "median_gross_rent",        # top-coded at $3,501
+    "B25024_001": "units_total",              # units in structure
+    "B25024_002": "units_1_detached",
+    "B25024_008": "units_20_49",
+    "B25024_009": "units_50_plus",
+    "B25003_001": "tenure_total",
+    "B25003_002": "tenure_owner",
+    "B25035_001": "median_year_built",
+    "B11005_001": "households",
+    "B11005_002": "households_with_kids",     # one or more people under 18
+    "B01002_001": "median_age",
+    "B08301_001": "workers",
+    "B08301_021": "workers_from_home",
+    "B08013_001": "commute_minutes_total",    # aggregate, workers who don't work from home
+    "B15003_001": "adults_25_plus",
+    "B15003_022": "edu_bachelors",
+    "B15003_023": "edu_masters",
+    "B15003_024": "edu_professional",
+    "B15003_025": "edu_doctorate",
+}
+# ACS top-codes: a median at these values means "this much or more".
+ACS_TOPCODE = {"median_home_value": 2_000_001, "median_gross_rent": 3_501}
+
+# Low confidence (plan §9 Phase 8). A median or ratio is low confidence when
+# its coefficient of variation (MOE / 1.645 / estimate) is above
+# TRACT_MAX_CV — 40% is the Census Bureau's "unreliable" line. A share is
+# low confidence when its 90% margin of error is wider than
+# TRACT_MAX_SHARE_MOE percentage points. Measured on Travis County
+# 2026-09-30: 0.30 / 12 flagged 60% of tracts (noise); 0.40 / 15 flags 33%,
+# ~7% on a headline value (home value, income, rent).
+TRACT_MAX_CV = 0.40
+TRACT_MAX_SHARE_MOE = 15.0

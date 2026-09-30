@@ -583,3 +583,23 @@ Read in this order:
 **If you change a derived formula**, update it in three places or the
 validator will catch you: `join.add_derived_columns`, the table in this file,
 and `Working Master Plan.md` §5.
+
+
+---
+
+## Phase 8: census tracts (`etl/tracts/`)
+
+One county at a time, for the "inside the county" drill-down (plan §9 Phase 8).
+
+```bash
+python -m etl.tracts.build --county 48453      # Travis County, TX
+python -m etl.tracts.build --pilot             # Travis, Cook, Zavala
+python -m etl.tracts.report 48453              # region medians: does the data tell the story?
+```
+
+Writes `data/out/tracts/{fips}.csv` (one row per tract) and `{fips}.topo.json`
+(simplified shapes). Sources: `acs.py` (ACS 5-year tract estimates **with margins
+of error** and low-confidence flags), `geo.py` (2024 tract shapes via mapshaper,
+2020 tract population centers, distances), `nri.py` (FEMA NRI tract table; the
+national 635 MB zip downloads once into `data/raw/`). Thresholds and URLs are in
+the "Census tracts" section of `config.py`.

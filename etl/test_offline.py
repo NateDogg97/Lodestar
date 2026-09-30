@@ -820,6 +820,47 @@ def test_phase5_sources() -> None:
           "metros: metropolitan only, summed population, population-weighted center")
 
 
+def test_tract_acs_confidence() -> None:
+    """Phase 8: tract ACS parsing — MOE codes, derived shares, low-confidence flags."""
+    print("\ntract ACS: margins of error and low confidence")
+    from .tracts import acs as tract_acs
+
+    def row(tract: str, **over: float) -> dict:
+        base = {f"{v}{s}": 0 for v in config.ACS_TRACT_VARIABLES for s in ("E", "M")}
+        base.update({"state": "48", "county": "453", "tract": tract})
+        base.update({k: str(v) for k, v in over.items()})
+        return base
+
+    names = {name: v for v, name in config.ACS_TRACT_VARIABLES.items()}
+    good = row("000100", **{
+        names["population"] + "E": 4000, names["median_home_value"] + "E": 500000,
+        names["median_home_value"] + "M": 20000,
+        names["units_total"] + "E": 1000, names["units_total"] + "M": 50,
+        names["units_50_plus"] + "E": 300, names["units_50_plus"] + "M": 40,
+        names["median_household_income"] + "E": 90000, names["median_household_income"] + "M": -555555555,
+    })
+    noisy = row("000200", **{
+        names["population"] + "E": 300, names["median_home_value"] + "E": 400000,
+        names["median_home_value"] + "M": 400000,           # CV ~0.61
+        names["median_gross_rent"] + "E": 1500, names["median_gross_rent"] + "M": -222222222,  # can't compute
+        names["units_total"] + "E": 100, names["units_total"] + "M": 40,
+        names["units_50_plus"] + "E": 50, names["units_50_plus"] + "M": 30,   # share MOE >> 15 pts
+    })
+    top = row("000300", **{names["median_home_value"] + "E": 2000001, names["median_home_value"] + "M": -333333333})
+    df = tract_acs.parse(pd.DataFrame([good, noisy, top]))
+
+    check(list(df["geoid"]) == ["48453000100", "48453000200", "48453000300"], "11-char tract GEOIDs")
+    check(abs(df.at[0, "highrise_share"] - 30.0) < 1e-9, "high-rise share = (20-49 + 50+) / total")
+    check(df.at[0, "median_household_income_moe"] == 0, "MOE code -555555555 means zero error")
+    check(df.at[0, "low_confidence"] == "", "a solid tract has no flags", df.at[0, "low_confidence"])
+    flags = set(df.at[1, "low_confidence"].split(";"))
+    check("median_home_value" in flags, "wide margin on a median is flagged")
+    check("median_gross_rent" in flags, "an uncomputable MOE is flagged")
+    check("highrise_share" in flags, "a share with a wide margin is flagged")
+    check(df.at[2, "topcoded"] == "median_home_value", "top-coded home value is noted")
+    check("median_home_value" not in df.at[2, "low_confidence"], "a top-coded value isn't flagged for its missing MOE")
+
+
 def main() -> int:
     print("=" * 70)
     print("OFFLINE TEST SUITE — no network required")
@@ -848,6 +889,7 @@ def main() -> int:
         test_phase5_sources()
         test_gazetteer_encoding_guard()
         test_app_payload_is_compact_and_lossless_where_it_matters()
+        test_tract_acs_confidence()
 
         fixtures = _make_synthetic()
         try:
