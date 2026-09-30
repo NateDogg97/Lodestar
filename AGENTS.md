@@ -26,6 +26,9 @@ rather than leaving it stale. Record new decisions or open questions there, not 
 ## Project layout
 
 - `src/app/` — Next.js App Router. `manifest.ts`, `sw.ts`, `~offline/` are the PWA pieces.
+  Icons and the share image are file conventions there (`favicon.ico`, `icon.svg`,
+  `apple-icon.png`, `opengraph-image.png`); sources and colors are in `brand/` (app name:
+  Lodestar). The in-app logo is `src/components/ui/lodestar-logo.tsx`.
 - `src/components/pwa-provider.tsx` — registers the service worker on the client.
 - `serwist.config.mjs` — builds `public/sw.js` after `next build` (generated, git-ignored).
 - `src/lib/scoring/` — the scoring engine (plan §6). Pure TS, no UI imports; tests beside it.

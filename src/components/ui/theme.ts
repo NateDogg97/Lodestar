@@ -7,6 +7,8 @@ import { useSyncExternalStore } from "react";
  * theme lives on <html data-theme="light|dark">, which Tailwind's `dark:`
  * variant reads (see globals.css). `THEME_SCRIPT` sets it before first paint;
  * this module keeps it in step with the setting and the OS afterwards.
+ * With no saved choice the app is light (decided 2026-09-30); "System"
+ * follows the OS only once picked in Settings.
  */
 export type ThemePref = "system" | "light" | "dark";
 export type Theme = "light" | "dark";
@@ -15,7 +17,7 @@ const KEY = "nhf.theme";
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
 /** Runs inline in <head>, before the page paints. Keep in step with `apply`. */
-export const THEME_SCRIPT = `(function(){try{var p=localStorage.getItem("${KEY}");var d=p==="dark"||(p!=="light"&&matchMedia("${DARK_QUERY}").matches);var r=document.documentElement;r.dataset.theme=d?"dark":"light";r.style.colorScheme=d?"dark":"light"}catch(e){}})()`;
+export const THEME_SCRIPT = `(function(){try{var p=localStorage.getItem("${KEY}");var d=p==="dark"||(p==="system"&&matchMedia("${DARK_QUERY}").matches);var r=document.documentElement;r.dataset.theme=d?"dark":"light";r.style.colorScheme=d?"dark":"light"}catch(e){}})()`;
 
 // Used when storage is blocked: the choice lasts until reload.
 let memoryPref: ThemePref | null = null;
@@ -24,9 +26,9 @@ function readPref(): ThemePref {
   if (memoryPref) return memoryPref;
   try {
     const p = window.localStorage.getItem(KEY);
-    return p === "light" || p === "dark" ? p : "system";
+    return p === "dark" || p === "system" ? p : "light";
   } catch {
-    return "system";
+    return "light";
   }
 }
 
@@ -63,8 +65,7 @@ function subscribe(onChange: () => void) {
 
 export function setThemePref(pref: ThemePref) {
   try {
-    if (pref === "system") window.localStorage.removeItem(KEY);
-    else window.localStorage.setItem(KEY, pref);
+    window.localStorage.setItem(KEY, pref);
     memoryPref = null;
   } catch {
     memoryPref = pref;
@@ -73,7 +74,7 @@ export function setThemePref(pref: ThemePref) {
   notify();
 }
 
-export const useThemePref = () => useSyncExternalStore(subscribe, readPref, () => "system" as ThemePref);
+export const useThemePref = () => useSyncExternalStore(subscribe, readPref, () => "light" as ThemePref);
 
 export const useTheme = () =>
   useSyncExternalStore(

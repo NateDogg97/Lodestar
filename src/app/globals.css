@@ -14,6 +14,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-brand: var(--font-source-serif); /* the Lodestar wordmark only */
 }
 
 /* Type scale and spacing (plan §9 Phase 7a). Use these instead of arbitrary

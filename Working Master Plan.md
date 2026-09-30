@@ -8,6 +8,15 @@
 > Last updated: 2026-09-30
 >
 > **Changelog**
+> - 2026-09-30 — **Light is the default theme** (no saved choice = light; "System" follows
+>   the OS only once picked). Settings ends with "© <current year> Planet X Devs".
+> - 2026-09-30 — **Branding: the app is now "Lodestar".** Brand kit in `brand/` (mark,
+>   lockups, icons, share image; README in `brand/nextjs/`). Header shows the mark + wordmark
+>   (Source Serif 4 Semibold); favicon, `icon.svg`, apple icon, PWA icons and the Open Graph
+>   image come from the kit; theme color is now neutral-950 `#0a0a0a` (was slate-900). The
+>   kit's `icon.svg` had lost its style block, so `src/app/icon.svg` is a corrected copy.
+>   **Open:** set `metadataBase` once there's a production URL, or share cards point at
+>   localhost.
 > - 2026-09-30 — **Climate type filter → plain-language climate cards.** 85% of counties sit in
 >   three Köppen types, so the 21 jargon checkboxes became 9 families (Humid South, Four
 >   seasons, Northern cold, Dry & sunny, Desert, West Coast, Mountain West, Tropical,

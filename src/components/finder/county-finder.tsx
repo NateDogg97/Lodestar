@@ -22,6 +22,7 @@ import {
 } from "@/lib/scoring";
 
 import { InfoTip } from "@/components/ui/info-tip";
+import { LodestarLogo } from "@/components/ui/lodestar-logo";
 import { useTheme } from "@/components/ui/theme";
 
 import { BottomSheet, SHEET_SNAPS } from "./bottom-sheet";
@@ -437,9 +438,9 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex shrink-0 items-center gap-3 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
           {filtersButton}
-          <span className="min-w-0 flex-1 truncate text-center text-label font-semibold tracking-tight text-neutral-500">
-            New Home Finder
-          </span>
+          <h1 className="flex min-w-0 flex-1 justify-center">
+            <LodestarLogo size="sm" />
+          </h1>
           {settingsButton}
         </div>
 
@@ -477,7 +478,9 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex shrink-0 items-center gap-4 border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
-        <h1 className="text-title font-semibold tracking-tight">New Home Finder</h1>
+        <h1>
+          <LodestarLogo />
+        </h1>
         {filtersButton}
         <div className="ml-auto">{settingsButton}</div>
       </header>

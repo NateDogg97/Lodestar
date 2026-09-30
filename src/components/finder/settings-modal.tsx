@@ -97,6 +97,19 @@ export function SettingsModal({ open, onClose, prefs, onChange, unknownCount, la
             </>
           )}
         </Section>
+
+        <p className="border-t border-neutral-200 pt-4 text-caption text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
+          © {new Date().getFullYear()}{" "}
+          <a
+            href="https://www.planetxdevs.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-neutral-300 underline-offset-2 hover:text-neutral-800 hover:decoration-current dark:decoration-neutral-600 dark:hover:text-neutral-200"
+          >
+            Planet X Devs
+          </a>
+          . All rights reserved.
+        </p>
       </div>
     </Modal>
   );
