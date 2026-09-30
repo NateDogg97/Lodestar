@@ -23,8 +23,9 @@ const sourceSerif = Source_Serif_4({
 
 const APP_NAME = "Lodestar";
 const DESCRIPTION = "Compare and shortlist the places our family might move to next.";
-// Absolute URLs for the share image (og:image, twitter:image).
-const SITE_URL = "https://lodestarmap.com";
+// Absolute URLs for the share image (og:image, twitter:image). www is the
+// canonical host: the apex and http:// redirect to it (Vercel domains).
+const SITE_URL = "https://www.lodestarmap.com";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

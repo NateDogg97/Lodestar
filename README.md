@@ -71,7 +71,8 @@ API keys (Census, BEA, BLS, EIA) are read from the environment; `etl/.env.exampl
   `main`**: the monthly laws refresh publishes new data by committing to the repo.
 - Add `EIA_API_KEY` as a GitHub Actions secret (the refresh falls back to the EIA's shared
   demo key without it), plus the Census/BEA/BLS keys if the county ETL ever runs in CI.
-- The site URL for share cards is `SITE_URL` in `src/app/layout.tsx`.
+- The site URL for share cards is `SITE_URL` in `src/app/layout.tsx` (https://www.lodestarmap.com;
+  the bare domain redirects there).
 
 ## App files worth knowing
 
