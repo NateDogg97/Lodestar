@@ -18,6 +18,8 @@ import type { GeometryCollection, Topology } from "topojson-specification";
 
 import type { CountyDataset, CountyScore } from "@/lib/scoring";
 
+import { interpolateViridis } from "d3-scale-chromatic";
+
 import { SCORE_STOPS, UNKNOWN_COLOR } from "./score-colors";
 
 export const BOUNDARIES_URL = "/data/counties.topo.json";
@@ -165,6 +167,43 @@ const FILL_OPACITY: ExpressionSpecification = [
   0.6,
 ];
 
+/**
+ * Areas inside a county (plan §9 Phase 8b): tract shapes drawn over the
+ * county, colored by one measure's position within the county (0–1, viridis
+ * — a neutral scale: nothing is being judged good or bad yet).
+ */
+export interface InsideLayer {
+  fips: string;
+  shapes: Topology;
+  values: Map<string, number | null>;
+  labels: Map<string, string>;
+  legend: { title: string; low: string; high: string };
+  selected: string | null;
+  /** A pick from the list: zoom to that area. A new object re-zooms. */
+  focus: { geoid: string; n: number } | null;
+  onSelectArea: (geoid: string) => void;
+}
+
+const AREA_STOPS = [0, 0.2, 0.4, 0.6, 0.8, 1].flatMap((t) => [t, interpolateViridis(t)]);
+const AREA_FILL = [
+  "case",
+  ["==", ["typeof", ["feature-state", "v"]], "number"],
+  ["interpolate", ["linear"], ["feature-state", "v"], ...AREA_STOPS],
+  UNKNOWN_COLOR,
+] as unknown as ExpressionSpecification;
+
+function bboxOf(geometry: Geometry): [number, number, number, number] {
+  let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
+  const walk = (c: unknown): void => {
+    if (Array.isArray(c) && typeof c[0] === "number") {
+      const [x, y] = c as number[];
+      x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+    } else if (Array.isArray(c)) c.forEach(walk);
+  };
+  if ("coordinates" in geometry) walk(geometry.coordinates);
+  return [x0, y0, x1, y1];
+}
+
 interface Props {
   /** Every county (names and FIPS), including ones toggled out of scoring. */
   data: CountyDataset;
@@ -181,6 +220,8 @@ interface Props {
   bottomInset: number;
   /** Dark basemap and line colors. Changing it rebuilds the map in place. */
   dark: boolean;
+  /** Areas inside the open county, when exploring inside (Phase 8b). */
+  inside?: InsideLayer | null;
   onSelect: (fips: string | null) => void;
 }
 
@@ -193,6 +234,7 @@ export default function CountyMap({
   focus,
   bottomInset,
   dark,
+  inside = null,
   onSelect,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
@@ -203,9 +245,9 @@ export default function CountyMap({
   const [error, setError] = useState<string | null>(null);
 
   // Latest props for map event handlers, which are registered once.
-  const latest = useRef({ data, scoresByFips, rankByFips, onSelect, bottomInset });
+  const latest = useRef({ data, scoresByFips, rankByFips, onSelect, bottomInset, inside });
   useEffect(() => {
-    latest.current = { data, scoresByFips, rankByFips, onSelect, bottomInset };
+    latest.current = { data, scoresByFips, rankByFips, onSelect, bottomInset, inside };
   });
 
   // Where the camera was when the map was last torn down (a theme switch), so
@@ -234,6 +276,9 @@ export default function CountyMap({
         map.touchZoomRotate.disableRotation();
         map.addControl(new NavigationControl({ showCompass: false }), "top-right");
         mapRef.current = map;
+        // Development only: lets the browser console (and automated checks)
+        // inspect layers and state without rendering.
+        if (process.env.NODE_ENV === "development") (window as unknown as { __lodestarMap?: MapLibreMap }).__lodestarMap = map;
 
         map.on("load", () => {
           const m = map!;
@@ -284,7 +329,28 @@ export default function CountyMap({
         });
 
         const popup = new Popup({ closeButton: false, closeOnClick: false, offset: 8 });
+        // Over an area inside the explored county, the area layer handles it.
+        const onArea = (e: { point: { x: number; y: number } }) =>
+          !!map!.getLayer("tract-fill") &&
+          map!.queryRenderedFeatures([e.point.x, e.point.y], { layers: ["tract-fill"] }).length > 0;
+        map.on("mousemove", "tract-fill", (e) => {
+          const geoid = e.features?.[0]?.properties?.GEOID as string | undefined;
+          const label = geoid && latest.current.inside?.labels.get(geoid);
+          if (!label) return;
+          map!.getCanvas().style.cursor = "pointer";
+          const el = document.createElement("div");
+          el.className = "text-xs text-neutral-900";
+          const name = document.createElement("strong");
+          name.textContent = label;
+          el.append(name);
+          popup.setLngLat(e.lngLat).setDOMContent(el).addTo(map!);
+        });
+        map.on("click", "tract-fill", (e) => {
+          const geoid = e.features?.[0]?.properties?.GEOID as string | undefined;
+          if (geoid) latest.current.inside?.onSelectArea(geoid);
+        });
         map.on("mousemove", "county-fill", (e) => {
+          if (onArea(e)) return;
           const fips = e.features?.[0]?.properties?.GEOID as string | undefined;
           if (!fips) return;
           const { data: d, scoresByFips: byFips, rankByFips: ranks } = latest.current;
@@ -314,6 +380,7 @@ export default function CountyMap({
           popup.remove();
         });
         map.on("click", "county-fill", (e) => {
+          if (onArea(e)) return;
           const fips = e.features?.[0]?.properties?.GEOID as string | undefined;
           // Only counties in scope can be selected; a turned-off state has no score.
           if (fips && latest.current.scoresByFips.has(fips)) latest.current.onSelect(fips);
@@ -333,6 +400,72 @@ export default function CountyMap({
       setReady(false);
     };
   }, [dark]);
+
+  // Areas inside the explored county: add the tract layers, zoom to the county;
+  // remove them on the way out.
+  const insideFips = inside?.fips ?? null;
+  const insideShapes = inside?.shapes ?? null;
+  const tractFeatures = useRef<Map<string, Geometry>>(new Map());
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || !insideFips || !insideShapes) return;
+    const obj = insideShapes.objects.tracts as GeometryCollection;
+    const fc = feature(insideShapes, obj) as unknown as FeatureCollection<Geometry, { GEOID: string }>;
+    tractFeatures.current = new Map(fc.features.map((f) => [f.properties.GEOID, f.geometry]));
+    const layers = map.getStyle().layers;
+    const lastShape = layers.findLastIndex((l) => l.type !== "symbol");
+    const firstLabel = layers.slice(lastShape + 1).find((l) => l.type === "symbol")?.id;
+    map.addSource("tracts", { type: "geojson", data: fc, promoteId: "GEOID" });
+    map.addLayer({ id: "tract-fill", type: "fill", source: "tracts",
+      paint: { "fill-color": AREA_FILL, "fill-opacity": 0.8 } }, firstLabel);
+    map.addLayer({ id: "tract-line", type: "line", source: "tracts",
+      paint: { "line-color": dark ? "#0a0a0a" : "#ffffff", "line-width": 0.6, "line-opacity": 0.8 } }, firstLabel);
+    map.addLayer({ id: "tract-selected", type: "line", source: "tracts",
+      paint: { "line-color": dark ? "#fff" : "#111",
+        "line-width": ["case", ["boolean", ["feature-state", "selected"], false], 3, 0] } });
+    const b = shapesRef.current?.bounds.get(insideFips);
+    if (b) {
+      const inset = latest.current.bottomInset;
+      map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: { top: 30, left: 30, right: 30, bottom: inset + 30 }, duration: 600 });
+    }
+    return () => {
+      for (const id of ["tract-selected", "tract-line", "tract-fill"]) if (map.getLayer(id)) map.removeLayer(id);
+      if (map.getSource("tracts")) map.removeSource("tracts");
+      tractFeatures.current = new Map();
+    };
+  }, [ready, insideFips, insideShapes, dark]);
+
+  // Area colors for the chosen measure.
+  const insideValues = inside?.values ?? null;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || !insideValues || !map.getSource("tracts")) return;
+    for (const [geoid, v] of insideValues) map.setFeatureState({ source: "tracts", id: geoid }, { v });
+  }, [ready, insideValues, insideFips, insideShapes, dark]);
+
+  // The selected area's outline.
+  const insideSelected = inside?.selected ?? null;
+  const prevArea = useRef<string | null>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || !map.getSource("tracts")) return;
+    if (prevArea.current) map.setFeatureState({ source: "tracts", id: prevArea.current }, { selected: false });
+    prevArea.current = insideSelected;
+    if (insideSelected) map.setFeatureState({ source: "tracts", id: insideSelected }, { selected: true });
+  }, [ready, insideSelected, insideFips, insideShapes, dark]);
+
+  // A pick from the area list zooms to it.
+  const insideFocus = inside?.focus ?? null;
+  const zoomedArea = useRef<typeof insideFocus>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    const g = insideFocus && tractFeatures.current.get(insideFocus.geoid);
+    if (!ready || !map || !g || zoomedArea.current === insideFocus) return;
+    zoomedArea.current = insideFocus;
+    const [x0, y0, x1, y1] = bboxOf(g);
+    const inset = Math.min(latest.current.bottomInset, map.getContainer().clientHeight * 0.6);
+    map.fitBounds([[x0, y0], [x1, y1]], { padding: { top: 60, left: 60, right: 60, bottom: inset + 60 }, maxZoom: 13, duration: 600 });
+  }, [ready, insideFocus]);
 
   // Recolor on every re-score: feature state only, geometry is never re-uploaded.
   // Every county is written so a county that drops out of the top is cleared.
@@ -399,12 +532,28 @@ export default function CountyMap({
           {error}
         </p>
       )}
-      {ready && relative.size > 0 && <Legend count={relative.size} />}
+      {ready && inside ? <AreaLegend {...inside.legend} /> : ready && relative.size > 0 && <Legend count={relative.size} />}
       {basemapOnline === false && (
         <p className="pointer-events-none absolute bottom-[calc(var(--map-inset)+0.5rem)] left-2 rounded bg-white/85 px-2 py-1 text-caption text-neutral-700 dark:bg-neutral-900/85 dark:text-neutral-300">
           Offline — showing county lines only
         </p>
       )}
+    </div>
+  );
+}
+
+function AreaLegend({ title, low, high }: { title: string; low: string; high: string }) {
+  return (
+    <div className="pointer-events-none absolute right-2 bottom-[calc(var(--map-inset)+2rem)] w-52 rounded-md bg-white/90 px-2.5 py-2 text-caption text-neutral-700 shadow-sm dark:bg-neutral-900/90 dark:text-neutral-300">
+      <p className="font-medium">{title}</p>
+      <div
+        className="mt-1 h-2 rounded-sm"
+        style={{ background: `linear-gradient(to right, ${AREA_STOPS.filter((_, i) => i % 2 === 1).join(", ")})` }}
+      />
+      <div className="mt-0.5 flex justify-between text-neutral-500">
+        <span>{low}</span>
+        <span>{high}</span>
+      </div>
     </div>
   );
 }

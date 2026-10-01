@@ -45,6 +45,12 @@ describe("search URLs", () => {
     expect(out?.place).toBeNull();
   });
 
+  it("carry an area inside a county (an 11-digit tract) as the place", () => {
+    expect(decode("v=1&place=48453001309")?.place).toBe("48453001309");
+    expect(encodeSearch(EMPTY_PREFERENCES, "48453001309")).toBe("v=1&place=48453001309");
+    expect(decode("v=1&place=484530013")?.place).toBeNull();
+  });
+
   it("summarize a search", () => {
     expect(summarizeSearch(EMPTY_PREFERENCES)).toBe("No priorities");
     expect(

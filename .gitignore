@@ -55,3 +55,6 @@ __pycache__/
 
 # MapLibre worker, copied from node_modules by scripts/copy-maplibre-worker.mjs
 /public/maplibre/
+
+# Phase 8 tract data (published by `python -m etl.tracts.publish`; hosted on R2 later)
+/public/data/tracts/

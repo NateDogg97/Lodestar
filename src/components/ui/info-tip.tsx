@@ -11,7 +11,7 @@ const MARGIN = 8;
  * clipped by a scrolling panel) and closes on Escape or a tap outside. It
  * also closes on scroll or resize rather than drifting from its button.
  */
-export function InfoTip({ label, children }: { label: string; children: ReactNode }) {
+export function InfoTip({ label, icon, children }: { label: string; icon?: ReactNode; children: ReactNode }) {
   const id = useId();
   const button = useRef<HTMLButtonElement>(null);
   const pop = useRef<HTMLDivElement>(null);
@@ -51,15 +51,22 @@ export function InfoTip({ label, children }: { label: string; children: ReactNod
         ref={button}
         type="button"
         popoverTarget={id}
-        aria-label={`About ${label}`}
-        title={`About ${label}`}
-        className="inline-grid h-5 w-5 shrink-0 place-items-center rounded-full align-middle text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:text-neutral-500 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+        aria-label={icon ? label : `About ${label}`}
+        title={icon ? label : `About ${label}`}
+        className={`inline-grid h-5 w-5 shrink-0 place-items-center rounded-full align-middle hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:hover:bg-neutral-800 ${
+          // A custom icon (the low-confidence caution) is amber; the "i" is grey.
+          icon
+            ? "text-amber-500 hover:text-amber-600 dark:text-amber-400"
+            : "text-neutral-400 hover:text-neutral-700 dark:text-neutral-500 dark:hover:text-neutral-200"
+        }`}
       >
-        <svg aria-hidden viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.4">
-          <circle cx="8" cy="8" r="6.5" />
-          <path d="M8 7.2v4" strokeLinecap="round" />
-          <circle cx="8" cy="4.9" r="0.4" fill="currentColor" />
-        </svg>
+        {icon ?? (
+          <svg aria-hidden viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.4">
+            <circle cx="8" cy="8" r="6.5" />
+            <path d="M8 7.2v4" strokeLinecap="round" />
+            <circle cx="8" cy="4.9" r="0.4" fill="currentColor" />
+          </svg>
+        )}
       </button>
       <div
         ref={pop}

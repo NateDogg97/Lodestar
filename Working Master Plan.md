@@ -1249,6 +1249,29 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
       yet** (owner, 2026-09-30): get the data on screen, look at it, then decide.
       Try a few ways of handling very large counties here (see open questions). URLs:
       `place=` accepts an 11-digit tract ID.
+      **Progress 2026-10-01 (local only; data hosting on R2 later, owner's call):**
+      - [x] ETL publish step (`python -m etl.tracts.publish`) → `public/data/tracts/`
+            (git-ignored): `{fips}.json` (columnar, schools inline), `{fips}.topo.json`,
+            `index.json`. Never precached by the service worker (runtime-cached per county).
+            Unincorporated areas are named after the nearest place ("Near Manor · 78653").
+      - [x] App: `src/lib/tracts/` (parser, measures, formatting, tests);
+            `use-tract-data.ts` (base URL `NEXT_PUBLIC_DATA_URL`, default `/data`).
+      - [x] County view: **"Explore inside {county}"** button when the county has area data.
+      - [x] Inside view: areas grouped by city / town / community, sorted by a chosen
+            measure ("Color the map by"; default Census home value, which varies per area —
+            Zillow is per ZIP), rows named by neighborhood or ZIP, **yellow caution icon**
+            on headline low-confidence values (hover/tap lists them). Area detail: stats,
+            schools (district national pctl + rank in county; nearby schools with both),
+            homes and people, getting around, safety (by police jurisdiction), housing
+            market (by ZIP), hazards; every flagged value marked.
+      - [x] Map: area shapes over the county, viridis colors by position within the county,
+            hover label, click to select, outline, zoom to county / area, legend.
+      - [x] Share links: `place=` takes an 11-digit tract (opens the county, inside, with
+            the area); Escape steps back area → areas → county → list.
+      - [ ] **Map not yet seen rendering.** The automated browser runs in a hidden window
+            (MapLibre pauses) and headless Chrome won't render the map; the panel, data,
+            URL and console are verified. Owner to check by eye.
+      - Dev aid: `window.__lodestarMap` in development builds only.
 - [ ] **8c — All counties.** Run the tract ETL nationwide, measure file sizes, decide on
       hosting (repo vs R2). Precompute national tract percentile breakpoints.
 - [ ] **8d — Extras, as wanted.** CDC PLACES health, OSM amenities (parks, groceries),

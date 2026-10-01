@@ -2,15 +2,17 @@
 SOURCE: names for tracts — tracts are only numbers (plan §9 Phase 8).
 
 WHAT THIS PRODUCES
-    geoid, neighborhood, place, zip, label
+    geoid, neighborhood, place, near_place, zip, label
 
     neighborhood  the Zillow neighborhood containing the tract's population
                   center, where one exists (mostly inside cities)
     place         the city, town or CDP (Census "place") containing it; empty
                   in unincorporated areas
+    near_place    for those, the nearest place (owner, 2026-09-30): an area
+                  outside any community reads "Near Manor · 78653"
     zip           the ZIP code (ZCTA) sharing the most land with the tract
     label         what the app shows, e.g. "Barton Hills, Austin · 78704",
-                  "Pflugerville · 78660", "Unincorporated Travis County · 78738"
+                  "Pflugerville · 78660", "Near Manor · 78653"
 
 SOURCES
     Zillow neighborhood boundaries (2017; ~17,000 neighborhoods in ~650 cities),
@@ -102,9 +104,27 @@ def fetch(county_fips: str, tracts: pd.DataFrame, county_name: str) -> pd.DataFr
     })
     out["zip"] = out["geoid"].map(_zips(county_fips))
 
+    # Outside any place: name the nearest one (distance to its outline, in
+    # degrees — fine for "nearest" at county scale).
+    from shapely import points as _points
+
+    near = []
+    for i, p in enumerate(place):
+        if p is not None or not places:
+            near.append(None)
+            continue
+        pt = _points(lon[i], lat[i])
+        near.append(min(places, key=lambda pg: pg[1].distance(pt))[0]["NAME"])
+    out["near_place"] = near
+
     def label(r) -> str:
         # Missing values arrive as NaN, which is truthy: test with notna.
-        where = r["place"] if pd.notna(r["place"]) else f"Unincorporated {county_name.split(',')[0]}"
+        if pd.notna(r["place"]):
+            where = r["place"]
+        elif pd.notna(r["near_place"]):
+            where = f"Near {r['near_place']}"
+        else:
+            where = f"Unincorporated {county_name.split(',')[0]}"
         name = f"{r['neighborhood']}, {where}" if pd.notna(r["neighborhood"]) else where
         return f"{name} · {r['zip']}" if pd.notna(r["zip"]) else name
 

@@ -14,7 +14,8 @@ import { OPTIONAL_STATES, sanitizePreferences, type Preferences } from "./prefer
  * - lim: min~max limits, either side may be empty
  * - cat: allowed values per category ("koppen:" alone = nothing allowed)
  * - unk=0: hide unknown counties; inc: opt-in states that are on
- * - place: the county being viewed (FIPS), opened and zoomed to on arrival
+ * - place: the county being viewed (5-digit FIPS), or an area inside one (an
+ *   11-digit census tract, Phase 8), opened and zoomed to on arrival
  *
  * Every key and value here is [A-Za-z0-9_.-], so the string is built by hand
  * and needs no percent-encoding. Decoding goes through `sanitizePreferences`,
@@ -61,7 +62,7 @@ export function encodeSearch(prefs: Preferences, place: string | null = null): s
   const inc = OPTIONAL_STATES.filter((o) => prefs.includeStates[o.state]).map((o) => o.state);
   if (inc.length) parts.push(`inc=${inc.join(".")}`);
 
-  if (place && /^\d{5}$/.test(place)) parts.push(`place=${place}`);
+  if (place && /^(\d{5}|\d{11})$/.test(place)) parts.push(`place=${place}`);
   return parts.join("&");
 }
 
@@ -110,7 +111,7 @@ export function decodeSearch(params: URLSearchParams): SharedSearch | null {
   if (!prefs) return null;
 
   const place = params.get("place");
-  return { prefs, place: place && /^\d{5}$/.test(place) ? place : null };
+  return { prefs, place: place && /^(\d{5}|\d{11})$/.test(place) ? place : null };
 }
 
 /**

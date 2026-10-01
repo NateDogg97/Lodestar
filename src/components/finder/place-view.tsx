@@ -59,6 +59,10 @@ export interface PlaceProps {
   compareFips: string | null;
   onCompare: (fips: string | null) => void;
   onBack: () => void;
+  /** Present when this county has area data (Phase 8): opens "Explore inside". */
+  onExploreInside?: () => void;
+  /** How many areas the county has, for the button. */
+  areaCount?: number;
 }
 
 /** Back link, name, rank and score. On phones this is the sheet's drag header. */
@@ -128,6 +132,24 @@ export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
               </Stat>
             )}
           </dl>
+        )}
+        {props.onExploreInside && (
+          <button
+            type="button"
+            onClick={props.onExploreInside}
+            className="mt-3 flex w-full items-center justify-between gap-3 rounded-lg border border-emerald-600/40 bg-emerald-50 px-3 py-2.5 text-left hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-950/40 dark:hover:bg-emerald-950"
+          >
+            <span>
+              <span className="block text-label font-semibold text-emerald-800 dark:text-emerald-300">
+                Explore inside {data.countyName[s.index]}
+              </span>
+              <span className="block text-caption text-emerald-800/80 dark:text-emerald-300/80">
+                {props.areaCount ? `${props.areaCount} areas` : "Its towns and neighborhoods"}: schools, home values,
+                walkability, distances
+              </span>
+            </span>
+            <span aria-hidden className="text-title text-emerald-700 dark:text-emerald-400">→</span>
+          </button>
         )}
       </div>
 

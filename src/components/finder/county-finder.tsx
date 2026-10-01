@@ -36,6 +36,7 @@ import {
   toScoringInput,
   type Preferences,
 } from "./preferences";
+import { InsideView } from "./inside-view";
 import { ResultsList } from "./results-list";
 import { addRecent, initialSearch } from "./searches-store";
 import { encodeSearch } from "./search-url";
@@ -43,6 +44,9 @@ import { PlaceIdentity, PlaceView, type PlaceProps } from "./place-view";
 import { SettingsModal } from "./settings-modal";
 import { SidePanel } from "./side-panel";
 import { useCountyData, useLawData } from "./use-county-data";
+import { useCountyAreas, useTractIndex } from "./use-tract-data";
+import type { InsideLayer } from "./county-map";
+import { AREA_MEASURE, areaValue, formatArea } from "@/lib/tracts";
 
 // MapLibre needs the browser (WebGL, window), so it never renders on the
 // server, and it loads in its own chunk after the panels are usable.
@@ -111,7 +115,11 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   // saved search (plan Phase 7b).
   const [initial] = useState(() => {
     const { prefs, place } = initialSearch();
-    return { prefs, place: place && data.indexByFips.has(place) ? place : null };
+    // A place is a county (5 digits) or an area inside one (an 11-digit tract,
+    // Phase 8): an area opens its county, explored inside, with the area picked.
+    const county = place ? place.slice(0, 5) : null;
+    const ok = county && data.indexByFips.has(county);
+    return { prefs, place: ok ? county : null, area: ok && place!.length === 11 ? place : null };
   });
   const [prefs, setPrefs] = useState<Preferences>(initial.prefs);
   useEffect(() => savePreferences(prefs), [prefs]);
@@ -177,6 +185,16 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   // A linked county is zoomed to once the map is ready.
   const [focus, setFocus] = useState<{ fips: string; n: number } | null>(
     initial.place ? { fips: initial.place, n: 1 } : null,
+  );
+
+  // Inside a county (plan §9 Phase 8b): its areas instead of its county view.
+  const tractIndex = useTractIndex();
+  const [insideFips, setInsideFips] = useState<string | null>(initial.area ? initial.place : null);
+  const [selectedArea, setSelectedArea] = useState<string | null>(initial.area);
+  // Census home value by default: it varies area by area (Zillow's is per ZIP).
+  const [areaMeasure, setAreaMeasure] = useState("median_home_value");
+  const [areaFocus, setAreaFocus] = useState<{ geoid: string; n: number } | null>(
+    initial.area ? { geoid: initial.area, n: 1 } : null,
   );
 
   // Desktop: the results panel collapses to give the map the whole width.
@@ -251,6 +269,11 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
 
   const select = (fips: string | null) => {
     setSelectedFips(fips);
+    if (fips !== insideFips) {
+      // Another county: leave the one being explored.
+      setInsideFips(null);
+      setSelectedArea(null);
+    }
     if (!fips) return;
     if (view !== "place") {
       window.history.pushState({ nhfPlace: true }, "");
@@ -276,7 +299,45 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   // A selected county in a state that was just turned off is simply unselected.
   const selected = selectedFips ? (scoresByFips.get(selectedFips) ?? null) : null;
   const showPlace = view === "place" && selected !== null;
-  const placeInUrl = showPlace ? selectedFips : null;
+  const insideOpen = showPlace && insideFips !== null && insideFips === selectedFips;
+  const areasState = useCountyAreas(insideOpen ? insideFips : null);
+  const placeInUrl = insideOpen && selectedArea ? selectedArea : showPlace ? selectedFips : null;
+
+  const selectArea = (geoid: string | null) => {
+    setSelectedArea(geoid);
+    if (geoid) setAreaFocus((f) => ({ geoid, n: (f?.n ?? 0) + 1 }));
+  };
+  const leaveInside = () => {
+    setInsideFips(null);
+    setSelectedArea(null);
+  };
+
+  // The map layer for the explored county: each area's position within the
+  // county for the chosen measure (rank, 0–1), so colors spread evenly.
+  const insideLayer = useMemo<InsideLayer | null>(() => {
+    if (!insideOpen || areasState.status !== "ready") return null;
+    const { areas, shapes } = areasState.data;
+    const vals = areas.areas
+      .map((a) => [a.geoid, areaValue(a, areaMeasure)] as const)
+      .filter((x): x is readonly [string, number] => x[1] !== null)
+      .sort((a, b) => a[1] - b[1]);
+    const values = new Map<string, number | null>(areas.areas.map((a) => [a.geoid, null]));
+    vals.forEach(([g], i) => values.set(g, vals.length > 1 ? i / (vals.length - 1) : 0.5));
+    return {
+      fips: areas.county,
+      shapes,
+      values,
+      labels: new Map(areas.areas.map((a) => [a.geoid, a.label])),
+      legend: {
+        title: AREA_MEASURE.get(areaMeasure)?.label ?? areaMeasure,
+        low: formatArea(areaMeasure, vals[0]?.[1] ?? null),
+        high: formatArea(areaMeasure, vals.at(-1)?.[1] ?? null),
+      },
+      selected: selectedArea,
+      focus: areaFocus,
+      onSelectArea: selectArea,
+    };
+  }, [insideOpen, areasState, areaMeasure, selectedArea, areaFocus]);
 
   // Keep the address bar on the current search, so it can be copied or
   // bookmarked as is. Debounced: Safari throttles rapid replaceState calls.
@@ -307,7 +368,10 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       if (e.key !== "Escape" || t?.closest("input, textarea, select, [role=menu], dialog")) return;
       // Escape closes an open "i" popover first.
       if (document.querySelector(":popover-open")) return;
-      backToList();
+      // Then steps back one level: area -> areas -> county -> list.
+      if (insideOpen && selectedArea) setSelectedArea(null);
+      else if (insideOpen) leaveInside();
+      else backToList();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -325,6 +389,9 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         compareFips,
         onCompare: compareWith,
         onBack: backToList,
+        ...(tractIndex[selected.fips]
+          ? { onExploreInside: () => setInsideFips(selected.fips), areaCount: tractIndex[selected.fips].tracts }
+          : {}),
       }
     : null;
 
@@ -418,9 +485,22 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       >
         {resultsList}
       </div>
-      {showPlace && placeProps && (
+      {showPlace && placeProps && !insideOpen && (
         <div key={placeProps.score.fips} className="absolute inset-0 overflow-y-auto overscroll-contain">
           <PlaceView {...placeProps} withIdentity={withIdentity} />
+        </div>
+      )}
+      {insideOpen && placeProps && (
+        <div key={`inside-${placeProps.score.fips}-${selectedArea ?? ""}`} className="absolute inset-0 overflow-y-auto overscroll-contain">
+          <InsideView
+            countyName={`${scoped.countyName[placeProps.score.index]}, ${scoped.state[placeProps.score.index]}`}
+            state={areasState}
+            measure={areaMeasure}
+            onMeasure={setAreaMeasure}
+            selected={selectedArea}
+            onSelect={selectArea}
+            onBack={leaveInside}
+          />
         </div>
       )}
     </div>
@@ -436,6 +516,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       focus={focus}
       bottomInset={bottomInset}
       dark={theme === "dark"}
+      inside={insideLayer}
       onSelect={select}
     />
   );
