@@ -281,7 +281,11 @@ function AreaDetail({ area, county, countyName }: { area: Area; county: CountyAr
       </Section>
 
       <Section title="Getting around">
-        <MeasureRow k="dist_downtown_mi" value={v("dist_downtown_mi")} extra={county.downtownMetro?.split(",")[0].split("-")[0]} />
+        <MeasureRow
+          k="dist_downtown_mi"
+          value={v("dist_downtown_mi")}
+          extra={r.nearest_downtown ? String(r.nearest_downtown) : county.downtownMetro?.split(",")[0].split("-")[0]}
+        />
         <MeasureRow k="dist_airport_mi" value={v("dist_airport_mi")} extra={r.nearest_airport ? String(r.nearest_airport) : undefined} />
         <MeasureRow k="commute_minutes" value={v("commute_minutes")} flagged={flagged.has("commute_minutes")} />
         <MeasureRow k="work_from_home_share" value={v("work_from_home_share")} flagged={flagged.has("work_from_home_share")} />

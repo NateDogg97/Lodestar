@@ -608,7 +608,7 @@ and `{fips}.topo.json` (simplified shapes). One module per source:
 | `schools.py` | SEDA 6.0 geodist + school files, Census 2019 districts, NCES 2023–24 locations | **Manual SEDA downloads** (see SEDA section). Grades 3–8 only |
 | `walkability.py` | EPA National Walkability Index | 425 MB geodatabase; national rollup cached in `data/interim/` |
 | `names.py` | Zillow neighborhoods, Census places, ZCTA relationship file | Labels like "Zilker, Austin · 78704" |
-| `crime.py` | FBI Crime Data Explorer API | Needs `DATA_GOV_API_KEY`; by police jurisdiction |
+| `crime.py` | FBI Crime Data Explorer, bulk NIBRS file per state and year | No key; reduced per agency into `data/interim/crime/`; by police jurisdiction |
 | `market.py` | Zillow ZHVI/ZORI, Redfin ZIP tracker | Redfin is 1.5 GB, streamed once; latest period cached |
 
 Large downloads land in `data/raw/` (git-ignored) and are reused. Thresholds and

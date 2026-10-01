@@ -1,38 +1,70 @@
 """
-Build the tract table for one or more counties (plan §9 Phase 8a).
+Build tract tables (plan §9 Phase 8).
 
-    python -m etl.tracts.build --county 48453           # Travis County, TX
+    python -m etl.tracts.build --county 48453           # one county
     python -m etl.tracts.build --pilot                  # config.TRACT_PILOT_COUNTIES
+    python -m etl.tracts.build --state TX               # every county in a state
+    python -m etl.tracts.build --state TX --no-crime    # skip crime
+    python -m etl.tracts.build --state TX --force       # rebuild counties already built
 
 Per county, writes to data/out/tracts/:
-    {fips}.csv         one row per tract: every column from acs, geo and nri,
-                       plus density_per_sq_mi
+    {fips}.csv         one row per tract: every column from the sources, plus
+                       density_per_sq_mi
     {fips}.topo.json   simplified tract shapes for the app (layer `tracts`)
-    {fips}_schools.csv the county's scored schools (see schools.py)
+    {fips}_schools.csv the county's scored schools, and nearby ones (schools.py)
 
-Checks that every source covers the same tracts; a tract missing from a
-source is logged, never silently dropped.
+At scale (8c): national and per-state source files are loaded once per run
+(the source modules cache them), so a state's counties build back to back.
+A state run skips counties already built (resume), records a county that
+fails instead of stopping, and writes _coverage_{ST}.csv: per county, how
+many tracts have each measure — the check that replaces eyeballing 3,000
+counties. Crime comes from the FBI's bulk file per state and year (two
+downloads per state, then cached), not a rate-limited API.
 """
 
 from __future__ import annotations
 
 import argparse
+import time
+import traceback
 
 import pandas as pd
 
 from .. import config
-from ..util import get_logger
+from ..util import get_logger, read_interim
 from . import acs, crime, geo, market, names, nri, schools, walkability
 
 log = get_logger("tracts.build")
 
 MIN_HOMES_SOLD = 10  # Redfin sale price from fewer sales in the period is low confidence
 
+# Coverage report: share of a county's populated tracts with each measure.
+COVERAGE = {
+    "home_value": "median_home_value",
+    "income": "per_capita_income",
+    "zillow": "zhvi",
+    "district": "district_pctl",
+    "schools": "nearby_school_pctl",
+    "high_schools": "nearby_hs_pctl",
+    "walkability": "walkability",
+    "hazards": "hazard_risk",
+    "downtown": "dist_downtown_mi",
+    "crime": "violent_rate",
+    "redfin": "sale_price",
+}
 
-def build_county(fips: str) -> pd.DataFrame:
-    name = config.TRACT_PILOT_COUNTIES.get(fips, fips)
+
+def _county_names() -> dict[str, str]:
+    spine = read_interim("spine")
+    return {f: f"{n}, {st}" for f, n, st in zip(spine["fips"], spine["county_name"], spine["state"])}
+
+
+def build_county(fips: str, with_crime: bool = True) -> pd.DataFrame:
+    name = config.TRACT_PILOT_COUNTIES.get(fips) or _county_names().get(fips, fips)
     log.info("— %s (%s) —", name, fips)
     shapes = geo.shapes(fips)
+    if not shapes["features"]:
+        raise ValueError(f"no tract shapes for {fips}")
     geo_table = geo.table(fips, shapes)
     school_tracts, school_table = schools.build(fips, geo_table)
     parts = {
@@ -43,7 +75,8 @@ def build_county(fips: str) -> pd.DataFrame:
         "walkability": walkability.fetch(fips),
         "names": names.fetch(fips, geo_table, name),
     }
-    parts["crime"] = crime.fetch(fips, parts["names"])
+    if with_crime:
+        parts["crime"] = crime.fetch(fips, parts["names"])
     parts["market"] = market.fetch(parts["names"])
     base = set(parts["geo"]["geoid"])
     for src, df in parts.items():
@@ -54,17 +87,23 @@ def build_county(fips: str) -> pd.DataFrame:
 
     df = parts["geo"]
     for src in ("names", "acs", "nri", "schools", "walkability", "crime", "market"):
-        df = df.merge(parts[src], on="geoid", how="left")
-    # One list of low-confidence values per tract, for the caution icon.
+        if src in parts:
+            df = df.merge(parts[src], on="geoid", how="left")
+    df["density_per_sq_mi"] = df["population"] / df["land_sq_mi"].where(df["land_sq_mi"] > 0)
+    df.insert(1, "county_fips", fips)
+
+    # One list of low-confidence values per tract, for the caution icon. Without
+    # crime data (--no-crime), crime isn't flagged — it's simply not there yet.
     lowc = df["low_confidence"].fillna("")
-    crime_flag = df["crime_low_confidence"].fillna(True).astype(bool)
+    if with_crime:
+        crime_flag = df["crime_low_confidence"].fillna(True).astype(bool)
+        df = df.drop(columns=["crime_low_confidence"])
+    else:
+        crime_flag = pd.Series(False, index=df.index)
     # A median sale price from a handful of sales is noise.
     thin = df["homes_sold"].fillna(0) < MIN_HOMES_SOLD
     df["low_confidence"] = [";".join(x for x in (a, "crime" if c else "", "sale_price" if t else "") if x)
                             for a, c, t in zip(lowc, crime_flag, thin)]
-    df = df.drop(columns=["crime_low_confidence"])
-    df["density_per_sq_mi"] = df["population"] / df["land_sq_mi"].where(df["land_sq_mi"] > 0)
-    df.insert(1, "county_fips", fips)
 
     config.TRACT_OUT_DIR.mkdir(parents=True, exist_ok=True)
     df.to_csv(config.TRACT_OUT_DIR / f"{fips}.csv", index=False)
@@ -76,16 +115,65 @@ def build_county(fips: str) -> pd.DataFrame:
     return df
 
 
+def coverage(fips: str, df: pd.DataFrame, seconds: float) -> dict:
+    populated = df[df["population"].fillna(0) > 0]
+    n = max(len(populated), 1)
+    row = {"fips": fips, "tracts": len(df), "populated": len(populated), "seconds": round(seconds, 1)}
+    for name, col in COVERAGE.items():
+        row[name] = round(100 * populated[col].notna().sum() / n) if col in populated else None
+    row["in_place"] = round(100 * (populated["neighborhood"].notna() | populated["place"].notna()).sum() / n)
+    row["named"] = round(100 * populated["label"].notna().sum() / n)
+    row["low_conf"] = round(100 * (populated["low_confidence"].fillna("") != "").sum() / n)
+    return row
+
+
+def build_state(st: str, with_crime: bool, force: bool) -> None:
+    spine = read_interim("spine")
+    counties = sorted(spine.loc[spine["state"] == st.upper(), "fips"])
+    log.info("%s: %d counties%s", st.upper(), len(counties), "" if with_crime else " (no crime)")
+    rows, failed = [], []
+    started = time.time()
+    for i, fips in enumerate(counties, 1):
+        out = config.TRACT_OUT_DIR / f"{fips}.csv"
+        t0 = time.time()
+        try:
+            if out.exists() and not force:
+                df = pd.read_csv(out, dtype={"geoid": str})
+            else:
+                df = build_county(fips, with_crime=with_crime)
+            rows.append(coverage(fips, df, time.time() - t0))
+        except Exception as exc:  # noqa: BLE001 — record and keep going; the report lists it
+            log.error("%s failed: %s", fips, exc)
+            failed.append({"fips": fips, "error": f"{type(exc).__name__}: {exc}",
+                           "trace": traceback.format_exc(limit=3)})
+        if i % 25 == 0:
+            log.info("%s: %d/%d counties in %.0f min", st.upper(), i, len(counties), (time.time() - started) / 60)
+
+    report = pd.DataFrame(rows)
+    if failed:
+        report = pd.concat([report, pd.DataFrame(failed)], ignore_index=True)
+    path = config.TRACT_OUT_DIR / f"_coverage_{st.upper()}.csv"
+    report.to_csv(path, index=False)
+    log.info("%s done in %.0f min: %d built, %d failed -> %s", st.upper(), (time.time() - started) / 60,
+             len(rows), len(failed), path.name)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--county", action="append", default=[], help="5-digit county FIPS (repeatable)")
     ap.add_argument("--pilot", action="store_true", help="build the Phase 8a pilot counties")
+    ap.add_argument("--state", help="two-letter state: build every county in it")
+    ap.add_argument("--no-crime", action="store_true", help="skip FBI crime data")
+    ap.add_argument("--force", action="store_true", help="with --state: rebuild counties already built")
     args = ap.parse_args()
+    if args.state:
+        build_state(args.state, with_crime=not args.no_crime, force=args.force)
+        return
     counties = list(config.TRACT_PILOT_COUNTIES) if args.pilot else args.county
     if not counties:
-        ap.error("give --county FIPS or --pilot")
+        ap.error("give --county FIPS, --pilot or --state ST")
     for fips in counties:
-        build_county(fips.zfill(5))
+        build_county(fips.zfill(5), with_crime=not args.no_crime)
 
 
 if __name__ == "__main__":

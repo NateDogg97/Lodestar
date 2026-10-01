@@ -28,6 +28,7 @@ RUN STANDALONE
 
 from __future__ import annotations
 
+import functools
 import io
 import sys
 
@@ -47,6 +48,7 @@ REDFIN_RAW = config.RAW_DIR / "redfin_zip_code_market_tracker.tsv000.gz"
 REDFIN_CACHE = config.INTERIM_DIR / "redfin_zip_latest.csv"
 
 
+@functools.lru_cache(maxsize=4)
 def _zillow(url: str, hint: str, name: str) -> pd.DataFrame:
     """zip, {name}, {name}_yoy, zillow_month — latest month and change over 12 months."""
     text = http_get(url, cache_hint=hint, user_agent=config.BROWSER_USER_AGENT)
@@ -77,6 +79,7 @@ def _download_redfin() -> None:
     tmp.rename(REDFIN_RAW)
 
 
+@functools.lru_cache(maxsize=1)
 def redfin_latest() -> pd.DataFrame:
     """zip, sale_price, days_on_market, sale_to_list, homes_sold, redfin_period (latest per ZIP)."""
     if REDFIN_CACHE.exists():

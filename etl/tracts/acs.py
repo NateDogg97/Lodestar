@@ -35,6 +35,7 @@ RUN STANDALONE
 
 from __future__ import annotations
 
+import functools
 import json
 import sys
 
@@ -59,10 +60,11 @@ MEDIANS = ["median_home_value", "median_household_income", "per_capita_income", 
            "median_year_built", "median_age"]
 
 
-def _fetch_raw(county_fips: str) -> pd.DataFrame:
-    state, county = county_fips[:2], county_fips[2:]
+@functools.lru_cache(maxsize=4)
+def _state_raw(state: str) -> pd.DataFrame:
+    """Every tract in a state, in one Census API call (cached on disk and per run)."""
     names = [f"{v}{s}" for v in config.ACS_TRACT_VARIABLES for s in ("E", "M")]
-    params = {"get": ",".join(names), "for": "tract:*", "in": f"state:{state} county:{county}"}
+    params = {"get": ",".join(names), "for": "tract:*", "in": f"state:{state} county:*"}
     if config.CENSUS_API_KEY:
         params["key"] = config.CENSUS_API_KEY
 
@@ -72,7 +74,7 @@ def _fetch_raw(county_fips: str) -> pd.DataFrame:
             raise BadResponse(f"Census API returned no tract rows: {str(rows)[:200]}")
 
     url = f"{config.CENSUS_API_BASE}/{config.ACS_YEAR}/acs/acs5"
-    body = http_get(url, params=params, cache_hint=f"acs5_{config.ACS_YEAR}_tracts_{county_fips}", check=_check)
+    body = http_get(url, params=params, cache_hint=f"acs5_{config.ACS_YEAR}_tracts_{state}", check=_check)
     assert isinstance(body, str)
     header, *rows = json.loads(body)
     return pd.DataFrame(rows, columns=header)
@@ -135,6 +137,11 @@ def parse(raw: pd.DataFrame) -> pd.DataFrame:
     out["low_confidence"] = [";".join(f) for f in flags]
     # Tracts with no people (parks, airports, water) carry no estimates worth showing.
     return out.reset_index(drop=True)
+
+
+def _fetch_raw(county_fips: str) -> pd.DataFrame:
+    raw = _state_raw(county_fips[:2])
+    return raw[raw["county"] == county_fips[2:]].reset_index(drop=True)
 
 
 def fetch(county_fips: str) -> pd.DataFrame:

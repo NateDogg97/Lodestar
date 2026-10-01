@@ -27,6 +27,7 @@ RUN STANDALONE
 
 from __future__ import annotations
 
+import functools
 import io
 import sys
 import tempfile
@@ -71,12 +72,17 @@ def zillow_neighborhoods() -> list:
     return _zillow_cache
 
 
-def _zips(county_fips: str) -> pd.Series:
+@functools.lru_cache(maxsize=1)
+def _zcta_relationship() -> pd.DataFrame:
     body = http_get(ZCTA_REL_URL, binary=True, cache_hint="tab20_zcta520_tract20_natl")
     assert isinstance(body, bytes)
-    rel = pd.read_csv(io.BytesIO(body), sep="|", dtype=str, encoding="utf-8-sig",
-                      usecols=["GEOID_ZCTA5_20", "GEOID_TRACT_20", "AREALAND_PART"])
-    rel = rel[(rel["GEOID_TRACT_20"].str[:5] == county_fips) & rel["GEOID_ZCTA5_20"].notna()]
+    return pd.read_csv(io.BytesIO(body), sep="|", dtype=str, encoding="utf-8-sig",
+                       usecols=["GEOID_ZCTA5_20", "GEOID_TRACT_20", "AREALAND_PART"])
+
+
+def _zips(county_fips: str) -> pd.Series:
+    rel = _zcta_relationship()
+    rel = rel[(rel["GEOID_TRACT_20"].str[:5] == county_fips) & rel["GEOID_ZCTA5_20"].notna()].copy()
     rel["land"] = pd.to_numeric(rel["AREALAND_PART"], errors="coerce").fillna(0)
     best = rel.sort_values("land", ascending=False).drop_duplicates("GEOID_TRACT_20")
     return best.set_index("GEOID_TRACT_20")["GEOID_ZCTA5_20"]

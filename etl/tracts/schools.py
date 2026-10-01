@@ -8,12 +8,14 @@ WHAT THIS PRODUCES
         district_pctl         national percentile among all US districts (0–100)
         district_rank, district_count   rank among the districts serving the county
         nearby_schools        ";"-joined school ids: up to 3 elementary and 2 middle
-                              scored schools within NEARBY_MI of where people live
+                              scored schools nearest to where people live, within
+                              NEARBY_MI (15 mi: rural Texas has none within 5 for
+                              5% of tracts; 90% of those have one within 11)
         nearby_school_pctl    the mean national percentile of those schools. This is
                               what separates neighborhoods inside a one-district city
                               (Chicago Public Schools is one district: every Chicago
                               tract has the same district score).
-        nearby_high_schools   ";"-joined ids of up to 2 high schools within NEARBY_MI
+        nearby_high_schools   ";"-joined ids of the 2 nearest high schools within NEARBY_MI
         nearby_hs_pctl        their mean national percentile for college-prep access
     schools(county) -> one row per scored school located in the county:
         school_id, name, level (elementary / middle / high), city, lat, lon,
@@ -69,6 +71,7 @@ RUN STANDALONE
 
 from __future__ import annotations
 
+import functools
 import io
 import sys
 import zipfile
@@ -87,7 +90,7 @@ SEDA_SCHOOL_FILE = config.RAW_DIR / "seda_school_pool_cs_6.0.csv"
 SCHOOL_LOCATIONS_URL = "https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_PUBLICSCH_2324.zip"
 DISTRICT_URL = "https://www2.census.gov/geo/tiger/TIGER2019/{kind}/tl_2019_{state}_{kind_lower}.zip"
 SCORE_COLUMNS = ("cs_mn_avg_eb", "cs_mn_avg_ol")  # preferred first, as in sources/seda.py
-NEARBY_MI = 5.0
+NEARBY_MI = 15.0  # nearest first; in towns they're close anyway (was 5: missed rural areas)
 NEARBY_COUNT = {"elementary": 3, "middle": 2}
 NEARBY_HIGH = 2
 CRDC_URL = "https://civilrightsdata.ed.gov/assets/ocr/docs/2023-24-crdc-data.zip"
@@ -108,6 +111,7 @@ def _seda(path, id_col: str, width: int, extra: list[str]) -> pd.DataFrame:
     return df.dropna(subset=["score"]).drop_duplicates("id")
 
 
+@functools.lru_cache(maxsize=1)
 def district_scores() -> pd.DataFrame:
     """id (7-digit NCES district id), score, pctl — every SEDA geographic district."""
     d = _seda(SEDA_DISTRICT_FILE, "sedalea", 7, ["sedaleaname"])
@@ -115,6 +119,7 @@ def district_scores() -> pd.DataFrame:
     return d[["id", "sedaleaname", "score", "pctl"]].rename(columns={"sedaleaname": "seda_name"})
 
 
+@functools.lru_cache(maxsize=1)
 def school_scores() -> pd.DataFrame:
     """id (12-digit NCES school id), level, score, pctl (within level) — every SEDA school."""
     s = _seda(SEDA_SCHOOL_FILE, "sedasch", 12, ["gradecenter"])
@@ -131,6 +136,7 @@ def _crdc_total(df: pd.DataFrame, stem: str) -> pd.Series:
     return parts.sum(axis=1, min_count=1)
 
 
+@functools.lru_cache(maxsize=1)
 def high_school_scores() -> pd.DataFrame:
     """id, level='high', score (AP share), pctl, ap_courses, ap_share, dual_share,
     satact_share, ib, enrollment — every US high school in CRDC 2023–24 (cached)."""
@@ -186,6 +192,7 @@ def high_school_scores() -> pd.DataFrame:
     return out
 
 
+@functools.lru_cache(maxsize=1)
 def school_locations() -> pd.DataFrame:
     body = http_get(SCHOOL_LOCATIONS_URL, binary=True, cache_hint="edge_geocode_publicsch_2324",
                     user_agent=config.BROWSER_USER_AGENT)
@@ -202,6 +209,7 @@ def school_locations() -> pd.DataFrame:
     })
 
 
+@functools.lru_cache(maxsize=4)
 def _district_polygons(state: str) -> list:
     polys = []
     for kind in ("ELSD", "UNSD"):  # elementary first: it wins where both exist
@@ -246,6 +254,10 @@ def build(county_fips: str, tracts: pd.DataFrame) -> tuple[pd.DataFrame, pd.Data
     near_box = locs["lat"].between(lat.min() - pad, lat.max() + pad) & locs["lon"].between(
         lon.min() - pad * 1.5, lon.max() + pad * 1.5)
     sch = locs[near_box].merge(scored, on="id", how="inner")
+    # One key per school AND level: a small district's K-12 campus is both a
+    # SEDA elementary/middle school and a CRDC high school under one NCES id
+    # (Dawson County, TX); sharing a key let one overwrite the other.
+    sch["key"] = np.where(sch["level"] == "high", sch["id"] + "-hs", sch["id"])
     sch["in_county"] = sch["county_fips"] == county_fips
     own = sch[sch["in_county"]]
     sch["county_rank"] = own.groupby("level")["score"].rank(ascending=False, method="min")
@@ -253,18 +265,18 @@ def build(county_fips: str, tracts: pd.DataFrame) -> tuple[pd.DataFrame, pd.Data
     sch.loc[~sch["in_county"], "county_count"] = np.nan
 
     near, near_pctl, near_hs, near_hs_pctl = [], [], [], []
-    pctl_by_id = dict(zip(sch["id"], sch["pctl"]))
+    pctl_by_id = dict(zip(sch["key"], sch["pctl"]))
     for la, lo in zip(lat, lon):
         d = haversine_miles(la, lo, sch["lat"].to_numpy(float), sch["lon"].to_numpy(float))
         picks = []
         for level, n in NEARBY_COUNT.items():
             mask = (sch["level"].to_numpy() == level) & (d <= NEARBY_MI)
             idx = np.flatnonzero(mask)
-            picks += list(sch["id"].to_numpy()[idx[np.argsort(d[idx])][:n]])
+            picks += list(sch["key"].to_numpy()[idx[np.argsort(d[idx])][:n]])
         near.append(";".join(picks))
         near_pctl.append(float(np.mean([pctl_by_id[i] for i in picks])) if picks else np.nan)
         hs = np.flatnonzero((sch["level"].to_numpy() == "high") & (d <= NEARBY_MI))
-        hs_picks = list(sch["id"].to_numpy()[hs[np.argsort(d[hs])][:NEARBY_HIGH]])
+        hs_picks = list(sch["key"].to_numpy()[hs[np.argsort(d[hs])][:NEARBY_HIGH]])
         near_hs.append(";".join(hs_picks))
         near_hs_pctl.append(float(np.mean([pctl_by_id[i] for i in hs_picks])) if hs_picks else np.nan)
     out["nearby_schools"] = near
@@ -274,7 +286,7 @@ def build(county_fips: str, tracts: pd.DataFrame) -> tuple[pd.DataFrame, pd.Data
 
     # Publish the county's own schools plus any outside one that is some tract's neighbor.
     used = {i for picks in (near + near_hs) for i in picks.split(";") if i}
-    sch = sch[sch["in_county"] | sch["id"].isin(used)]
+    sch = sch[sch["in_county"] | sch["key"].isin(used)]
     no_district = out["district_id"].isna().sum()
     log.info("schools %s: %d districts serve the county (%d scored); %d scored schools in the county, "
              "%d nearby outside it; %d tracts outside any district", county_fips, out["district_id"].nunique(),
@@ -282,7 +294,8 @@ def build(county_fips: str, tracts: pd.DataFrame) -> tuple[pd.DataFrame, pd.Data
     cols = ["id", "name", "level", "city", "county_name", "in_county", "lat", "lon", "score", "pctl",
             "county_rank", "county_count",
             "ap_courses", "ap_share", "dual_share", "satact_share", "ib", "enrollment"]
-    return out, sch[cols].rename(columns={"id": "school_id"}).sort_values(["level", "county_rank"])
+    cols = ["key" if c == "id" else c for c in cols]
+    return out, sch[cols].rename(columns={"key": "school_id"}).sort_values(["level", "county_rank"])
 
 
 if __name__ == "__main__":

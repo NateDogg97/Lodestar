@@ -72,6 +72,19 @@ const COUNTY_SOURCES: { name: string; url: string; vintage: string; covers: stri
     covers: "County and state shapes",
   },
   {
+    name: "Areas inside counties",
+    url: "https://www.census.gov/programs-surveys/acs",
+    vintage: "2019–2025",
+    covers:
+      "Census tract estimates (ACS 2019–2023), EPA National Walkability Index, FEMA National Risk Index tracts, SEDA district and school scores, Civil Rights Data Collection 2023–24 (high schools), NCES school locations, FBI Crime Data Explorer (2025), Zillow and Redfin market data, Zillow neighborhood boundaries, Census LEHD job counts (downtowns)",
+  },
+  {
+    name: "GeoNames",
+    url: "https://www.geonames.org/",
+    vintage: "CC BY 4.0",
+    covers: "City centers used to place each metro's downtowns",
+  },
+  {
     name: "OpenFreeMap / OpenStreetMap",
     url: "https://openfreemap.org",
     vintage: "live",

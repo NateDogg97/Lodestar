@@ -37,7 +37,7 @@ PUBLISH_DIR = config.ETL_DIR.parent / "public" / "data" / "tracts"
 
 TEXT = {"geoid", "district_id", "zip", "nearby_schools", "nearby_high_schools", "low_confidence", "topcoded", "label", "place",
         "near_place", "neighborhood", "district_name", "nearest_airport", "nearest_metro", "downtown_metro",
-        "crime_agency", "zillow_month", "redfin_period", "school_id", "name", "level", "city", "county_name"}
+        "crime_agency", "nearest_downtown", "zillow_month", "redfin_period", "school_id", "name", "level", "city", "county_name"}
 DROP = {"county_fips", "downtown_metro"}
 
 

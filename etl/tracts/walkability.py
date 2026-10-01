@@ -26,6 +26,7 @@ RUN STANDALONE
 
 from __future__ import annotations
 
+import functools
 import io
 import sys
 import tempfile
@@ -45,6 +46,7 @@ RELATIONSHIP_URL = "https://www2.census.gov/geo/docs/maps-data/data/rel2020/trac
 CACHE = config.INTERIM_DIR / "walkability_tract10.csv"
 
 
+@functools.lru_cache(maxsize=1)
 def tract10_walkability() -> pd.DataFrame:
     """geoid10, walkability: population-weighted mean over each 2010 tract's block groups."""
     if CACHE.exists():
@@ -74,12 +76,17 @@ def tract10_walkability() -> pd.DataFrame:
     return out
 
 
-def fetch(county_fips: str) -> pd.DataFrame:
+@functools.lru_cache(maxsize=1)
+def _relationship() -> pd.DataFrame:
     body = http_get(RELATIONSHIP_URL, binary=True, cache_hint="tab20_tract20_tract10_natl")
     assert isinstance(body, bytes)
-    rel = pd.read_csv(io.BytesIO(body), sep="|", dtype=str, encoding="utf-8-sig",
-                      usecols=["GEOID_TRACT_20", "GEOID_TRACT_10", "AREALAND_PART"])
-    rel = rel[rel["GEOID_TRACT_20"].str[:5] == county_fips]
+    return pd.read_csv(io.BytesIO(body), sep="|", dtype=str, encoding="utf-8-sig",
+                       usecols=["GEOID_TRACT_20", "GEOID_TRACT_10", "AREALAND_PART"])
+
+
+def fetch(county_fips: str) -> pd.DataFrame:
+    rel = _relationship()
+    rel = rel[rel["GEOID_TRACT_20"].str[:5] == county_fips].copy()
     rel["land"] = pd.to_numeric(rel["AREALAND_PART"], errors="coerce").fillna(0)
     rel = rel.merge(tract10_walkability(), left_on="GEOID_TRACT_10", right_on="geoid10", how="left")
     rel = rel.dropna(subset=["walkability"])

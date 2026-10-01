@@ -22,6 +22,7 @@ RUN STANDALONE
 
 from __future__ import annotations
 
+import functools
 import io
 import sys
 import zipfile
@@ -35,20 +36,33 @@ from ..util import get_logger, http_get
 log = get_logger("tracts.nri")
 
 
-def fetch(county_fips: str) -> pd.DataFrame:
-    body = http_get(config.NRI_TRACTS_URL, binary=True, cache_hint="nri_tracts",
-                    user_agent=config.BROWSER_USER_AGENT, check=_is_zip)
-    assert isinstance(body, bytes)
+CACHE = config.INTERIM_DIR / "nri_tracts.csv"
+
+
+@functools.lru_cache(maxsize=1)
+def _national() -> pd.DataFrame:
+    """The columns used here, for every US tract: read from the 635 MB zip once,
+    then from data/interim/nri_tracts.csv."""
     cols = ["TRACTFIPS", "STCOFIPS", "ALR_NPCTL"] + [
         f"{p}_{s}" for p in HAZARDS.values() if p for s in ("ALR_NPCTL", "RISKR")
     ]
-    parts = []
+    if CACHE.exists():
+        return pd.read_csv(CACHE, dtype={"TRACTFIPS": str, "STCOFIPS": str}, low_memory=False)
+    body = http_get(config.NRI_TRACTS_URL, binary=True, cache_hint="nri_tracts",
+                    user_agent=config.BROWSER_USER_AGENT, check=_is_zip)
+    assert isinstance(body, bytes)
     with zipfile.ZipFile(io.BytesIO(body)) as z:
         name = next(n for n in z.namelist() if n.lower() == "nri_table_censustracts.csv")
-        for chunk in pd.read_csv(z.open(name), usecols=cols, dtype={"TRACTFIPS": str, "STCOFIPS": str},
-                                 chunksize=200_000, low_memory=False):
-            parts.append(chunk[chunk["STCOFIPS"].str.zfill(5) == county_fips])
-    table = pd.concat(parts, ignore_index=True)
+        table = pd.read_csv(z.open(name), usecols=cols, dtype={"TRACTFIPS": str, "STCOFIPS": str}, low_memory=False)
+    table["TRACTFIPS"] = table["TRACTFIPS"].str.zfill(11)
+    table["STCOFIPS"] = table["STCOFIPS"].str.zfill(5)
+    table.to_csv(CACHE, index=False)
+    return table
+
+
+def fetch(county_fips: str) -> pd.DataFrame:
+    nat = _national()
+    table = nat[nat["STCOFIPS"] == county_fips].reset_index(drop=True)
 
     out = pd.DataFrame({"geoid": table["TRACTFIPS"].str.zfill(11)})
     for col, prefix in HAZARDS.items():

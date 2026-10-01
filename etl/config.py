@@ -389,11 +389,26 @@ LODES_YEAR = 2023
 DOWNTOWN_RADIUS_MI = 1.0
 
 
-# FBI Crime Data Explorer (Phase 8, etl/tracts/crime.py). Needs DATA_GOV_API_KEY.
-CDE_API_BASE = "https://api.usa.gov/crime/fbi/cde"
+# FBI Crime Data Explorer (Phase 8, etl/tracts/crime.py): the bulk NIBRS file
+# per state and year (no key, no quota).
 CRIME_YEAR = 2025          # newest full year (complete for Austin PD, checked 2026-09-30)
 CRIME_FALLBACK_YEAR = 2024  # used for an agency whose CRIME_YEAR is incomplete
 # A rate from an agency serving fewer people than this is low confidence: a
 # few incidents, or a big shopping center in a tiny town (Sunset Valley, TX:
 # ~700 residents, 33,000 property crimes per 100k), swing it wildly.
 CRIME_MIN_POPULATION = 5_000
+
+# Downtowns of multi-center metros (Phase 8c, found in the Texas rehearsal: Fort
+# Worth was measured to downtown Dallas, 31 mi away). A metro's "major cities"
+# are its principal cities (Census delineation list 2) with at least
+# DOWNTOWN_MIN_SHARE of its largest city's population; each one's downtown is
+# the densest job cluster within DOWNTOWN_SEARCH_MI of the city's GeoNames
+# point (CC BY 4.0, credited in the app). Tracts measure to the nearest.
+CBSA_PRINCIPAL_CITIES_URL = (
+    "https://www2.census.gov/programs-surveys/metro-micro/geographies/reference-files/"
+    "2023/delineation-files/list2_2023.xlsx"
+)
+GEONAMES_CITIES_URL = "https://download.geonames.org/export/dump/cities15000.zip"
+DOWNTOWN_MIN_SHARE = 0.30
+DOWNTOWN_SEARCH_MI = 5.0
+

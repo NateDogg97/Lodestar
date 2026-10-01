@@ -5,9 +5,15 @@
 > If something here conflicts with what you actually built, the code is right and this file is
 > stale — fix the file.
 >
-> Last updated: 2026-09-30
+> Last updated: 2026-10-01
 >
 > **Changelog**
+> - 2026-10-01 — **8c Texas rehearsal done.** The tract ETL builds a whole state in one run
+>   (`build --state TX`): 254 counties, 6,884 tracts, ~5 min, 0 failures, with a per-county
+>   coverage report. Crime moved from the rate-limited CDE API to the FBI's **bulk NIBRS file
+>   per state and year** (no key, no quota; counts match the API). Fixes found on the way:
+>   multi-downtown metros (Fort Worth, Midland), a 15-mile school radius, K-12 campuses.
+>   Published Texas is 9.7 MB.
 > - 2026-09-30 — **Phase 8 refined (owner answers):** crime from the FBI Crime Data Explorer by
 >   police jurisdiction; schools ranked both nationally and within the county; housing market
 >   from Redfin/Zillow (MLS isn't usable by a public app); low confidence as a caution icon
@@ -1128,7 +1134,7 @@ shown as "applies to the whole county" and don't affect area ranking.
 | Health (optional) | CDC PLACES | Tract | Later, if wanted. |
 | Current home values (optional) | Zillow ZHVI | ZIP / neighborhood | Fresher than ACS (which lags 2–5 years). Free with attribution. ZIP → tract via ZCTA crosswalk. |
 | Climate | NOAA (existing) | County | Stays county-level; differences within a county are small except in mountains. |
-| **Crime** | FBI Crime Data Explorer (API, NIBRS) | Police agency → jurisdiction | Reported by **agency**, not by neighborhood: a city's police department covers the city; the sheriff covers unincorporated areas. So a tract gets its **jurisdiction's** rate (Austin PD vs Travis County Sheriff vs Pflugerville PD vs West Lake Hills PD). Coarser than tracts but still inside the county. Caveats: data lags 1–2 years; some agencies report partial years or not at all (→ low confidence); rates use the FBI's population served. Needs a free data.gov API key (ETL only). Map agencies (ORI) to Census places by name + state; skip campus and transit agencies. |
+| **Crime** | FBI Crime Data Explorer (bulk NIBRS file per state and year) | Police agency → jurisdiction | Reported by **agency**, not by neighborhood: a city's police department covers the city; the sheriff covers unincorporated areas. So a tract gets its **jurisdiction's** rate (Austin PD vs Travis County Sheriff vs Pflugerville PD vs West Lake Hills PD). Coarser than tracts but still inside the county. Caveats: data lags 1–2 years; some agencies report partial years or not at all (→ low confidence); rates use the FBI's population served. No key needed: the bulk files replaced the API in 8c (the API's 1,000/hour quota and 503s made a national run take days). Map agencies (ORI) to Census places by name + state; skip campus and transit agencies. |
 
 **Why not MLS (asked 2026-09-30).** MLS data isn't a public database: there are hundreds of
 regional MLSs, each with its own rules, and access requires a licensed agent or broker to sign
@@ -1285,12 +1291,46 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
             measure "Nearby high schools". Comparable nationally, but it measures access to
             college-prep courses, not test results — say so in the "i".
       - [x] **Nearby schools cross county lines** (found via Leander, whose high schools are
-            in Williamson County): any school within 5 mi; county ranks only among the
+            in Williamson County): the nearest schools within 15 mi (5 mi missed rural schools; 8c); county ranks only among the
             county's own schools; others shown as "in Williamson County".
       - State test scores and graduation rates for high schools: revisit if ED Data Express
         publishes school-level files after 2020–21.
 - [ ] **8c — All counties.** Run the tract ETL nationwide, measure file sizes, decide on
       hosting (repo vs R2). Precompute national tract percentile breakpoints.
+      - [x] **Restructure for scale.** National and per-state sources load once per run
+            (cached in memory and `data/interim/`); `build --state ST` builds every county,
+            resumes (skips built ones unless `--force`), records failures instead of
+            stopping, and writes `_coverage_{ST}.csv` (share of populated tracts with each
+            measure) — the check that replaces eyeballing 3,000 counties.
+      - [x] **Texas rehearsal** (2026-10-01): 254 counties, 6,884 tracts, ~5 min, 0 failures.
+            Coverage of populated tracts: income, district, walkability, hazards, downtown,
+            names 100%; elementary/middle schools 99.9%; high schools 99.8%; crime 99.6%;
+            Zillow 98.8%; Census home value 95.1%; Redfin 91.6% (thin in rural counties);
+            inside a named place 75.4%. ~39% of tracts carry at least one low-confidence
+            flag (mostly small-sample ACS shares). Published size 9.7 MB for Texas → roughly
+            100–150 MB nationally: R2, as proposed.
+      - [x] **Fixes from the rehearsal.** Downtowns: a metro's major principal cities (≥30% of
+            its largest city's population) each get a downtown (densest 1-mile job cluster
+            within 5 mi of the city's GeoNames point); a tract measures to the nearest one
+            (Fort Worth was measured to Dallas). Schools: 15-mile radius (rural coverage 94.7%
+            → 99.9%). K-12 campuses: elementary and high-school entries get separate keys.
+            CRDC schools answering `-9` to the AP question count as no AP.
+      - [x] **Crime at scale: bulk files.** The CDE API (2–4 calls per agency, 1,000/hour,
+            frequent 503s) would take days. CDE's "Crime Incident-Based Data by State" zip
+            (`nibrs/incident/{year}/{ST}-{year}.zip` via its signed-URL endpoint) has every
+            agency, its population, counties and reported months. Violent crime counts one per
+            victim (robbery one per offense), property crime one per offense — matching the
+            API on 64 Texas agencies (median ratio 1.00). Each state-year is reduced to one row
+            per agency in `data/interim/crime/`. Texas: 2 downloads, 15 s. Agencies that report
+            only the old summary format aren't in these files (their tracts: no rate, low
+            confidence). 95% of Texas tracts have a full-year, ≥5k-population rate.
+      - [ ] Small UI notes from the rehearsal: tied county ranks (Dawson County: four high
+            schools without AP all "1st of 4"); 12 counties have one ACS/walkability tract not
+            in the shapes (water tracts, harmless).
+      - [ ] **R2 hosting first** (owner, 2026-10-01): move the tract files to Cloudflare R2
+            and ship to production with what's built (Texas + Cook County), then run the
+            rest of the country.
+      - [ ] National run.
 - [ ] **8d — Extras, as wanted.** CDC PLACES health, OSM amenities (parks, groceries),
       neighborhood names beyond Zillow's cities.
 - [ ] **8e — Filters and must-haves inside the county.** Decide after 8b, with the data on
@@ -1304,8 +1344,22 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
 - Filters inside the county: **deferred to 8e** (owner, 2026-09-30), after seeing the data.
 - Do very large counties need a middle level (city/town) between county and tract, e.g. Los
   Angeles County with 2,500 tracts? **Test a few solutions in 8b** (owner, 2026-09-30).
-- Crime: how well do FBI agencies map onto places? Measure in 8a on Travis (Austin PD,
-  sheriff, suburban PDs); decide how to show areas whose agency didn't report.
+- ~~Crime: how well do FBI agencies map onto places?~~ Well: agency names match Census place
+  names; unincorporated tracts take the sheriff. In Texas 99.6% of populated tracts get a
+  rate; an agency that didn't report a full year is flagged low confidence (8c).
+
+### Phase 9 — First-run tutorial (added 2026-10-01)
+
+The app has a lot in it (priorities, must-haves, climate cards, saved searches, the map,
+Explore inside). A first-time visitor should learn the main loop in under a minute.
+
+- [ ] A short guided tour the **first time** someone opens the app: set what matters → read
+      the ranked list → open a county on the map → Explore inside. A few steps, each pointing
+      at the real control; **Skip** on every step.
+- [ ] Shown once: remember "seen" in localStorage (a per-device convenience). A link that
+      opens a shared search still shows it to a first-time visitor, after the search loads.
+- [ ] Re-open it from Settings ("Show the tour again").
+- [ ] Works on phone widths and with the keyboard (Escape skips).
 
 ---
 

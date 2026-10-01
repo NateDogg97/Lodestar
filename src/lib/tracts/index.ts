@@ -192,7 +192,7 @@ export const AREA_MEASURES: AreaMeasure[] = [
   { key: "bachelors_share", label: "Bachelor's degree or more", format: "percent" },
   { key: "density_per_sq_mi", label: "People per sq mi", format: "number", colorable: true },
   { key: "dist_downtown_mi", label: "To downtown", format: "miles", colorable: true,
-    note: "From where people in the area live to the metro's downtown (its densest cluster of jobs)." },
+    note: "From where people in the area live to the nearest downtown of the metro's main cities (Dallas or Fort Worth, say): each one's densest cluster of jobs." },
   { key: "dist_airport_mi", label: "To a major airport", format: "miles", colorable: true },
   { key: "commute_minutes", label: "Average commute", format: "minutes" },
   { key: "work_from_home_share", label: "Work from home", format: "percent" },
