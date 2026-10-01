@@ -1150,7 +1150,7 @@ neighborhoods in ~650 cities, Creative Commons — verify the exact license; Who
 fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, East Austin · 78702".
 
 #### Build order (strict, like Phases 1–4)
-- [ ] **8a — Prove it on Travis County.** Tract ETL for one county, end to end: 2020 tract
+- [x] **8a — Prove it on Travis County.** Tract ETL for one county, end to end: 2020 tract
       spine, ACS metrics, tract population centers and distances, NRI, district assignment +
       SEDA scores, walkability crosswalk, names. **Check against what the owner knows**:
       east vs west schools and home values, downtown incomes and high-rise share, south Austin
@@ -1182,11 +1182,42 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
         tract level (33% of Travis tracts have some flagged value; ~7% on a headline
         value), so the list's caution icon should probably consider headline values only
         (decide in 8b).
-      - [ ] Schools: district assignment (Census TIGER school districts) + SEDA district and
-            school scores, ranked nationally and within the county. Needs the SEDA district
-            and school files (manual download, like the county file).
-      - [ ] Walkability (EPA, block group → tract), neighborhood names, crime (needs a free
-            data.gov API key), Redfin/Zillow market data.
+      - [x] **Schools** (`schools.py`): district from Census 2019 elementary/unified
+            boundaries (what SEDA's geographic districts use) + SEDA 6.0 geodist scores,
+            national percentile and rank in county; scored schools within 5 mi (NCES
+            2023–24 locations + SEDA school scores, national percentile by level and rank in
+            county). Travis: Eanes ISD 98th pctl (1 of 11), Lake Travis 96th, Manor 13th,
+            Del Valle 11th. **One-district cities can't be split by district** (Chicago
+            Public Schools: every Chicago tract 16th), so a `nearby_school_pctl` (mean of
+            the nearby schools) was added: Chicago north 66 vs south 27; Travis west 92 vs
+            east 28. **SEDA covers grades 3–8: high schools have no score** (say so in UI).
+      - [x] **Downtown** (`geo.downtown`): each metro's densest job cluster (Census LODES
+            2023 jobs within 1 mi), not a hand-picked point. Austin → Congress & 6th
+            (131k jobs), Chicago → the Loop (687k), rural Zavala → downtown San Antonio
+            (nearest 500k+ metro). `dist_downtown_mi` per tract.
+      - [x] **Walkability** (`walkability.py`): EPA index (2010 block groups → 2010 tracts
+            by population → 2020 tracts by land area, Census relationship file). Downtown
+            Austin 16.2 ("most walkable"), east/west 8.3–8.4. Adds `pyogrio` (reads the
+            geodatabase; bundles GDAL).
+      - [x] **Names** (`names.py`): Zillow 2017 neighborhood (CC0 via EPA/data.gov), Census
+            place, main ZIP → labels like "Zilker, Austin · 78704", "Unincorporated Travis
+            County · 78738". Settled "south = family": 78704 has 15% households with kids,
+            Circle C (78739) 54%. The compass regions had lumped them together.
+      - [x] **Crime** (`crime.py`): FBI CDE 2025 (all Travis agencies reported 12 months),
+            city PD inside its city, sheriff elsewhere. **Separates jurisdictions only**:
+            all of Austin shows Austin PD's rate (422 violent /100k). Tiny towns with a
+            mall distort rates (Sunset Valley, ~700 people: 33,113 property /100k), so
+            agencies under 5,000 people are low confidence. Option for 8d: cities' own
+            incident-level open data (Austin and Chicago publish it).
+      - [x] **Market** (`market.py`): Zillow ZHVI/ZORI by ZIP (Aug 2026) + Redfin latest
+            90-day period by ZIP (to May 2026; 1.5 GB tracker streamed once, cached).
+            Zillow's typical value can differ a lot from Census (downtown Austin $548k vs
+            $751k: condos, ZIP-level, newer): show both, labeled. Sale price from <10 sales
+            is low confidence.
+      - Pilot output: Travis 290 tracts × 78 columns; Cook 1,331; Zavala 4 (no market
+        data, all low confidence — expected for a small rural county). Low confidence:
+        101 of 290 Travis tracts have some flagged value.
+      - **8a is done pending the owner's review of the report.** Next: 8b (show it).
 
 - [ ] **8b — Show it: drill-down UI on the pilot counties, display first.** "Explore inside"
       in the county view; tract map inside the county, area list, area place view ("applies

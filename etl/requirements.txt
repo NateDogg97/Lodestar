@@ -1,9 +1,9 @@
 # Relocation Finder ETL — Phase 1
 #
-# Deliberately minimal. No geopandas: the only "spatial" operation in Phase 1 is
-# nearest-station-to-county-centroid, which is haversine math on lat/lon pairs.
-# Census publishes county centroids directly (Gazetteer files), so we never need
-# polygon geometry at this stage. Revisit when tract boundaries arrive (Phase 5+).
+# Deliberately minimal. No geopandas: the county pipeline only does haversine
+# math on lat/lon pairs. Phase 8 (tracts) needs point-in-polygon — which school
+# district, neighborhood or police jurisdiction a tract falls in — so shapely
+# was added then. Shapefiles are converted to GeoJSON with mapshaper (npx).
 
 # Developed and offline-tested against pandas 3.0.x. The 2.x floor is kept
 # because nothing here needs 3.x-only behaviour; 4.x is excluded until tested.
@@ -18,3 +18,8 @@ openpyxl>=3.1
 
 # Optional, for .env loading. The code works without it if you export vars yourself.
 python-dotenv>=1.0
+
+# Phase 8 (etl/tracts/): point-in-polygon lookups.
+shapely>=2.0,<3
+# Phase 8: reads EPA's walkability geodatabase (attributes only; bundles GDAL).
+pyogrio>=0.10

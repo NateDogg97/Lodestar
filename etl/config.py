@@ -379,3 +379,21 @@ ACS_TOPCODE = {"median_home_value": 2_000_001, "median_gross_rent": 3_501}
 # ~7% on a headline value (home value, income, rent).
 TRACT_MAX_CV = 0.40
 TRACT_MAX_SHARE_MOE = 15.0
+
+# Downtown (plan §9 Phase 8): each metro's downtown is found from where jobs
+# are, not hand-picked — the point with the most jobs within DOWNTOWN_RADIUS_MI,
+# from Census LEHD LODES 8 workplace counts (WAC, all jobs) by block, one file
+# per state ({st} = lowercase state abbreviation).
+LODES_WAC_URL = "https://lehd.ces.census.gov/data/lodes/LODES8/{st}/wac/{st}_wac_S000_JT00_{year}.csv.gz"
+LODES_YEAR = 2023
+DOWNTOWN_RADIUS_MI = 1.0
+
+
+# FBI Crime Data Explorer (Phase 8, etl/tracts/crime.py). Needs DATA_GOV_API_KEY.
+CDE_API_BASE = "https://api.usa.gov/crime/fbi/cde"
+CRIME_YEAR = 2025          # newest full year (complete for Austin PD, checked 2026-09-30)
+CRIME_FALLBACK_YEAR = 2024  # used for an agency whose CRIME_YEAR is incomplete
+# A rate from an agency serving fewer people than this is low confidence: a
+# few incidents, or a big shopping center in a tiny town (Sunset Valley, TX:
+# ~700 residents, 33,000 property crimes per 100k), swing it wildly.
+CRIME_MIN_POPULATION = 5_000

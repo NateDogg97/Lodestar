@@ -597,9 +597,19 @@ python -m etl.tracts.build --pilot             # Travis, Cook, Zavala
 python -m etl.tracts.report 48453              # region medians: does the data tell the story?
 ```
 
-Writes `data/out/tracts/{fips}.csv` (one row per tract) and `{fips}.topo.json`
-(simplified shapes). Sources: `acs.py` (ACS 5-year tract estimates **with margins
-of error** and low-confidence flags), `geo.py` (2024 tract shapes via mapshaper,
-2020 tract population centers, distances), `nri.py` (FEMA NRI tract table; the
-national 635 MB zip downloads once into `data/raw/`). Thresholds and URLs are in
-the "Census tracts" section of `config.py`.
+Writes `data/out/tracts/{fips}.csv` (one row per tract), `{fips}_schools.csv`
+and `{fips}.topo.json` (simplified shapes). One module per source:
+
+| Module | Source | Notes |
+|---|---|---|
+| `acs.py` | Census ACS 5-year, tract | Estimates **with margins of error**; low-confidence flags |
+| `geo.py` | 2024 tract shapes, 2020 population centers, LODES jobs | Distances incl. **downtown** (densest job cluster) |
+| `nri.py` | FEMA NRI tract table | National 635 MB zip, downloaded once |
+| `schools.py` | SEDA 6.0 geodist + school files, Census 2019 districts, NCES 2023–24 locations | **Manual SEDA downloads** (see SEDA section). Grades 3–8 only |
+| `walkability.py` | EPA National Walkability Index | 425 MB geodatabase; national rollup cached in `data/interim/` |
+| `names.py` | Zillow neighborhoods, Census places, ZCTA relationship file | Labels like "Zilker, Austin · 78704" |
+| `crime.py` | FBI Crime Data Explorer API | Needs `DATA_GOV_API_KEY`; by police jurisdiction |
+| `market.py` | Zillow ZHVI/ZORI, Redfin ZIP tracker | Redfin is 1.5 GB, streamed once; latest period cached |
+
+Large downloads land in `data/raw/` (git-ignored) and are reused. Thresholds and
+URLs are in the "Census tracts" section of `config.py`.

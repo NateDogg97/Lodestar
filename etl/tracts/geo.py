@@ -18,7 +18,9 @@ WHERE DISTANCES ARE MEASURED FROM
     Airports, coastline and the 500k+ metro centers are exactly the county
     pipeline's (etl/sources/distances.py), so a tract's distances and its
     county's agree in method. The metro center is the metro's population-
-    weighted center, not downtown; "distance to downtown" is a Phase 8 TODO.
+    weighted center, not downtown, so there's also:
+                     dist_downtown_mi, downtown_metro — to the metro's downtown,
+                     found from where jobs are (see downtown()).
 
 RUN STANDALONE
     python -m etl.tracts.geo 48453
@@ -39,7 +41,7 @@ import pandas as pd
 from .. import config
 from ..sources.bea import load_cbsa_crosswalk
 from ..sources.distances import big_metros, large_airports, load_coastline, nearest_distance, origins
-from ..util import get_logger, http_get, nearest_points, read_interim
+from ..util import get_logger, haversine_miles, http_get, nearest_points, read_interim
 
 log = get_logger("tracts.geo")
 
@@ -134,6 +136,12 @@ def table(county_fips: str, geojson: dict) -> pd.DataFrame:
 
     clat, clon = load_coastline()
     df["dist_coast_mi"] = nearest_distance(lat, lon, clat, clon)
+
+    dt = downtown(county_fips)
+    df["dist_downtown_mi"] = haversine_miles(lat, lon, dt["lat"], dt["lon"])
+    df["downtown_metro"] = dt["name"]
+    log.info("downtown for %s: %s (%.4f, %.4f), %d jobs within %.0f mi", county_fips, dt["name"],
+             dt["lat"], dt["lon"], dt["jobs_within_radius"], config.DOWNTOWN_RADIUS_MI)
     return df
 
 
@@ -143,3 +151,122 @@ if __name__ == "__main__":
     df = table(fips, gj)
     print(len(gj["features"]), "shapes")
     print(df.describe().T.round(2).to_string())
+
+
+# ---------------------------------------------------------------------------
+# Point-in-polygon: which district / neighborhood / jurisdiction a tract is in
+# ---------------------------------------------------------------------------
+
+
+def load_polygons(url: str, cache_hint: str, fields: list[str], where: str | None = None,
+                  user_agent: str | None = None) -> list[tuple[dict, object]]:
+    """A zipped shapefile -> [(properties, shapely geometry)], via mapshaper GeoJSON.
+
+    `where` is a mapshaper -filter expression to keep only nearby features
+    (e.g. one county), which keeps statewide files fast.
+    """
+    from shapely.geometry import shape
+
+    body = http_get(url, binary=True, cache_hint=cache_hint, user_agent=user_agent)
+    assert isinstance(body, bytes)
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "src.zip"
+        src.write_bytes(body)
+        out = Path(tmp) / "out.json"
+        cmd = ["npx", "-y", f"mapshaper@{config.MAPSHAPER_VERSION}", str(src)]
+        if where:
+            cmd += ["-filter", where]
+        cmd += ["-filter-fields", ",".join(fields), "-proj", "wgs84", "-o", "format=geojson", str(out)]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"mapshaper failed on {url}: {result.stderr[-1500:]}")
+        gj = json.loads(out.read_text())
+    return [(f["properties"], shape(f["geometry"])) for f in gj["features"] if f.get("geometry")]
+
+
+def locate(lat: np.ndarray, lon: np.ndarray, polygons: list[tuple[dict, object]]) -> list[dict | None]:
+    """For each point, the properties of the polygon containing it (first match), or None."""
+    from shapely import STRtree, points
+
+    if not polygons:
+        return [None] * len(lat)
+    geoms = [g for _, g in polygons]
+    tree = STRtree(geoms)
+    pts = points(lon, lat)
+    hits = tree.query(pts, predicate="within")  # [point index, polygon index]
+    out: list[dict | None] = [None] * len(lat)
+    for pi, gi in zip(hits[0], hits[1]):
+        if out[pi] is None:
+            out[pi] = polygons[gi][0]
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Downtown: the metro's densest cluster of jobs
+# ---------------------------------------------------------------------------
+
+STATE_ABBR = {
+    "01": "al", "02": "ak", "04": "az", "05": "ar", "06": "ca", "08": "co", "09": "ct", "10": "de",
+    "11": "dc", "12": "fl", "13": "ga", "15": "hi", "16": "id", "17": "il", "18": "in", "19": "ia",
+    "20": "ks", "21": "ky", "22": "la", "23": "me", "24": "md", "25": "ma", "26": "mi", "27": "mn",
+    "28": "ms", "29": "mo", "30": "mt", "31": "ne", "32": "nv", "33": "nh", "34": "nj", "35": "nm",
+    "36": "ny", "37": "nc", "38": "nd", "39": "oh", "40": "ok", "41": "or", "42": "pa", "44": "ri",
+    "45": "sc", "46": "sd", "47": "tn", "48": "tx", "49": "ut", "50": "vt", "51": "va", "53": "wa",
+    "54": "wv", "55": "wi", "56": "wy",
+}
+
+
+def _tract_jobs(state: str, counties: set[str]) -> pd.DataFrame:
+    """geoid, jobs: all jobs by workplace tract (LODES WAC, summed from blocks)."""
+    st = STATE_ABBR[state]
+    body = http_get(config.LODES_WAC_URL.format(st=st, year=config.LODES_YEAR), binary=True,
+                    cache_hint=f"lodes_wac_{st}_{config.LODES_YEAR}")
+    assert isinstance(body, bytes)
+    wac = pd.read_csv(io.BytesIO(body), compression="gzip", usecols=["w_geocode", "C000"],
+                      dtype={"w_geocode": str})
+    wac["geoid"] = wac["w_geocode"].str.zfill(15).str[:11]
+    wac = wac[wac["geoid"].str[:5].isin(counties)]
+    return wac.groupby("geoid", as_index=False)["C000"].sum().rename(columns={"C000": "jobs"})
+
+
+def _tract_centers(state: str, counties: set[str]) -> pd.DataFrame:
+    """geoid, lat, lon: a point inside each tract (shapely representative point)."""
+    where = " || ".join(f"COUNTYFP === '{c[2:]}'" for c in sorted(counties))
+    polys = load_polygons(config.TRACT_BOUNDARY_URL.format(state=state), f"cb_2024_{state}_tract",
+                          ["GEOID"], where=where)
+    pts = [g.representative_point() for _, g in polys]
+    return pd.DataFrame({"geoid": [p["GEOID"] for p, _ in polys],
+                         "lat": [p.y for p in pts], "lon": [p.x for p in pts]})
+
+
+def downtown(county_fips: str) -> dict:
+    """{name, lat, lon, jobs_within_radius}: the downtown a county's people would mean.
+
+    Its own metro's when the county is in a metropolitan area; otherwise the
+    nearest 500k+ metro's (the same metro `dist_metro_mi` measures to).
+    """
+    xw = load_cbsa_crosswalk()
+    row = xw[xw["fips"] == county_fips]
+    if len(row) and row["metro_type"].str.contains("Metropolitan", case=False).iloc[0]:
+        cbsa, name = row["cbsa"].iloc[0], row["cbsa_name"].iloc[0]
+    else:
+        pts = origins()
+        here = pts[pts["fips"] == county_fips]
+        metros = big_metros(xw, pts, read_interim("acs"))
+        idx, _ = nearest_points(here["lat"].to_numpy(float), here["lon"].to_numpy(float),
+                                metros["lat"].to_numpy(), metros["lon"].to_numpy())
+        cbsa, name = metros["cbsa"].iloc[idx[0, 0]], metros["cbsa_name"].iloc[idx[0, 0]]
+    counties = set(xw.loc[xw["cbsa"] == cbsa, "fips"])
+    frames = []
+    for state in sorted({c[:2] for c in counties}):
+        in_state = {c for c in counties if c[:2] == state}
+        frames.append(_tract_centers(state, in_state).merge(_tract_jobs(state, in_state), on="geoid", how="left"))
+    t = pd.concat(frames, ignore_index=True).fillna({"jobs": 0})
+    lat, lon, jobs = t["lat"].to_numpy(float), t["lon"].to_numpy(float), t["jobs"].to_numpy(float)
+    d = haversine_miles(lat[:, None], lon[:, None], lat[None, :], lon[None, :])
+    near = d <= config.DOWNTOWN_RADIUS_MI
+    within = (near * jobs[None, :]).sum(axis=1)
+    best = int(np.argmax(within))
+    w = near[best] * jobs
+    return {"name": name, "lat": float((lat * w).sum() / w.sum()), "lon": float((lon * w).sum() / w.sum()),
+            "jobs_within_radius": int(within[best])}
