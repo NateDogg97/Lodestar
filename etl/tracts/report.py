@@ -1,14 +1,16 @@
 """
 The Phase 8a "does the data tell the story?" check (plan §9 Phase 8a).
 
-Groups a county's tracts into downtown / north / south / east / west around a
-reference point, and prints population-weighted medians of the measures the
-owner described, so the numbers can be compared with what locals know.
+Groups a county's tracts by city / town / community (Census place, from
+names.py; "(unincorporated)" otherwise) and prints population-weighted medians
+of the measures, so the numbers can be compared with what locals know.
 
-    python -m etl.tracts.report 48453
+    python -m etl.tracts.report 48453             # by city or town (default)
+    python -m etl.tracts.report 48453 --compass   # downtown / N / S / E / W
 
-Reference points are the pilot counties' downtowns (city halls). A QA tool
-only: the app never uses these regions.
+The compass view was the first check (2026-09-30); the owner pointed out it
+misnames places like Pflugerville or Lakeway as "north" or "west Austin", so
+places are the default. A QA tool only.
 """
 
 from __future__ import annotations
@@ -77,11 +79,16 @@ def weighted_median(values: pd.Series, weights: pd.Series) -> float:
 
 
 def main() -> None:
-    fips = sys.argv[1] if len(sys.argv) > 1 else "48453"
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    fips = args[0] if args else "48453"
     df = pd.read_csv(config.TRACT_OUT_DIR / f"{fips}.csv", dtype={"geoid": str, "county_fips": str})
-    ref = DOWNTOWNS[fips]
-    df["region"] = [region(a, b, ref) for a, b in zip(df["pop_lat"], df["pop_lon"])]
-    order = ["Downtown", "North", "South", "East", "West"]
+    if "--compass" in sys.argv:
+        ref = DOWNTOWNS[fips]
+        df["region"] = [region(a, b, ref) for a, b in zip(df["pop_lat"], df["pop_lon"])]
+        order = ["Downtown", "North", "South", "East", "West"]
+    else:
+        df["region"] = df["place"].fillna("(unincorporated)")
+        order = list(df.groupby("region")["population"].sum().sort_values(ascending=False).index)[:12]
     rows = []
     for label, grp in df.groupby("region"):
         row = {"region": label, "tracts": len(grp), "people": int(grp["population"].sum())}
@@ -94,7 +101,8 @@ def main() -> None:
         {reg: {m: ("—" if pd.isna(v) else fmt.get(m, "{:,.0f}").format(v)) for m, v in table.loc[reg].items()}
          for reg in table.index}
     )
-    print(f"{config.TRACT_PILOT_COUNTIES.get(fips, fips)} — population-weighted medians by region")
+    print(f"{config.TRACT_PILOT_COUNTIES.get(fips, fips)} — population-weighted medians"
+          f" by {'region' if '--compass' in sys.argv else 'city or town (12 largest)'}")
     print(shown.to_string())
     print(f"\nLow confidence: {(df['low_confidence'].fillna('') != '').sum()} of {len(df)} tracts have at least one flagged value.")
 

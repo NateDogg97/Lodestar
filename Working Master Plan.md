@@ -1143,6 +1143,17 @@ value: Census margin of error ±38%", "Crime: agency reported 7 of 12 months". S
 the laws' confidence badges. Thresholds are set in 8a (a starting point: the Census Bureau
 treats a coefficient of variation above ~30–40% as unreliable).
 
+#### Naming and grouping areas (owner feedback 2026-09-30)
+Compass regions ("North Austin", "West Austin") mislabel counties whose big city isn't in the
+middle: Pflugerville, Lakeway and Lago Vista are their own places. **Areas are named and
+grouped by real places**, which the data already carries per tract:
+**County → city, town or community (Census place) → neighborhood (Zillow) → area (tract)**.
+Travis County, for example, reads as Austin (203 areas, 115 in named neighborhoods),
+Pflugerville, Steiner Ranch, Lakeway, Lago Vista, West Lake Hills, Bee Cave… plus
+unincorporated areas. The place level doubles as the "middle level" for very large counties
+(open question below). **To do:** name unincorporated areas outside any community by the
+nearest place, e.g. "Unincorporated, near Manor · 78653" (42 of Travis's 290 areas).
+
 #### Naming areas (tracts are only numbers)
 Label each tract with names people know: its **city or town** (Census places), a
 **neighborhood** name where one exists (Zillow's 2017 neighborhood boundaries, ~17,000
@@ -1219,6 +1230,18 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
         101 of 290 Travis tracts have some flagged value.
       - **8a is done pending the owner's review of the report.** Next: 8b (show it).
 
+- [ ] **Data hosting (decide before 8b ships; build 8b locally first).** Measured
+      2026-09-30 on the pilots, projected to ~85,000 tracts: ~85 MB of per-county files
+      (~25 MB compressed; Travis ≈ 67 KB), about 9,300 files. Raw inputs are several GB
+      and stay on the ETL machine. **Proposal: Cloudflare R2** (object storage, S3-
+      compatible, no download fees; free tier 10 GB stored and 10M reads/month) behind
+      `data.lodestarmap.com`, files under a versioned prefix with a `manifest.json`, uploaded
+      by an ETL publish step. The app reads a base URL (`NEXT_PUBLIC_DATA_URL`), which in
+      local development points at `public/data/tracts/` (git-ignored). Keeps §2: static
+      files, scoring in the browser, no database server. Alternatives considered: Vercel
+      Blob (simplest, but download bandwidth is billed), Supabase/Postgres (a real database
+      and API the app doesn't need), a separate GitHub data repo through a CDN (free but
+      history grows with every refresh).
 - [ ] **8b — Show it: drill-down UI on the pilot counties, display first.** "Explore inside"
       in the county view; tract map inside the county, area list, area place view ("applies
       to the whole county" facts, schools nearby with both rankings, distances, crime by
