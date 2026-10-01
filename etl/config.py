@@ -15,7 +15,10 @@ from pathlib import Path
 try:
     from dotenv import load_dotenv
 
-    load_dotenv()
+    # An explicit path: with no argument, python-dotenv searches from the
+    # caller's file or (for `python -c` and notebooks) the working directory,
+    # so whether etl/.env loaded depended on how the ETL was started.
+    load_dotenv(Path(__file__).resolve().parent / ".env")
 except ImportError:
     # python-dotenv is optional. If it is missing we just read the real env.
     pass
@@ -63,6 +66,9 @@ BEA_API_KEY = os.environ.get("BEA_API_KEY", "").strip()
 # Free: https://data.bls.gov/registrationEngine/ . Without it BLS allows only
 # 25 requests/day, not enough for 3,144 counties (sources/bls.py).
 BLS_API_KEY = os.environ.get("BLS_API_KEY", "").strip()
+# Free: https://api.data.gov/signup/ . FBI Crime Data Explorer (Phase 8,
+# tracts/crime.py); without it the shared DEMO_KEY allows 30 requests/hour.
+DATA_GOV_API_KEY = os.environ.get("DATA_GOV_API_KEY", "").strip()
 
 
 # ---------------------------------------------------------------------------
