@@ -1272,6 +1272,23 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
             (MapLibre pauses) and headless Chrome won't render the map; the panel, data,
             URL and console are verified. Owner to check by eye.
       - Dev aid: `window.__lodestarMap` in development builds only.
+      - [x] **High schools (owner, 2026-10-01).** SEDA has no grades 9–12, and federal
+            school-level state test and graduation files stop at 2020–21 in ED Data Express
+            (its 2022–23 graduation file is state-level only), so high schools come from the
+            **Civil Rights Data Collection 2023–24** (civilrightsdata.ed.gov, ~100 MB,
+            fetched by the ETL): AP courses, AP participation, dual enrollment, IB,
+            enrollment. Ranked by **college-prep access** = mean of national percentiles for
+            AP participation and AP courses (participation alone put KIPP charters, which
+            enroll ~everyone in AP, above LASA and Westlake). CRDC codes a school without AP
+            as -9, not "No" (31% of 18,885 high schools). Travis top 5: Westlake, LASA,
+            McNeil, Vandegrift, Lake Travis. Each area lists its 2 nearest high schools; new
+            measure "Nearby high schools". Comparable nationally, but it measures access to
+            college-prep courses, not test results — say so in the "i".
+      - [x] **Nearby schools cross county lines** (found via Leander, whose high schools are
+            in Williamson County): any school within 5 mi; county ranks only among the
+            county's own schools; others shown as "in Williamson County".
+      - State test scores and graduation rates for high schools: revisit if ED Data Express
+        publishes school-level files after 2020–21.
 - [ ] **8c — All counties.** Run the tract ETL nationwide, measure file sizes, decide on
       hosting (repo vs R2). Precompute national tract percentile breakpoints.
 - [ ] **8d — Extras, as wanted.** CDC PLACES health, OSM amenities (parks, groceries),

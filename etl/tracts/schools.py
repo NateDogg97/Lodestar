@@ -13,10 +13,33 @@ WHAT THIS PRODUCES
                               what separates neighborhoods inside a one-district city
                               (Chicago Public Schools is one district: every Chicago
                               tract has the same district score).
+        nearby_high_schools   ";"-joined ids of up to 2 high schools within NEARBY_MI
+        nearby_hs_pctl        their mean national percentile for college-prep access
     schools(county) -> one row per scored school located in the county:
-        school_id, name, level (elementary / middle), city, lat, lon,
+        school_id, name, level (elementary / middle / high), city, lat, lon,
         score, pctl (national, among schools of the same level),
         county_rank, county_count (among the county's scored schools of that level)
+        + for high schools: ap_courses, ap_share, dual_share, satact_share, ib,
+          enrollment. Their `score` is college-prep access (see HIGH SCHOOLS).
+
+HIGH SCHOOLS (added 2026-10-01): CRDC 2023–24
+    SEDA covers grades 3–8, so high schools come from the Civil Rights Data
+    Collection 2023–24 public-use file (civilrightsdata.ed.gov; ~100 MB zip,
+    downloaded once): AP courses offered and students enrolled in AP, dual
+    enrollment, SAT/ACT takers, IB, enrollment. National and comparable across
+    states — unlike state test scores. Ranked by COLLEGE-PREP ACCESS: the mean
+    of the school's national percentiles for AP participation (students in AP
+    / enrollment) and AP courses offered. Participation alone put charters
+    that enroll everyone in AP (KIPP: 98%, 17 courses) above LASA (75%, 30)
+    and Westlake (62%, 33); breadth balances that. A high school offers grade
+    12, has 100+ students, and isn't a juvenile-justice, alternative or
+    virtual school. Negative CRDC values are reserve codes (-9 not
+    applicable, -5 action plan, ...): unknown, never numbers — except that
+    CRDC 2023-24 has no "No" for the AP question: a high school without AP
+    carries -9 there (checked 2026-10-01: La Pryor HS, TX; 32% of high
+    schools, in line with the share without AP), so -9 on SCH_APENR_IND means
+    no AP: 0 courses, 0%. Shares use total enrollment (CRDC has no enrollment
+    by grade), so a 6–12 school reads a little low.
 
     Both comparisons the owner asked for (plan §9 Phase 8): nationally and
     within the county.
@@ -66,6 +89,10 @@ DISTRICT_URL = "https://www2.census.gov/geo/tiger/TIGER2019/{kind}/tl_2019_{stat
 SCORE_COLUMNS = ("cs_mn_avg_eb", "cs_mn_avg_ol")  # preferred first, as in sources/seda.py
 NEARBY_MI = 5.0
 NEARBY_COUNT = {"elementary": 3, "middle": 2}
+NEARBY_HIGH = 2
+CRDC_URL = "https://civilrightsdata.ed.gov/assets/ocr/docs/2023-24-crdc-data.zip"
+CRDC_CACHE = config.INTERIM_DIR / "crdc_high_schools.csv"
+MIN_HS_ENROLLMENT = 100
 
 
 def _seda(path, id_col: str, width: int, extra: list[str]) -> pd.DataFrame:
@@ -97,6 +124,68 @@ def school_scores() -> pd.DataFrame:
     return s[["id", "level", "score", "pctl"]]
 
 
+def _crdc_total(df: pd.DataFrame, stem: str) -> pd.Series:
+    """M + F + X counts, ignoring negative reserve codes; unknown if none is a count."""
+    parts = df[[f"{stem}_M", f"{stem}_F", f"{stem}_X"]].apply(pd.to_numeric, errors="coerce")
+    parts = parts.where(parts >= 0)
+    return parts.sum(axis=1, min_count=1)
+
+
+def high_school_scores() -> pd.DataFrame:
+    """id, level='high', score (AP share), pctl, ap_courses, ap_share, dual_share,
+    satact_share, ib, enrollment — every US high school in CRDC 2023–24 (cached)."""
+    if CRDC_CACHE.exists():
+        return pd.read_csv(CRDC_CACHE, dtype={"id": str})
+    body = http_get(CRDC_URL, binary=True, cache_hint="crdc_2023_24", user_agent=config.BROWSER_USER_AGENT)
+    assert isinstance(body, bytes)
+    z = zipfile.ZipFile(io.BytesIO(body))
+
+    def read(name: str, cols: list[str]) -> pd.DataFrame:
+        return pd.read_csv(z.open(f"SCH/{name}.csv"), encoding="latin-1", dtype=str,
+                           usecols=["COMBOKEY"] + cols).drop_duplicates("COMBOKEY")
+
+    tri = lambda stem: [f"{stem}_M", f"{stem}_F", f"{stem}_X"]  # noqa: E731
+    chars = read("School Characteristics", ["SCH_GRADE_G12", "SCH_JUST_IND", "SCH_STATUS_ALT", "SCH_VIRT_IND"])
+    enr = read("Enrollment", tri("TOT_ENR"))
+    ap = read("Advanced Placement", ["SCH_APENR_IND", "SCH_APCOURSES"] + tri("TOT_APENR"))
+    dual = read("Dual Enrollment", tri("TOT_DUALENR"))
+    sat = read("SAT and ACT", tri("TOT_SATACT"))
+    ib = read("International Baccalaureate", ["SCH_IBENR_IND"])
+    df = chars.merge(enr, on="COMBOKEY", how="left")
+    for part in (ap, dual, sat, ib):
+        df = df.merge(part, on="COMBOKEY", how="left")
+
+    yes = lambda c: df[c].astype(str).str.strip().str.lower().eq("yes")  # noqa: E731
+    df["enrollment"] = _crdc_total(df, "TOT_ENR")
+    df = df[yes("SCH_GRADE_G12") & ~yes("SCH_JUST_IND") & ~yes("SCH_STATUS_ALT")
+            & ~df["SCH_VIRT_IND"].astype(str).str.strip().str.lower().isin(["yes", "full"])
+            & (df["enrollment"] >= MIN_HS_ENROLLMENT)].copy()
+    courses = pd.to_numeric(df["SCH_APCOURSES"], errors="coerce")
+    # No "No" in 2023-24: a high school without AP has -9 here (see docstring).
+    no_ap = df["SCH_APENR_IND"].astype(str).str.strip().str.lower().isin(["no", "-9"])
+    # A reported course count wins over the AP question's code (35 schools answer
+    # -9 yet list courses); only a missing count becomes 0 for a school without AP.
+    known = courses.where(courses >= 0)
+    df["ap_courses"] = known.mask(no_ap & known.isna(), 0)
+    ap_enr = _crdc_total(df, "TOT_APENR").mask(no_ap, 0)
+    df["ap_share"] = (100 * ap_enr / df["enrollment"]).clip(upper=100)
+    df["dual_share"] = (100 * _crdc_total(df, "TOT_DUALENR") / df["enrollment"]).clip(upper=100)
+    df["satact_share"] = (100 * _crdc_total(df, "TOT_SATACT") / df["enrollment"]).clip(upper=100)
+    df["ib"] = yes("SCH_IBENR_IND")
+    out = pd.DataFrame({
+        "id": df["COMBOKEY"].str.zfill(12), "level": "high",
+        "ap_courses": df["ap_courses"], "ap_share": df["ap_share"], "dual_share": df["dual_share"],
+        "satact_share": df["satact_share"], "ib": df["ib"], "enrollment": df["enrollment"],
+    }).dropna(subset=["ap_share", "ap_courses"])
+    # College-prep access: mean of the two national percentiles, then ranked again.
+    out["score"] = (out["ap_share"].rank(pct=True) + out["ap_courses"].rank(pct=True)) * 50
+    out["pctl"] = out["score"].rank(pct=True) * 100
+    out.to_csv(CRDC_CACHE, index=False)
+    log.info("CRDC 2023-24: %d high schools (cached); median AP participation %.1f%%; %d without AP",
+             len(out), float(out["ap_share"].median()), int((out["ap_courses"] == 0).sum()))
+    return out
+
+
 def school_locations() -> pd.DataFrame:
     body = http_get(SCHOOL_LOCATIONS_URL, binary=True, cache_hint="edge_geocode_publicsch_2324",
                     user_agent=config.BROWSER_USER_AGENT)
@@ -108,6 +197,7 @@ def school_locations() -> pd.DataFrame:
         raw = pd.read_csv(z.open(name), sep="|", header=None, dtype=str, encoding="latin-1")
     return pd.DataFrame({
         "id": raw[0].str.zfill(12), "name": raw[2], "city": raw[5], "county_fips": raw[9],
+        "county_name": raw[10],
         "lat": pd.to_numeric(raw[12], errors="coerce"), "lon": pd.to_numeric(raw[13], errors="coerce"),
     })
 
@@ -148,11 +238,21 @@ def build(county_fips: str, tracts: pd.DataFrame) -> tuple[pd.DataFrame, pd.Data
     out["district_count"] = len(served)
 
     locs = school_locations()
-    sch = locs[locs["county_fips"] == county_fips].merge(school_scores(), on="id", how="inner")
-    sch["county_rank"] = sch.groupby("level")["score"].rank(ascending=False, method="min")
-    sch["county_count"] = sch.groupby("level")["score"].transform("size")
+    scored = pd.concat([school_scores(), high_school_scores()], ignore_index=True)
+    # Nearby means nearby, across county lines (Leander's high schools are in
+    # Williamson County): every scored school within reach of the county's
+    # tracts. County ranks are among the county's own schools only.
+    pad = NEARBY_MI / 50  # degrees; generous at any US latitude
+    near_box = locs["lat"].between(lat.min() - pad, lat.max() + pad) & locs["lon"].between(
+        lon.min() - pad * 1.5, lon.max() + pad * 1.5)
+    sch = locs[near_box].merge(scored, on="id", how="inner")
+    sch["in_county"] = sch["county_fips"] == county_fips
+    own = sch[sch["in_county"]]
+    sch["county_rank"] = own.groupby("level")["score"].rank(ascending=False, method="min")
+    sch["county_count"] = sch["level"].map(own.groupby("level").size())
+    sch.loc[~sch["in_county"], "county_count"] = np.nan
 
-    near, near_pctl = [], []
+    near, near_pctl, near_hs, near_hs_pctl = [], [], [], []
     pctl_by_id = dict(zip(sch["id"], sch["pctl"]))
     for la, lo in zip(lat, lon):
         d = haversine_miles(la, lo, sch["lat"].to_numpy(float), sch["lon"].to_numpy(float))
@@ -163,13 +263,25 @@ def build(county_fips: str, tracts: pd.DataFrame) -> tuple[pd.DataFrame, pd.Data
             picks += list(sch["id"].to_numpy()[idx[np.argsort(d[idx])][:n]])
         near.append(";".join(picks))
         near_pctl.append(float(np.mean([pctl_by_id[i] for i in picks])) if picks else np.nan)
+        hs = np.flatnonzero((sch["level"].to_numpy() == "high") & (d <= NEARBY_MI))
+        hs_picks = list(sch["id"].to_numpy()[hs[np.argsort(d[hs])][:NEARBY_HIGH]])
+        near_hs.append(";".join(hs_picks))
+        near_hs_pctl.append(float(np.mean([pctl_by_id[i] for i in hs_picks])) if hs_picks else np.nan)
     out["nearby_schools"] = near
     out["nearby_school_pctl"] = near_pctl
+    out["nearby_high_schools"] = near_hs
+    out["nearby_hs_pctl"] = near_hs_pctl
 
+    # Publish the county's own schools plus any outside one that is some tract's neighbor.
+    used = {i for picks in (near + near_hs) for i in picks.split(";") if i}
+    sch = sch[sch["in_county"] | sch["id"].isin(used)]
     no_district = out["district_id"].isna().sum()
-    log.info("schools %s: %d districts serve the county (%d scored); %d scored schools; %d tracts "
-             "outside any district", county_fips, out["district_id"].nunique(), len(served), len(sch), no_district)
-    cols = ["id", "name", "level", "city", "lat", "lon", "score", "pctl", "county_rank", "county_count"]
+    log.info("schools %s: %d districts serve the county (%d scored); %d scored schools in the county, "
+             "%d nearby outside it; %d tracts outside any district", county_fips, out["district_id"].nunique(),
+             len(served), int(sch["in_county"].sum()), int((~sch["in_county"]).sum()), no_district)
+    cols = ["id", "name", "level", "city", "county_name", "in_county", "lat", "lon", "score", "pctl",
+            "county_rank", "county_count",
+            "ap_courses", "ap_share", "dual_share", "satact_share", "ib", "enrollment"]
     return out, sch[cols].rename(columns={"id": "school_id"}).sort_values(["level", "county_rank"])
 
 

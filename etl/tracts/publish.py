@@ -35,9 +35,9 @@ log = get_logger("tracts.publish")
 PAYLOAD_FORMAT = "tracts-v1"
 PUBLISH_DIR = config.ETL_DIR.parent / "public" / "data" / "tracts"
 
-TEXT = {"geoid", "district_id", "zip", "nearby_schools", "low_confidence", "topcoded", "label", "place",
+TEXT = {"geoid", "district_id", "zip", "nearby_schools", "nearby_high_schools", "low_confidence", "topcoded", "label", "place",
         "near_place", "neighborhood", "district_name", "nearest_airport", "nearest_metro", "downtown_metro",
-        "crime_agency", "zillow_month", "redfin_period", "school_id", "name", "level", "city"}
+        "crime_agency", "zillow_month", "redfin_period", "school_id", "name", "level", "city", "county_name"}
 DROP = {"county_fips", "downtown_metro"}
 
 
@@ -50,6 +50,8 @@ def _digits(col: str) -> int:
         return 0
     if col in ("district_score", "score"):
         return 3
+    if col in ("ap_courses", "enrollment"):
+        return 0
     return 1
 
 

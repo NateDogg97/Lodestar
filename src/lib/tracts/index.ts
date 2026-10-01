@@ -38,19 +38,34 @@ export interface Area {
   row: Row;
   /** Columns whose values are low confidence (see LOW_CONFIDENCE_HEADLINE). */
   lowConfidence: string[];
+  /** Census top-coded columns: the value means "this much or more". */
+  topcoded: string[];
+  /** Nearest scored elementary and middle schools (ids into CountyAreas.schools). */
   nearbySchools: string[];
+  /** Nearest high schools. */
+  nearbyHighSchools: string[];
 }
 
 export interface School {
   id: string;
   name: string;
-  level: "elementary" | "middle";
+  level: "elementary" | "middle" | "high";
   city: string | null;
+  /** False for a nearby school just across the county line (no county rank). */
+  inCounty: boolean;
+  countyName: string | null;
   score: number | null;
-  /** National percentile among schools of the same level. */
+  /** National percentile among schools of the same level. Elementary and middle:
+   *  SEDA test scores. High: college-prep access (AP participation and courses, CRDC). */
   pctl: number | null;
   countyRank: number | null;
   countyCount: number | null;
+  /** High schools only (CRDC 2023–24). */
+  apCourses: number | null;
+  apShare: number | null;
+  dualShare: number | null;
+  ib: boolean;
+  enrollment: number | null;
 }
 
 export interface CountyAreas {
@@ -98,7 +113,9 @@ export function parseCountyAreas(payload: unknown): CountyAreas {
       population: num(row.population),
       row,
       lowConfidence: (str(row.low_confidence) ?? "").split(";").filter(Boolean),
+      topcoded: (str(row.topcoded) ?? "").split(";").filter(Boolean),
       nearbySchools: (str(row.nearby_schools) ?? "").split(";").filter(Boolean),
+      nearbyHighSchools: (str(row.nearby_high_schools) ?? "").split(";").filter(Boolean),
     };
   });
   const schools = new Map<string, School>();
@@ -107,12 +124,19 @@ export function parseCountyAreas(payload: unknown): CountyAreas {
     schools.set(id, {
       id,
       name: str(r.name) ?? id,
-      level: r.level === "middle" ? "middle" : "elementary",
+      level: r.level === "middle" || r.level === "high" ? r.level : "elementary",
       city: str(r.city),
+      inCounty: r.in_county !== false && r.in_county !== "False",
+      countyName: str(r.county_name ?? null),
       score: num(r.score),
       pctl: num(r.pctl),
       countyRank: num(r.county_rank),
       countyCount: num(r.county_count),
+      apCourses: num(r.ap_courses ?? null),
+      apShare: num(r.ap_share ?? null),
+      dualShare: num(r.dual_share ?? null),
+      ib: r.ib === true || r.ib === "True",
+      enrollment: num(r.enrollment ?? null),
     });
   }
   return {
@@ -151,8 +175,10 @@ export const AREA_MEASURES: AreaMeasure[] = [
   { key: "per_capita_income", label: "Income per person", format: "dollars", colorable: true,
     note: "Census, 2019–2023. Fairer than household income where households are small (downtowns)." },
   { key: "median_household_income", label: "Household income", format: "dollars" },
-  { key: "nearby_school_pctl", label: "Nearby schools", format: "pctl", colorable: true,
-    note: "Average national percentile of the scored elementary and middle schools within 5 miles (SEDA, grades 3–8). Not attendance zones." },
+  { key: "nearby_school_pctl", label: "Nearby elementary & middle schools", format: "pctl", colorable: true,
+    note: "Average national percentile of the nearest scored elementary and middle schools within 5 miles (SEDA test scores, grades 3–8). Not attendance zones." },
+  { key: "nearby_hs_pctl", label: "Nearby high schools", format: "pctl", colorable: true,
+    note: "Average national percentile of the 2 nearest high schools for college-prep access: AP participation and AP courses offered (Civil Rights Data Collection, 2023–24)." },
   { key: "district_pctl", label: "School district", format: "pctl", colorable: true,
     note: "National percentile of the area's school district (SEDA, grades 3–8)." },
   { key: "walkability", label: "Walkability", format: "walk", colorable: true,
@@ -204,6 +230,12 @@ export function flagLabel(col: string): string {
 
 export function areaValue(a: Area, key: string): number | null {
   return num(a.row[key] ?? null);
+}
+
+/** Like formatArea, with "+" on a Census top-coded value ("$3,501+" = that or more). */
+export function formatAreaValue(a: Area, key: string): string {
+  const text = formatArea(key, areaValue(a, key));
+  return a.topcoded.includes(key) && text !== "—" ? `${text}+` : text;
 }
 
 export function formatArea(key: string, v: number | null): string {

@@ -10,6 +10,7 @@ import {
   areaValue,
   flagLabel,
   formatArea,
+  formatAreaValue,
   groupAreas,
   headlineFlags,
   type Area,
@@ -179,7 +180,7 @@ function AreaList({
                             className="flex min-w-0 flex-1 items-center justify-between gap-3 py-2 text-left"
                           >
                             <span className="truncate text-label">{areaName(a)}</span>
-                            <span className="shrink-0 text-label tabular-nums">{formatArea(measure, areaValue(a, measure))}</span>
+                            <span className="shrink-0 text-label tabular-nums">{formatAreaValue(a, measure)}</span>
                           </button>
                           <Caution flags={headlineFlags(a)} />
                         </div>
@@ -220,17 +221,22 @@ function AreaDetail({ area, county, countyName }: { area: Area; county: CountyAr
   const v = (key: string) => areaValue(area, key);
   const flagged = new Set(area.lowConfidence);
   const r = area.row;
-  const schools = area.nearbySchools.map((id) => county.schools.get(id)).filter((s): s is School => !!s);
+  const pick = (ids: string[]) => ids.map((id) => county.schools.get(id)).filter((s): s is School => !!s);
+  const schools = pick(area.nearbySchools);
+  const highSchools = pick(area.nearbyHighSchools);
 
   return (
     <div className="space-y-section px-gutter py-4">
       <dl className="grid grid-cols-2 gap-2">
         {["zhvi", "median_home_value", "median_gross_rent", "per_capita_income", "walkability", "kids_share"].map((k) => (
-          <Stat key={k} k={k} value={v(k)} flagged={flagged.has(k)} />
+          <Stat key={k} k={k} text={formatAreaValue(area, k)} flagged={flagged.has(k)} />
         ))}
       </dl>
 
-      <Section title="Schools" tip="SEDA test scores, grades 3–8 (high schools aren't scored). Schools listed are the nearest scored ones to where people here live, not attendance zones.">
+      <Section
+        title="Schools"
+        tip="The nearest schools to where people here live — not attendance zones. Elementary and middle: SEDA test scores (grades 3–8). High schools: college-prep access from the Civil Rights Data Collection 2023–24 — AP participation and AP courses offered, compared nationally."
+      >
         {r.district_name && (
           <Row label="School district">
             <span className="font-medium">{String(r.district_name).replace(/ Independent School District$/, " ISD")}</span>
@@ -240,6 +246,7 @@ function AreaDetail({ area, county, countyName }: { area: Area; county: CountyAr
             </span>
           </Row>
         )}
+        <SubHead>Elementary &amp; middle</SubHead>
         {schools.length === 0 ? (
           <p className="text-label text-neutral-500">No scored schools within 5 miles.</p>
         ) : (
@@ -247,8 +254,20 @@ function AreaDetail({ area, county, countyName }: { area: Area; county: CountyAr
             <Row key={s.id} label={<span className="capitalize">{s.name.toLowerCase()}</span>}>
               <span className="font-medium">{s.pctl !== null ? `${ordinal(s.pctl)} pctl` : "—"}</span>
               <span className="block text-caption text-neutral-500">
-                {s.level} · {s.countyRank !== null ? `${ordinal(s.countyRank)} of ${s.countyCount} in county` : ""}
+                {s.level} · {where(s)}
               </span>
+            </Row>
+          ))
+        )}
+        <SubHead>High schools</SubHead>
+        {highSchools.length === 0 ? (
+          <p className="text-label text-neutral-500">No high school within 5 miles.</p>
+        ) : (
+          highSchools.map((s) => (
+            <Row key={s.id} label={<span className="capitalize">{s.name.toLowerCase()}</span>}>
+              <span className="font-medium">{s.pctl !== null ? `${ordinal(s.pctl)} pctl` : "—"}</span>
+              <span className="block text-caption text-neutral-500">{where(s)}</span>
+              <span className="block text-caption text-neutral-500">{apLine(s)}</span>
             </Row>
           ))
         )}
@@ -300,6 +319,28 @@ function AreaDetail({ area, county, countyName }: { area: Area; county: CountyAr
   );
 }
 
+/** "3rd of 47 high schools in county", or "in Williamson County" across the line. */
+function where(s: School): string {
+  if (!s.inCounty) return s.countyName ? `in ${s.countyName}` : "nearby county";
+  const kind = s.level === "high" ? "high schools" : `${s.level} schools`;
+  return s.countyRank !== null && s.countyCount !== null ? `${ordinal(s.countyRank)} of ${s.countyCount} ${kind} in county` : "";
+}
+
+/** "33 AP courses · 62% in AP · IB · 15% dual enrollment" */
+function apLine(s: School): string {
+  if (s.apCourses === 0) return "No AP courses";
+  return [
+    s.apCourses !== null && `${s.apCourses} AP courses`,
+    s.apShare !== null && `${Math.round(s.apShare)}% in AP`,
+    s.ib && "IB",
+    s.dualShare !== null && s.dualShare > 0 && `${Math.round(s.dualShare)}% dual enrollment`,
+  ].filter(Boolean).join(" · ");
+}
+
+function SubHead({ children }: { children: ReactNode }) {
+  return <p className="pt-1 text-caption font-medium text-neutral-500 dark:text-neutral-400">{children}</p>;
+}
+
 function Section({ title, tip, children }: { title: string; tip?: string; children: ReactNode }) {
   return (
     <section>
@@ -341,7 +382,7 @@ function MeasureRow({ k, value, flagged, extra }: { k: string; value: number | n
   );
 }
 
-function Stat({ k, value, flagged }: { k: string; value: number | null; flagged: boolean }) {
+function Stat({ k, text, flagged }: { k: string; text: string; flagged: boolean }) {
   const m = AREA_MEASURE.get(k);
   return (
     <div className="rounded-lg bg-neutral-100 px-3 py-2 dark:bg-neutral-900">
@@ -350,7 +391,7 @@ function Stat({ k, value, flagged }: { k: string; value: number | null; flagged:
         {m?.note && <InfoTip label={m.label}>{m.note}</InfoTip>}
       </dt>
       <dd className="mt-0.5 text-body font-semibold tabular-nums">
-        {formatArea(k, value)}
+        {text}
         <FlagMark on={flagged} />
       </dd>
     </div>

@@ -49,6 +49,7 @@ MEASURES = [
     ("commute_minutes", "commute min", "{:.0f}"),
     ("district_pctl", "school district pctl", "{:.0f}"),
     ("nearby_school_pctl", "nearby schools pctl", "{:.0f}"),
+    ("nearby_hs_pctl", "nearby high schools pctl", "{:.0f}"),
     ("violent_rate", "violent crime /100k", "{:,.0f}"),
     ("property_rate", "property crime /100k", "{:,.0f}"),
     ("dist_airport_mi", "to airport mi", "{:.1f}"),
