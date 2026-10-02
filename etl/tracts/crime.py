@@ -242,6 +242,11 @@ def county_agencies(county_fips: str) -> pd.DataFrame:
         serves = df["counties"].fillna("").map(lambda s: key in {_key(c) for c in s.split(",")})
         if st == "DC":  # one county; its police list the county as "NOT SPECIFIED"
             serves = df["agency_type"] == "City"
+        if st == "AK":
+            # Alaska's State Troopers police everywhere outside city police, reported as one
+            # statewide agency (county "NOT SPECIFIED"): each borough's leftover patrol, its
+            # statewide rate flagged as coarse.
+            serves = serves | ((df["agency_type"] == "State Police") & df["counties"].fillna("").str.contains("NOT SPECIFIED"))
         if st == "CT":
             # Planning regions replaced counties (2022) but the FBI still lists the old
             # counties; Connecticut has no sheriffs and town names are unique statewide.
@@ -257,7 +262,9 @@ def county_agencies(county_fips: str) -> pd.DataFrame:
     # A metropolitan department ("Las Vegas Metropolitan Police Department") is a merged
     # city-county force: noted before the name is cleaned.
     main, fallback = (d.assign(metro=d["agency_name"].astype(str).str.contains(r"\bMetro(politan)?\b", case=False),
-                               agency_name=d["agency_name"].where(d["agency_type"] != "State Police", county_label)
+                               agency_name=d["agency_name"].where(
+                                   (d["agency_type"] != "State Police")
+                                   | d["counties"].fillna("").str.contains("NOT SPECIFIED"), county_label)
                                .map(_without_county))
                       for d in (main, fallback))
     both = pd.concat([main, fallback]).sort_values(["months", "crime_year"], ascending=False)
@@ -370,6 +377,8 @@ def _display(a: pd.Series) -> str:
     if a["agency_type"] == "County+State Police":
         return f"{a['agency_name']} County (sheriff and State Police)"
     if a["agency_type"] == "State Police":
+        if str(a["agency_name"]).startswith("Alaska"):
+            return "Alaska State Troopers (statewide)"
         return f"State Police in {a['agency_name']} County"
     # Some files give the full name ("Fairfax County Police Department"): say which it is.
     if m := re.match(r"^(.*?)\s+County\s+(Police|Sheriff)", str(a["agency_name"]), re.I):
@@ -657,7 +666,8 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
         out.append({"geoid": g, "crime_agency": _display(a), "violent_rate": a["violent_rate"],
                     "property_rate": a["property_rate"], "crime_year": a["crime_year"],
                     "crime_months": a["crime_months"], "crime_population": a["crime_population"],
-                    "crime_county_low": a["agency_type"] in COUNTY_LEVEL and a["violent_rate"] < LOW_COUNTY_RATE})
+                    "crime_county_low": (a["agency_type"] in COUNTY_LEVEL and a["violent_rate"] < LOW_COUNTY_RATE)
+                                        or (st == "AK" and a["agency_type"] == "State Police")})
     # Same columns whether or not any agency reports (a few rural counties have none).
     df = pd.DataFrame(out).reindex(columns=["geoid", "crime_agency", "violent_rate", "property_rate", "crime_year",
                                             "crime_months", "crime_population", "crime_county_low"])

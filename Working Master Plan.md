@@ -1529,7 +1529,7 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                   Mexico, Georgia, Massachusetts, Oregon, Minnesota, Oklahoma, Mississippi,
                   South Carolina, West Virginia. With Texas, California, New York and Cook
                   County: 23 states live. Next: decide on the remaining 28 (incl. DC).
-            - [ ] **The rest, one by one** (owner, 2026-10-02: order mine; the owner runs the
+            - [x] **The rest, one by one** (owner, 2026-10-02: order mine; the owner runs the
                   refresh workflow after): IL, NC, NJ, AZ, TN, IN, WI, KY, AL, AR, IA, KS, NE,
                   NV, UT, CT, RI, NH, VT, ME, DE, DC, ID, MT, ND, SD, WY, HI, AK.
                   - IL: clean (crime 97.4%). NC: Charlotte's police are the joint
@@ -1574,6 +1574,13 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                   - ME 99.2%, DE 100%: clean. DC: its police are listed with county "NOT
                     SPECIFIED" — DC (one county) takes its agencies regardless (crime 0 → 100%).
                     SEDA has no DC district score: districts 0%, nearby schools 100%.
+                  - ID 99.3%, MT 98.7%, ND 100%: clean (rural high schools under 100 students
+                    or >15 mi away thin MT/SD/WY high-school coverage to ~88–90%). SD 89% and
+                    WY 89%: reservation counties are policed by tribal departments, which aren't
+                    matched to areas. HI: one statewide school district SEDA doesn't score
+                    (like DC). AK: no LODES after 2016 (now looks back 8 years; with none,
+                    downtowns use city points); the State Troopers are one statewide agency —
+                    each borough's leftover patrol, flagged as coarse (crime 60% → 100%).
             - [x] **First CI run (2026-10-02) failed, usefully.** FEMA answers GitHub's runners
                   with 403 (any user agent) for the NRI tract table, and the build then
                   crashed writing its report (no output folder on a fresh machine — fixed).
