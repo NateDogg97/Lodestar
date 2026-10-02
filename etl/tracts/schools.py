@@ -74,6 +74,7 @@ from __future__ import annotations
 
 import functools
 import io
+import re
 import sys
 import zipfile
 
@@ -83,6 +84,7 @@ import pandas as pd
 from .. import config
 from ..util import get_logger, haversine_miles, http_get
 from . import geo
+from .geo import STATE_ABBR
 
 log = get_logger("tracts.schools")
 
@@ -115,19 +117,43 @@ def _seda(path, id_col: str, width: int, extra: list[str]) -> pd.DataFrame:
 @functools.lru_cache(maxsize=1)
 def district_scores() -> pd.DataFrame:
     """id (7-digit NCES district id), score, pctl — every SEDA geographic district."""
-    d = _seda(SEDA_DISTRICT_FILE, "sedalea", 7, ["sedaleaname"])
+    d = _seda(SEDA_DISTRICT_FILE, "sedalea", 7, ["sedaleaname", "stateabb"])
     d["pctl"] = d["score"].rank(pct=True) * 100
-    return d[["id", "sedaleaname", "score", "pctl"]].rename(columns={"sedaleaname": "seda_name"})
+    return d[["id", "sedaleaname", "stateabb", "score", "pctl"]].rename(columns={"sedaleaname": "seda_name"})
 
 
 @functools.lru_cache(maxsize=1)
 def school_scores() -> pd.DataFrame:
     """id (12-digit NCES school id), level, score, pctl (within level) — every SEDA school."""
-    s = _seda(SEDA_SCHOOL_FILE, "sedasch", 12, ["gradecenter"])
+    s = _seda(SEDA_SCHOOL_FILE, "sedasch", 12, ["gradecenter", "sedaschname"])
     # SEDA tests grades 3–8; the tested-grade center tells elementary from middle.
     s["level"] = np.where(pd.to_numeric(s["gradecenter"], errors="coerce") < 6, "elementary", "middle")
     s["pctl"] = s.groupby("level")["score"].rank(pct=True) * 100
-    return s[["id", "level", "score", "pctl"]]
+    return s[["id", "sedaschname", "level", "score", "pctl"]]
+
+
+def _name_key(name: object) -> str:
+    n = re.sub(r"[^a-z0-9 ]", " ", str(name).lower())
+    n = re.sub(r"\b(school|sch|elementary|elem|el|middle|mid|ms|es|district|school district|sd|union|unified|"
+               r"supervisory|the|of)\b", " ", n)
+    return re.sub(r"\s+", " ", n).strip()
+
+
+def _rekey_by_name(scored: pd.DataFrame, locs: pd.DataFrame) -> pd.DataFrame:
+    """SEDA schools whose (older) NCES id isn't in the 2023–24 locations: matched by state
+    and name when exactly one current school has it. Vermont merged most districts in
+    2015–19 (Act 46) and a school's id embeds its district's, so half its schools had
+    moved ids (8c)."""
+    missing = ~scored["id"].isin(locs["id"])
+    if not missing.any():
+        return scored
+    loc_key = locs["id"].str[:2] + "|" + locs["name"].map(_name_key)
+    unique = loc_key[~loc_key.duplicated(keep=False)]
+    by_key = dict(zip(unique, locs.loc[unique.index, "id"]))
+    key = scored["id"].str[:2] + "|" + scored["sedaschname"].map(_name_key)
+    new = key.map(by_key)
+    fix = missing & new.notna() & ~new.isin(scored["id"])
+    return scored.assign(id=scored["id"].where(~fix, new))
 
 
 def _crdc_total(df: pd.DataFrame, stem: str) -> pd.Series:
@@ -246,6 +272,15 @@ def build(county_fips: str, tracts: pd.DataFrame) -> tuple[pd.DataFrame, pd.Data
         "district_name": [h["NAME"] if h else None for h in hit],
     })
     scores = district_scores()
+    # A 2019 boundary with no score whose name matches a scored district in the state
+    # (Vermont's merged unified districts): use that one.
+    unscored = out["district_id"].notna() & ~out["district_id"].isin(scores["id"])
+    if unscored.any():
+        st = STATE_ABBR[county_fips[:2]].upper()
+        here = scores[scores["stateabb"] == st]
+        by_name = dict(zip(here["seda_name"].map(_name_key), here["id"]))
+        alias = out.loc[unscored, "district_name"].map(_name_key).map(by_name)
+        out.loc[unscored, "district_id"] = alias.fillna(out.loc[unscored, "district_id"])
     out = out.merge(scores[["id", "score", "pctl"]].rename(columns={
         "id": "district_id", "score": "district_score", "pctl": "district_pctl"}), on="district_id", how="left")
     served = out.dropna(subset=["district_score"]).drop_duplicates("district_id")
@@ -254,7 +289,7 @@ def build(county_fips: str, tracts: pd.DataFrame) -> tuple[pd.DataFrame, pd.Data
     out["district_count"] = len(served)
 
     locs = school_locations()
-    scored = pd.concat([school_scores(), high_school_scores()], ignore_index=True)
+    scored = pd.concat([_rekey_by_name(school_scores(), locs), high_school_scores()], ignore_index=True)
     # Nearby means nearby, across county lines (Leander's high schools are in
     # Williamson County): every scored school within reach of the county's
     # tracts. County ranks are among the county's own schools only.

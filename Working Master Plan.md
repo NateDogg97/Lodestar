@@ -1564,6 +1564,13 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                     region failed. Tract numbers are unique statewide and unchanged:
                     `geo.current_geoids` translates; crime matches CT's towns statewide (no
                     sheriffs since 2000). All 9 regions built, crime 93.5%.
+                  - RI 99.6%, NH 100%: clean. VT: half its schools had no location — a school's
+                    NCES id embeds its district's, and Vermont merged most districts in
+                    2015–19, so SEDA's (older) ids weren't in the 2023–24 locations. Unmatched
+                    schools now match by state + name when exactly one current school has it;
+                    unscored 2019 districts by name too. VT schools 50% → 100%, districts 69% →
+                    91%. Nationally it recovers 1,623 of 6,430 unmatched schools (mostly NYC,
+                    whose citywide district id was split by borough; New Orleans charters).
             - [x] **First CI run (2026-10-02) failed, usefully.** FEMA answers GitHub's runners
                   with 403 (any user agent) for the NRI tract table, and the build then
                   crashed writing its report (no output folder on a fresh machine — fixed).
