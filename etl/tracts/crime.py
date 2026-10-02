@@ -248,7 +248,10 @@ def county_agencies(county_fips: str) -> pd.DataFrame:
                           spine.loc[spine["fips"] == county_fips, "county_name"].iloc[0])
     # New Jersey tells same-named townships apart with a county ("Washington Township,
     # Gloucester County"): drop it so the name matches the township.
-    main, fallback = (d.assign(agency_name=d["agency_name"].where(d["agency_type"] != "State Police", county_label)
+    # A metropolitan department ("Las Vegas Metropolitan Police Department") is a merged
+    # city-county force: noted before the name is cleaned.
+    main, fallback = (d.assign(metro=d["agency_name"].astype(str).str.contains(r"\bMetro(politan)?\b", case=False),
+                               agency_name=d["agency_name"].where(d["agency_type"] != "State Police", county_label)
                                .map(_without_county))
                       for d in (main, fallback))
     both = pd.concat([main, fallback]).sort_values(["months", "crime_year"], ascending=False)
@@ -567,7 +570,8 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
     # is its patrol too, where no sheriff reports usable numbers.
     if sheriff is None and len(cities):
         biggest = cities.sort_values("crime_population", ascending=False).iloc[0]
-        if biggest["crime_population"] >= 0.75 * population["population"].fillna(0).sum():
+        merged = bool(biggest.get("metro", False))  # Las Vegas Metro: 74% of Clark County
+        if merged or biggest["crime_population"] >= 0.75 * population["population"].fillna(0).sum():
             sheriff = biggest
     from_tables: set[str] = set()
 

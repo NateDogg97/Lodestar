@@ -1554,6 +1554,10 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                     518 property per 100k) was dropped by the violent floor — low violent crime
                     alone can be real, so that floor now needs low property crime too (only
                     Sarpy and Orland Park, IL come back).
+                  - NV: Las Vegas Metropolitan PD is the city's police and unincorporated
+                    Clark County's (Paradise, Spring Valley…) — a "Metropolitan"/"Metro"
+                    department is its county's patrol where no sheriff reports (Clark 55% →
+                    100%).
             - [x] **First CI run (2026-10-02) failed, usefully.** FEMA answers GitHub's runners
                   with 403 (any user agent) for the NRI tract table, and the build then
                   crashed writing its report (no output folder on a fresh machine — fixed).
