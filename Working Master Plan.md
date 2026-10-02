@@ -1571,6 +1571,9 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                     unscored 2019 districts by name too. VT schools 50% → 100%, districts 69% →
                     91%. Nationally it recovers 1,623 of 6,430 unmatched schools (mostly NYC,
                     whose citywide district id was split by borough; New Orleans charters).
+                  - ME 99.2%, DE 100%: clean. DC: its police are listed with county "NOT
+                    SPECIFIED" — DC (one county) takes its agencies regardless (crime 0 → 100%).
+                    SEDA has no DC district score: districts 0%, nearby schools 100%.
             - [x] **First CI run (2026-10-02) failed, usefully.** FEMA answers GitHub's runners
                   with 403 (any user agent) for the NRI tract table, and the build then
                   crashed writing its report (no output folder on a fresh machine — fixed).
