@@ -1535,6 +1535,10 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                   - IL: clean (crime 97.4%). NC: Charlotte's police are the joint
                     "Charlotte-Mecklenburg" department — a "City-County" agency now answers to
                     the city's name and is the county's patrol (Mecklenburg 14% → 100%).
+                  - NJ: the FBI names same-named townships with their county ("Washington
+                    Township, Gloucester County") — that suffix is now dropped before matching
+                    (crime 89.5% → 93.5%). Rural Salem/Sussex/Warren (State Police, one
+                    statewide row with no counts) stay ~70%.
             - [x] **First CI run (2026-10-02) failed, usefully.** FEMA answers GitHub's runners
                   with 403 (any user agent) for the NRI tract table, and the build then
                   crashed writing its report (no output folder on a fresh machine — fixed).

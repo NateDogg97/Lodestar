@@ -102,6 +102,10 @@ def _ascii(name: str) -> str:
     return unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode()
 
 
+def _without_county(name: object) -> object:
+    return re.sub(r",\s*[^,]+\s+County$", "", name).strip() if isinstance(name, str) else name
+
+
 def _key(name: str) -> str:
     """County names compared without case, spaces or punctuation ("DE WITT" = "DeWitt")."""
     name = re.sub(r"\s+(County|Parish|Borough|Census Area|Municipality|City and Borough)$", "", name.strip(), flags=re.I)
@@ -233,7 +237,10 @@ def county_agencies(county_fips: str) -> pd.DataFrame:
     # "State Police: State Police" names nothing; name it after the county it covers here.
     county_label = re.sub(r"\s+(County|Parish|Borough|Census Area|Municipality|City and Borough)$", "",
                           spine.loc[spine["fips"] == county_fips, "county_name"].iloc[0])
-    main, fallback = (d.assign(agency_name=d["agency_name"].where(d["agency_type"] != "State Police", county_label))
+    # New Jersey tells same-named townships apart with a county ("Washington Township,
+    # Gloucester County"): drop it so the name matches the township.
+    main, fallback = (d.assign(agency_name=d["agency_name"].where(d["agency_type"] != "State Police", county_label)
+                               .map(_without_county))
                       for d in (main, fallback))
     both = pd.concat([main, fallback]).sort_values(["months", "crime_year"], ascending=False)
     df = both.drop_duplicates("ori").copy()
@@ -445,6 +452,8 @@ def _from_tables(st: str, years: tuple[int, int], key: str, kind: str | None = N
     the newest year that has it."""
     for year in years:
         cities, sheriffs = cius(year)
+        cities = cities.assign(agency_name=cities["agency_name"].map(_without_county))
+        cities = cities.assign(key=cities["agency_name"].map(_norm))
         if county_key is None:
             m = cities[(cities["st"] == st) & (cities["key"] == key)]
             m = m.loc[m["agency_name"].map(lambda n: _kind(n) == kind if full_name else _compatible(_kind(n), kind or ""))
