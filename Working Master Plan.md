@@ -5,7 +5,7 @@
 > If something here conflicts with what you actually built, the code is right and this file is
 > stale — fix the file.
 >
-> Last updated: 2026-10-01
+> Last updated: 2026-10-02
 >
 > **Changelog**
 > - 2026-10-01 — **8c Texas rehearsal done.** The tract ETL builds a whole state in one run
@@ -1333,12 +1333,18 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
             - [x] `python -m etl.tracts.upload` syncs `public/data/tracts/` to the bucket under
                   `tracts/` (changed files only, by MD5; `index.json` last); `--cors` lets the
                   app's origins read it. Credentials `R2_*` in `etl/.env`.
-            - [ ] Domain: **data.lodestarmap.com** as an R2 custom domain, which needs the
+            - [x] Domain: **data.lodestarmap.com** as an R2 custom domain, which needs the
                   domain's DNS on Cloudflare (owner chose to move it from Namecheap,
                   2026-10-01; the registration stays at Namecheap). Namecheap's email
                   forwarding stops with the move: use Cloudflare Email Routing if it's needed.
-            - [ ] Vercel: `NEXT_PUBLIC_DATA_URL=https://data.lodestarmap.com` (inlined at build
+            - [x] Vercel: `NEXT_PUBLIC_DATA_URL=https://data.lodestarmap.com` (inlined at build
                   time, so set it before the deploy), then push main.
+            - [x] Uploaded Texas + Cook County (511 files, 9 MB), deployed 2026-10-02.
+            - [ ] Bucket CORS rule (GET/HEAD from www.lodestarmap.com, lodestarmap.com,
+                  localhost:3000): set in the dashboard — the object token can't. Until
+                  then browsers can't read the files and "Explore inside" stays hidden.
+            - [ ] Apex and www are proxied (orange cloud) since the DNS move; Vercel advises
+                  DNS only. Works today; switch if Vercel shows certificate or redirect issues.
       - [ ] National run.
 - [ ] **8d — Extras, as wanted.** CDC PLACES health, OSM amenities (parks, groceries),
       neighborhood names beyond Zillow's cities.
