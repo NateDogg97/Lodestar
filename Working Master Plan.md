@@ -1330,6 +1330,15 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
       - [ ] **R2 hosting first** (owner, 2026-10-01): move the tract files to Cloudflare R2
             and ship to production with what's built (Texas + Cook County), then run the
             rest of the country.
+            - [x] `python -m etl.tracts.upload` syncs `public/data/tracts/` to the bucket under
+                  `tracts/` (changed files only, by MD5; `index.json` last); `--cors` lets the
+                  app's origins read it. Credentials `R2_*` in `etl/.env`.
+            - [ ] Domain: **data.lodestarmap.com** as an R2 custom domain, which needs the
+                  domain's DNS on Cloudflare (owner chose to move it from Namecheap,
+                  2026-10-01; the registration stays at Namecheap). Namecheap's email
+                  forwarding stops with the move: use Cloudflare Email Routing if it's needed.
+            - [ ] Vercel: `NEXT_PUBLIC_DATA_URL=https://data.lodestarmap.com` (inlined at build
+                  time, so set it before the deploy), then push main.
       - [ ] National run.
 - [ ] **8d — Extras, as wanted.** CDC PLACES health, OSM amenities (parks, groceries),
       neighborhood names beyond Zillow's cities.

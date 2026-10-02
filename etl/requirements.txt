@@ -23,3 +23,5 @@ python-dotenv>=1.0
 shapely>=2.0,<3
 # Phase 8: reads EPA's walkability geodatabase (attributes only; bundles GDAL).
 pyogrio>=0.10
+# Phase 8c: uploads tract files to Cloudflare R2 (S3-compatible API; tracts/upload.py).
+boto3>=1.34

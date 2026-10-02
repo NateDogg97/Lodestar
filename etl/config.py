@@ -66,8 +66,8 @@ BEA_API_KEY = os.environ.get("BEA_API_KEY", "").strip()
 # Free: https://data.bls.gov/registrationEngine/ . Without it BLS allows only
 # 25 requests/day, not enough for 3,144 counties (sources/bls.py).
 BLS_API_KEY = os.environ.get("BLS_API_KEY", "").strip()
-# Free: https://api.data.gov/signup/ . FBI Crime Data Explorer (Phase 8,
-# tracts/crime.py); without it the shared DEMO_KEY allows 30 requests/hour.
+# Free: https://api.data.gov/signup/ . Unused since 8c (tracts/crime.py reads the
+# FBI's bulk files); kept for ad-hoc CDE API queries.
 DATA_GOV_API_KEY = os.environ.get("DATA_GOV_API_KEY", "").strip()
 
 
