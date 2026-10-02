@@ -194,6 +194,7 @@ def build_state(st: str, with_crime: bool, force: bool, only: list[str] | None =
     if failed:
         report = pd.concat([report, pd.DataFrame(failed)], ignore_index=True)
     path = config.TRACT_OUT_DIR / f"_coverage_{st.upper()}.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)  # a fresh machine whose first county failed
     report.to_csv(path, index=False)
     log.info("%s done in %.0f min: %d built, %d failed -> %s", st.upper(), (time.time() - started) / 60,
              len(rows), len(failed), path.name)

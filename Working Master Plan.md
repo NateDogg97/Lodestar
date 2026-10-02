@@ -1408,6 +1408,14 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                     reported under their own name: the label is now the jurisdiction
                     ("Reported for Santa Clarita"), not "… Police".
                   - Not yet published: waiting for the first CI test run to finish.
+            - [x] **First CI run (2026-10-02) failed, usefully.** FEMA answers GitHub's runners
+                  with 403 (any user agent) for the NRI tract table, and the build then
+                  crashed writing its report (no output folder on a fresh machine — fixed).
+                  Fix: **mirrors** — `util.http_get` falls back to `mirror/{cache file}` in
+                  the private bucket when a download fails; `python -m etl.inputs mirror`
+                  pushes the copies listed in `inputs.MIRRORED` (now: the NRI tract table,
+                  635 MB). Tested by simulating FEMA's 403. Re-push when FEMA publishes a new
+                  NRI version. Other sources may refuse CI too: each run will say.
 - [ ] **8d — Extras, as wanted.** CDC PLACES health, OSM amenities (parks, groceries),
       neighborhood names beyond Zillow's cities.
 - [ ] **8e — Filters and must-haves inside the county.** Decide after 8b, with the data on

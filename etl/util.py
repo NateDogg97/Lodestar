@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
 import logging
 import re
 import sys
@@ -198,11 +199,44 @@ def http_get(
             time.sleep(delay)
             delay *= 2
 
+    # Some publishers refuse cloud machines outright (FEMA answers GitHub's
+    # runners with 403 whatever the user agent). The private R2 bucket can hold
+    # a copy of such a file, pushed from a machine that can reach the source
+    # (`python -m etl.inputs mirror`): use it, loudly, rather than fail.
+    mirrored = _from_mirror(cache_file, check)
+    if mirrored is not None:
+        log.warning("%s refused us (%s): using the mirrored copy %s", url, last_error, cache_file.name)
+        payload = mirrored if binary else mirrored.decode("utf-8")
+        return payload
+
     # `from None`: chaining the original exception would print its unredacted
     # message in the traceback. The redacted text is carried in this one.
     raise RuntimeError(
         f"GET failed after {config.HTTP_MAX_RETRIES} attempts: {url} — last error: {last_error}"
     ) from None
+
+
+def _from_mirror(cache_file: Path, check: Callable[[Any], None] | None) -> bytes | None:
+    """The mirrored copy of a download (R2 inputs bucket, mirror/{cache file name}), cached; or None."""
+    if not os.environ.get("R2_INPUTS_BUCKET", "").strip():
+        return None
+    try:
+        from . import r2
+
+        s3, bucket = r2.client("R2_INPUTS_BUCKET")
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        s3.download_file(bucket, f"mirror/{cache_file.name}", str(cache_file))
+    except Exception as exc:  # noqa: BLE001 — no mirror (or no access) is just "not available"
+        log.info("no mirrored copy of %s (%s)", cache_file.name, type(exc).__name__)
+        cache_file.unlink(missing_ok=True)
+        return None
+    body = cache_file.read_bytes()
+    try:
+        _reject_if_unusable(body if cache_file.suffix == ".bin" else body.decode("utf-8"), check)
+    except BadResponse:
+        cache_file.unlink(missing_ok=True)
+        return None
+    return body
 
 
 def _reject_if_unusable(payload: Any, check: Callable[[Any], None] | None) -> None:
