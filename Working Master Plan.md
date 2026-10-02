@@ -1500,7 +1500,13 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                   PD is in neither FBI source for 2024 or 2025: the yearly tables now reach
                   one year further back (2023) for agencies silent since — shown with its year
                   and always flagged. (2023's tables are named without "CIUS_" and write
-                  "ALABAMA - Metropolitan Counties": both handled.) Crime 82.6% → see below.
+                  "ALABAMA - Metropolitan Counties": both handled.) Crime 98.2%.
+            - [x] **New Mexico** (2026-10-02, published): 33 counties, 612 tracts. Doña Ana
+                  (Las Cruces) had no crime: name matching dropped the "ñ" ("DOAANA" vs the
+                  FBI's "DONA ANA") — accents are now folded. Crime 90.7%. Hobbs and Roswell
+                  school districts didn't submit to CRDC 2023–24, so Lea/Chaves high schools
+                  are thin (33–35%). Open: fall back to CRDC 2021–22 for districts missing
+                  from 2023–24.
             - [ ] **Queue** (owner, 2026-10-02): Florida, Pennsylvania, Virginia, Washington,
                   Michigan, Maryland, Colorado, Ohio, Missouri, Louisiana, New Mexico,
                   Georgia, Massachusetts, Oregon, Minnesota, Oklahoma, Mississippi,

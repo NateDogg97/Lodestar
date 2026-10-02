@@ -71,6 +71,7 @@ import re
 from datetime import date
 import sys
 import time
+import unicodedata
 import zipfile
 
 import numpy as np
@@ -96,10 +97,15 @@ PROPERTY = {"220", "23A", "23B", "23C", "23D", "23E", "23F", "23G", "23H", "240"
 PER_OFFENSE = {"120"}  # robbery counts once per offense; the other violent crimes once per victim
 
 
+def _ascii(name: str) -> str:
+    """Accents folded, not dropped: Census writes "Doña Ana", the FBI "DONA ANA"."""
+    return unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode()
+
+
 def _key(name: str) -> str:
     """County names compared without case, spaces or punctuation ("DE WITT" = "DeWitt")."""
     name = re.sub(r"\s+(County|Parish|Borough|Census Area|Municipality|City and Borough)$", "", name.strip(), flags=re.I)
-    return re.sub(r"[^A-Z]", "", name.upper())
+    return re.sub(r"[^A-Z]", "", _ascii(name).upper())
 
 
 def _signed_url(st: str, year: int) -> str | None:
@@ -374,13 +380,13 @@ TOWN_MATCH_MAX_RATIO = 2.0
 
 def _norm(name: str) -> str:
     """Agency and place names compared without case, punctuation or a civil-division suffix."""
-    n = re.sub(r"[^a-z ]", "", str(name).lower()).strip()
+    n = re.sub(r"[^a-z ]", "", _ascii(name).lower()).strip()
     return _SUFFIX.sub("", n).strip()
 
 
 def _kind(name: str) -> str | None:
     """The civil-division word an agency name ends with ("Hempstead Village" -> village), if any."""
-    m = _SUFFIX.search(re.sub(r"[^a-z ]", "", str(name).lower()).strip())
+    m = _SUFFIX.search(re.sub(r"[^a-z ]", "", _ascii(name).lower()).strip())
     return None if m is None else "township" if "township" in m.group(1) else m.group(1)
 
 
