@@ -103,7 +103,15 @@ def _ascii(name: str) -> str:
 
 
 def _without_county(name: object) -> object:
-    return re.sub(r",\s*[^,]+\s+County$", "", name).strip() if isinstance(name, str) else name
+    """The jurisdiction's name: without the county New Jersey adds to same-named townships,
+    and without "Metropolitan … Police Department" ("Metropolitan Nashville Police
+    Department" -> "Nashville")."""
+    if not isinstance(name, str):
+        return name
+    n = re.sub(r",\s*[^,]+\s+County$", "", name).strip()
+    n = re.sub(r"\s+(Police Department|Police Dept\.?|Department of Public Safety|Public Safety Department)$", "",
+               n, flags=re.I)
+    return re.sub(r"^(Metropolitan|Metro)\s+", "", n, flags=re.I).strip()
 
 
 def _key(name: str) -> str:
@@ -559,6 +567,9 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
         if area is None:
             return None
         name, kind, governed = area
+        # "Nashville-Davidson": a consolidated city named with its county answers to the city.
+        if "-" in name and _key(name.split("-", 1)[1]) == _key(county_name) and _norm(name) not in by_name:
+            name = name.split("-", 1)[0]
         k = _norm(name)
         found = sorted((a for a in by_name.get(k, []) if _compatible(_kind(a["agency_name"]), kind)),
                        key=lambda a: _kind(a["agency_name"]) != kind)

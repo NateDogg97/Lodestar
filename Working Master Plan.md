@@ -1539,6 +1539,11 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                     Township, Gloucester County") — that suffix is now dropped before matching
                     (crime 89.5% → 93.5%). Rural Salem/Sussex/Warren (State Police, one
                     statewide row with no counts) stay ~70%.
+                  - AZ: clean (94.2%; Maricopa's sheriff doesn't report). TN: Nashville's
+                    police are "Metropolitan Nashville Police Department" and its place
+                    "Nashville-Davidson" — agency names lose "Metropolitan … Police
+                    Department", and a place named "City-County" answers to the city
+                    (Davidson 2% → 98%; TN 99.5%).
             - [x] **First CI run (2026-10-02) failed, usefully.** FEMA answers GitHub's runners
                   with 403 (any user agent) for the NRI tract table, and the build then
                   crashed writing its report (no output folder on a fresh machine — fixed).
