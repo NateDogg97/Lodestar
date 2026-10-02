@@ -498,7 +498,10 @@ def _plausible(a: pd.Series | None) -> bool:
     pop, rate, prop = a.get("crime_population"), a.get("violent_rate"), a.get("property_rate")
     if pd.isna(pop):
         return True
-    too_safe = pop >= IMPLAUSIBLE_POP and pd.notna(rate) and rate < IMPLAUSIBLE_RATE
+    # Very low violent crime alone can be real (Sarpy County, NE suburbs: 17/100k, with 518
+    # property crimes): only with little property crime too is it a sliver of a county.
+    too_safe = (pop >= IMPLAUSIBLE_POP and pd.notna(rate) and rate < IMPLAUSIBLE_RATE
+                and not (pd.notna(prop) and prop >= 500))
     too_quiet = pop >= IMPLAUSIBLE_PROPERTY_POP and pd.notna(prop) and prop < IMPLAUSIBLE_PROPERTY
     nothing = pop >= 5_000 and prop == 0  # a year without one theft: not reporting (Reading Twp, PA)
     return not (too_safe or too_quiet or nothing)

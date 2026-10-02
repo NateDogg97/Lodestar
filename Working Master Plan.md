@@ -1549,6 +1549,11 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                     (suffix) and place "Louisville/Jefferson County" handled; a city agency
                     serving ≥75% of its county's people is the county's patrol where no
                     sheriff reports (Jefferson 12% → 100%; KY 94.8%).
+                  - AL 98.7%, AR 99.6%, IA 95.8%, KS 98.5%: clean (Selma, AL high schools
+                    missing from CRDC like Hobbs). NE: Sarpy County's sheriff (17 violent but
+                    518 property per 100k) was dropped by the violent floor — low violent crime
+                    alone can be real, so that floor now needs low property crime too (only
+                    Sarpy and Orland Park, IL come back).
             - [x] **First CI run (2026-10-02) failed, usefully.** FEMA answers GitHub's runners
                   with 403 (any user agent) for the NRI tract table, and the build then
                   crashed writing its report (no output folder on a fresh machine — fixed).
