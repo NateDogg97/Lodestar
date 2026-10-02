@@ -6,7 +6,8 @@ Build tract tables (plan §9 Phase 8).
     python -m etl.tracts.build --state TX               # every county in a state
     python -m etl.tracts.build --state TX --no-crime    # skip crime
     python -m etl.tracts.build --state TX --force       # rebuild counties already built
-    python -m etl.tracts.build --state all              # the whole country (or --state TX,OK,NM)
+    python -m etl.tracts.build --state TX,OK            # several states
+    python -m etl.tracts.build --state published        # exactly what the app has now (monthly CI)
 
 Per county, writes to data/out/tracts/:
     {fips}.csv         one row per tract: every column from the sources, plus
@@ -142,15 +143,34 @@ def ensure_prereqs() -> None:
             raise SystemExit(f"could not build data/interim/{name}.csv")
 
 
-def states(arg: str) -> list[str]:
-    if arg.lower() == "all":
-        return sorted(read_interim("spine")["state"].unique())
-    return [st.strip().upper() for st in arg.split(",") if st.strip()]
+def plan(arg: str) -> dict[str, list[str] | None]:
+    """State -> the counties to build (None: all of them).
 
-
-def build_state(st: str, with_crime: bool, force: bool) -> None:
+    "all" is every state; "published" is exactly the counties in the app's
+    index.json (public/data/tracts/, which CI first copies from the live site):
+    the monthly refresh rebuilds what's live and nothing more — new states are
+    added deliberately, one at a time (owner, 2026-10-02).
+    """
     spine = read_interim("spine")
-    counties = sorted(spine.loc[spine["state"] == st.upper(), "fips"])
+    if arg.lower() == "all":
+        return {st: None for st in sorted(spine["state"].unique())}
+    if arg.lower() == "published":
+        import json
+
+        from .publish import PUBLISH_DIR
+
+        index = PUBLISH_DIR / "index.json"
+        if not index.exists():
+            raise SystemExit(f"--state published: no {index}")
+        live = set(json.loads(index.read_text())["counties"])
+        by_state = spine[spine["fips"].isin(live)].groupby("state")["fips"].apply(sorted)
+        return {st: list(f) for st, f in by_state.items()}
+    return {st.strip().upper(): None for st in arg.split(",") if st.strip()}
+
+
+def build_state(st: str, with_crime: bool, force: bool, only: list[str] | None = None) -> None:
+    spine = read_interim("spine")
+    counties = only or sorted(spine.loc[spine["state"] == st.upper(), "fips"])
     log.info("%s: %d counties%s", st.upper(), len(counties), "" if with_crime else " (no crime)")
     rows, failed = [], []
     started = time.time()
@@ -183,16 +203,16 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--county", action="append", default=[], help="5-digit county FIPS (repeatable)")
     ap.add_argument("--pilot", action="store_true", help="build the Phase 8a pilot counties")
-    ap.add_argument("--state", help="two-letter state(s), comma-separated, or 'all': build every county")
+    ap.add_argument("--state", help="two-letter state(s), comma-separated; 'published' (the counties live in the app); or 'all'")
     ap.add_argument("--no-crime", action="store_true", help="skip FBI crime data")
     ap.add_argument("--force", action="store_true", help="with --state: rebuild counties already built")
     args = ap.parse_args()
     ensure_prereqs()
     if args.state:
-        todo = states(args.state)
+        todo = plan(args.state)
         started = time.time()
-        for st in todo:
-            build_state(st, with_crime=not args.no_crime, force=args.force)
+        for st, only in todo.items():
+            build_state(st, with_crime=not args.no_crime, force=args.force, only=only)
         if len(todo) > 1:
             log.info("%d states in %.0f min", len(todo), (time.time() - started) / 60)
         return

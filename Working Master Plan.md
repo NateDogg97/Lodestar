@@ -1386,7 +1386,11 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
             - [ ] Owner: create the private bucket, give the token access to both, add the
                   Actions secrets; `python -m etl.inputs push`; run the workflow with `RI`.
             - The laws workflow needs no change: laws live in git, not R2.
-      - [ ] National run: the workflow with `states: all`.
+      - [ ] **State by state, not all at once** (owner, 2026-10-02): add states one at a
+            time, fix what each one reveals, and run the rest together only once confident.
+            The monthly schedule rebuilds exactly the live counties (`--state published`);
+            a new state is built deliberately (locally, or the workflow with `states: CA`).
+            Next: California.
 - [ ] **8d — Extras, as wanted.** CDC PLACES health, OSM amenities (parks, groceries),
       neighborhood names beyond Zillow's cities.
 - [ ] **8e — Filters and must-haves inside the county.** Decide after 8b, with the data on

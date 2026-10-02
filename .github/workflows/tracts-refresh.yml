@@ -10,8 +10,10 @@
 # fails the run before the upload, and GitHub emails the repo owner. A county
 # that fails keeps its previous files: the index is merged, never replaced.
 #
-# Run it by hand from the Actions tab ("Run workflow"); `states` takes "all",
-# or e.g. "RI" or "TX,OK" for a quick test.
+# The schedule refreshes exactly the counties already live ("published"): new
+# states are added one at a time, deliberately (owner, 2026-10-02) — by hand
+# from the Actions tab ("Run workflow", `states` = e.g. "CA" or "TX,OK"), or
+# locally. "all" exists for when every state has been through that.
 #
 # Secrets: CENSUS_API_KEY; R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
 # (a token with Object Read & Write on both buckets); R2_BUCKET (public data),
@@ -25,8 +27,8 @@ on:
   workflow_dispatch:
     inputs:
       states:
-        description: 'States to rebuild: "all", or e.g. "RI" / "TX,OK"'
-        default: all
+        description: 'What to rebuild: "published" (what is live), a state or list ("CA", "TX,OK"), or "all"'
+        default: published
         required: true
 
 permissions:
@@ -77,10 +79,17 @@ jobs:
       - name: Fetch manual source files (private bucket)
         run: python -m etl.inputs pull
 
+      # The live index: what "published" rebuilds, and the base the new index
+      # is merged into, so counties not rebuilt this run (or that fail) stay.
+      - name: Fetch the live index
+        run: |
+          mkdir -p public/data/tracts
+          curl -fsS "$DATA_URL/tracts/index.json" -o public/data/tracts/index.json || echo "no live index yet"
+
       - name: Build
         env:
           CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}
-        run: python -m etl.tracts.build --state "${{ inputs.states || 'all' }}"
+        run: python -m etl.tracts.build --state "${{ inputs.states || 'published' }}"
 
       - name: Quality gate
         run: |
@@ -91,13 +100,8 @@ jobs:
           cat check.md >> "$GITHUB_STEP_SUMMARY"
           exit $code
 
-      # Start from the live index so counties not rebuilt this run (a test of
-      # one state, or a county that failed) stay explorable.
       - name: Publish
-        run: |
-          mkdir -p public/data/tracts
-          curl -fsS "$DATA_URL/tracts/index.json" -o public/data/tracts/index.json || echo "no live index yet"
-          python -m etl.tracts.publish
+        run: python -m etl.tracts.publish
 
       - name: Upload to R2
         run: python -m etl.tracts.upload
