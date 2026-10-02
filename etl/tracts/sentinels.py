@@ -41,6 +41,7 @@ SENTINELS = {
     "54045": "Logan, WV — State Police with no population, sheriff with it: combined",
     "37119": "Mecklenburg, NC — joint city-county police (Charlotte-Mecklenburg)",
     "47037": "Davidson, TN — 'Metropolitan Nashville Police Department' vs 'Nashville-Davidson'",
+    "21111": "Jefferson, KY — 'Louisville Metro' covers nearly all the county",
 }
 CRIME = ["crime_agency", "violent_rate", "property_rate", "crime_year", "crime_months", "crime_population"]
 

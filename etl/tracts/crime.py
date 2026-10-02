@@ -111,7 +111,8 @@ def _without_county(name: object) -> object:
     n = re.sub(r",\s*[^,]+\s+County$", "", name).strip()
     n = re.sub(r"\s+(Police Department|Police Dept\.?|Department of Public Safety|Public Safety Department)$", "",
                n, flags=re.I)
-    return re.sub(r"^(Metropolitan|Metro)\s+", "", n, flags=re.I).strip()
+    n = re.sub(r"^(Metropolitan|Metro)\s+", "", n, flags=re.I)
+    return re.sub(r"\s+(Metropolitan|Metro)$", "", n, flags=re.I).strip()  # "Louisville Metro"
 
 
 def _key(name: str) -> str:
@@ -559,6 +560,12 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
             "violent": g["violent"].sum(), "property": g["property"].sum()}))
     if sheriff is None and joint is not None:
         sheriff = joint
+    # A metro department serving nearly all the county (Louisville Metro: 692k of ~780k)
+    # is its patrol too, where no sheriff reports usable numbers.
+    if sheriff is None and len(cities):
+        biggest = cities.sort_values("crime_population", ascending=False).iloc[0]
+        if biggest["crime_population"] >= 0.75 * population["population"].fillna(0).sum():
+            sheriff = biggest
     from_tables: set[str] = set()
 
     def lookup(area: tuple[str, str, bool] | None, town: bool = False) -> pd.Series | None:
@@ -568,8 +575,9 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
             return None
         name, kind, governed = area
         # "Nashville-Davidson": a consolidated city named with its county answers to the city.
-        if "-" in name and _key(name.split("-", 1)[1]) == _key(county_name) and _norm(name) not in by_name:
-            name = name.split("-", 1)[0]
+        parts = re.split(r"[-/]", name, maxsplit=1)  # also "Louisville/Jefferson County"
+        if len(parts) == 2 and _key(parts[1]) == _key(county_name) and _norm(name) not in by_name:
+            name = parts[0]
         k = _norm(name)
         found = sorted((a for a in by_name.get(k, []) if _compatible(_kind(a["agency_name"]), kind)),
                        key=lambda a: _kind(a["agency_name"]) != kind)

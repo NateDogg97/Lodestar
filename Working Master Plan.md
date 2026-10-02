@@ -1544,6 +1544,11 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                     "Nashville-Davidson" — agency names lose "Metropolitan … Police
                     Department", and a place named "City-County" answers to the city
                     (Davidson 2% → 98%; TN 99.5%).
+                  - IN: clean (88%; many sheriffs report a sliver — Bartholomew: 23 property
+                    crimes for 32,820 — dropped). WI: clean (98.5%). KY: "Louisville Metro"
+                    (suffix) and place "Louisville/Jefferson County" handled; a city agency
+                    serving ≥75% of its county's people is the county's patrol where no
+                    sheriff reports (Jefferson 12% → 100%; KY 94.8%).
             - [x] **First CI run (2026-10-02) failed, usefully.** FEMA answers GitHub's runners
                   with 403 (any user agent) for the NRI tract table, and the build then
                   crashed writing its report (no output folder on a fresh machine — fixed).
