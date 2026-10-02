@@ -97,6 +97,8 @@ def _zcta_relationship() -> pd.DataFrame:
 
 def _zips(county_fips: str) -> pd.Series:
     rel = _zcta_relationship()
+    if county_fips.startswith("09"):  # Connecticut planning regions (geo.current_geoids)
+        rel = rel[rel["GEOID_TRACT_20"].str[:2] == "09"].assign(GEOID_TRACT_20=lambda d: geo.current_geoids(d["GEOID_TRACT_20"]))
     rel = rel[(rel["GEOID_TRACT_20"].str[:5] == county_fips) & rel["GEOID_ZCTA5_20"].notna()].copy()
     rel["land"] = pd.to_numeric(rel["AREALAND_PART"], errors="coerce").fillna(0)
     best = rel.sort_values("land", ascending=False).drop_duplicates("GEOID_TRACT_20")

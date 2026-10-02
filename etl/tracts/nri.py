@@ -62,6 +62,11 @@ def _national() -> pd.DataFrame:
 
 def fetch(county_fips: str) -> pd.DataFrame:
     nat = _national()
+    if county_fips.startswith("09"):  # Connecticut: NRI is on 2020 counties (geo.current_geoids)
+        from .geo import current_geoids
+
+        nat = nat[nat["STCOFIPS"].str[:2] == "09"].assign(TRACTFIPS=lambda d: current_geoids(d["TRACTFIPS"]))
+        nat = nat.assign(STCOFIPS=nat["TRACTFIPS"].str[:5])
     table = nat[nat["STCOFIPS"] == county_fips].reset_index(drop=True)
 
     out = pd.DataFrame({"geoid": table["TRACTFIPS"].str.zfill(11)})

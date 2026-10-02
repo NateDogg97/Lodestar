@@ -1558,6 +1558,12 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                     Clark County's (Paradise, Spring Valley…) — a "Metropolitan"/"Metro"
                     department is its county's patrol where no sheriff reports (Clark 55% →
                     100%).
+                  - UT: clean (99.3%). CT: replaced its 8 counties with 9 planning regions in
+                    2022 (09110–09190); tract shapes and ACS use them, but population centers,
+                    NRI, walkability, ZIPs, LODES and the FBI are on 2020 codes, so every
+                    region failed. Tract numbers are unique statewide and unchanged:
+                    `geo.current_geoids` translates; crime matches CT's towns statewide (no
+                    sheriffs since 2000). All 9 regions built, crime 93.5%.
             - [x] **First CI run (2026-10-02) failed, usefully.** FEMA answers GitHub's runners
                   with 403 (any user agent) for the NRI tract table, and the build then
                   crashed writing its report (no output folder on a fresh machine — fixed).

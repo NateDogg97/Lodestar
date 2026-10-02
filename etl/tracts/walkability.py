@@ -86,6 +86,10 @@ def _relationship() -> pd.DataFrame:
 
 def fetch(county_fips: str) -> pd.DataFrame:
     rel = _relationship()
+    if county_fips.startswith("09"):  # Connecticut planning regions (geo.current_geoids)
+        from .geo import current_geoids
+
+        rel = rel[rel["GEOID_TRACT_20"].str[:2] == "09"].assign(GEOID_TRACT_20=lambda d: current_geoids(d["GEOID_TRACT_20"]))
     rel = rel[rel["GEOID_TRACT_20"].str[:5] == county_fips].copy()
     rel["land"] = pd.to_numeric(rel["AREALAND_PART"], errors="coerce").fillna(0)
     rel = rel.merge(tract10_walkability(), left_on="GEOID_TRACT_10", right_on="geoid10", how="left")

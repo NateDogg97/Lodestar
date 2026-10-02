@@ -92,6 +92,24 @@ def topojson(geojson: dict, simplify: str = "20%") -> str:
 
 
 @functools.lru_cache(maxsize=4)
+@functools.lru_cache(maxsize=4)
+def _current_by_tract_code(state: str) -> dict[str, str]:
+    return {f["properties"]["GEOID"][5:]: f["properties"]["GEOID"] for f in _state_tracts(state)}
+
+
+def current_geoids(geoids: pd.Series) -> pd.Series:
+    """2020-coded tract GEOIDs -> today's. Connecticut replaced its 8 counties with 9
+    planning regions in 2022 (09001… -> 09110…): tracts kept their numbers, unique
+    statewide, so the number finds the new GEOID. Sources still on 2020 codes (population
+    centers, NRI, walkability, ZIPs, LODES) go through this; other states pass unchanged."""
+    g = geoids.astype(str)
+    ct = g.str[:2] == "09"
+    if not ct.any():
+        return g
+    lookup = _current_by_tract_code("09")
+    return g.where(~ct, g[ct].str[5:].map(lookup).fillna(g[ct]))
+
+
 def _state_popcenters(state: str) -> pd.DataFrame:
     # Bytes, decoded as UTF-8 with BOM: the generic text path guesses latin-1
     # and turns the byte-order mark into "ï»¿STATEFP" (as sources/popcenter.py notes).
@@ -100,7 +118,7 @@ def _state_popcenters(state: str) -> pd.DataFrame:
     assert isinstance(body, bytes)
     df = pd.read_csv(io.StringIO(body.decode("utf-8-sig")), dtype=str)
     return pd.DataFrame({
-        "geoid": df["STATEFP"] + df["COUNTYFP"] + df["TRACTCE"],
+        "geoid": current_geoids(df["STATEFP"] + df["COUNTYFP"] + df["TRACTCE"]),
         "pop_lat": pd.to_numeric(df["LATITUDE"]),
         "pop_lon": pd.to_numeric(df["LONGITUDE"]),
     })
@@ -267,7 +285,7 @@ def _state_jobs(state: str) -> pd.DataFrame:
     assert isinstance(body, bytes)
     wac = pd.read_csv(io.BytesIO(body), compression="gzip", usecols=["w_geocode", "C000"],
                       dtype={"w_geocode": str})
-    wac["geoid"] = wac["w_geocode"].str.zfill(15).str[:11]
+    wac["geoid"] = current_geoids(wac["w_geocode"].str.zfill(15).str[:11])
     return wac.groupby("geoid", as_index=False)["C000"].sum().rename(columns={"C000": "jobs"})
 
 

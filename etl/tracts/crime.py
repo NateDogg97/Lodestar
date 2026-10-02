@@ -240,6 +240,10 @@ def county_agencies(county_fips: str) -> pd.DataFrame:
     def pick(year: int) -> pd.DataFrame:
         df = state_agencies(st, year)
         serves = df["counties"].fillna("").map(lambda s: key in {_key(c) for c in s.split(",")})
+        if st == "CT":
+            # Planning regions replaced counties (2022) but the FBI still lists the old
+            # counties; Connecticut has no sheriffs and town names are unique statewide.
+            serves = df["agency_type"] == "City"
         return df[serves & df["agency_type"].isin(KEEP_TYPES)].assign(crime_year=year)
 
     main, fallback = (pick(y) for y in crime_years(st))
