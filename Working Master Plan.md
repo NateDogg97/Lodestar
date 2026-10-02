@@ -1413,6 +1413,39 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                   - The county index is now network-first in the service worker: with
                     stale-while-revalidate a returning visitor saw a new state only on the
                     second visit.
+            - [x] **New York** (2026-10-02, published): 62 counties, ~5,400 tracts, 2 min.
+                  Coverage: schools and high schools 100%, crime 91.3%, home value 92.7%
+                  (Bronx 64%, Manhattan 81%: few owner-occupied homes, so no ACS median),
+                  low confidence 63% (small ACS samples in NYC). What it found:
+                  - **Village vs town.** Stripping "Village"/"Town" to compare names let the
+                    Village of Hempstead's police cover the Town of Hempstead (760k people,
+                    county-policed), and made Mamaroneck Town and Village indistinguishable.
+                    Names now keep their kind: a village's police match a village, a town's a
+                    town; a suffix-less agency matches either (New England's "Bristol").
+                  - **Same-named village and township** (Illinois, found by the reference
+                    check on Cook): a suffix-less agency matched by town must not serve over
+                    2× its own population (Village of Thornton, 2,400, vs Thornton Township).
+                  - **County police.** Nassau/Suffolk are policed by county police
+                    departments, not sheriffs; with several county agencies the one with a
+                    population (then the busiest) wins. Label: "Nassau County (sheriff or
+                    county police)" — the FBI's type doesn't say which.
+                  - **Missing agencies.** Suffolk County PD, Westchester County PD and the
+                    State Police (most of rural NY) aren't in either FBI source. A sheriff
+                    standing in for them looked absurdly safe (Suffolk 4/100k), so: under
+                    20/100k over 50k people is dropped (no number beats a wrong one); a county
+                    agency under 50/100k is flagged. Suffolk's crime coverage is 13% — an
+                    honest gap. Open: the State Police may be in another FBI table.
+                  - The CDE site timed out once: retries, and offline the newest downloaded
+                    year is used.
+            - [x] **Reference counties** (`python -m etl.tracts.sentinels [--crime]`): after a
+                  shared-code change, rebuild ten counties that each once went wrong
+                  (Travis, Zavala, LA, SF, Riverside, Nassau, Westchester, Suffolk,
+                  Bristol RI, Cook) and diff against the previous build — ~2 min, instead
+                  of rebuilding every live state. The monthly CI run carries the change to
+                  all live states. **Routine per state:** build that state → read its
+                  coverage → fix what it reveals → `sentinels` if shared code changed →
+                  `publish` + `upload --state ST` → add a reference county if it taught us
+                  something.
             - [x] **First CI run (2026-10-02) failed, usefully.** FEMA answers GitHub's runners
                   with 403 (any user agent) for the NRI tract table, and the build then
                   crashed writing its report (no output folder on a fresh machine — fixed).
