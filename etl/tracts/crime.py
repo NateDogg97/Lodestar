@@ -519,8 +519,13 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
     # Sheriff and State Police splitting a county's patrol (Carroll, MD): the FBI gives
     # nearly all the population to one, so each alone looks absurd (19/100k; a sheriff
     # "serving" 2,793). Together they're the county's patrol: one figure.
-    if len(county_agencies_) > 1 and county_agencies_["agency_type"].nunique() > 1:
-        g = county_agencies_
+    # West Virginia: the State Police report per county with population 0, the FBI
+    # giving it all to the sheriff — who then shows 3 property crimes for 26,532 people
+    # (Logan). Same split: any reporting county-level agencies of different kinds count
+    # together, over the population of those that have one.
+    sharing = reported[reported["agency_type"].isin(COUNTY_LEVEL)]
+    if len(county_agencies_) and sharing["agency_type"].nunique() > 1:
+        g = sharing
         sheriff = _with_rates(pd.Series({
             "agency_name": county_label_of(county_name), "agency_type": "County+State Police",
             "crime_year": g["crime_year"].max(), "crime_months": g["crime_months"].min(),

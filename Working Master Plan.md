@@ -1513,10 +1513,22 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                   police. `names.clean_place` → "Athens-Clarke County" (also Augusta,
                   Louisville, Nashville, Indianapolis to come). Crime 91.1% (Savannah reported
                   146 property crimes for 242k people: dropped as partial).
-            - [ ] **Queue** (owner, 2026-10-02): Florida, Pennsylvania, Virginia, Washington,
-                  Michigan, Maryland, Colorado, Ohio, Missouri, Louisiana, New Mexico,
-                  Georgia, Massachusetts, Oregon, Minnesota, Oklahoma, Mississippi,
-                  South Carolina, West Virginia — then decide on the rest.
+            - [x] **Massachusetts, Oregon, Minnesota, Oklahoma, Mississippi, South Carolina**
+                  (2026-10-02, published): clean. Crime 94.9%, 97.3%, 98.6%, 100%, 88.0%,
+                  100%; schools ≥99%. Gaps are agencies not reporting, or reporting a
+                  sliver (Worcester, MA: 17 property crimes for 212k people; Greenville, MS:
+                  absent).
+            - [x] **West Virginia** (2026-10-02, published): 55 counties. The State Police
+                  report per county with population 0 and the sheriff gets the population
+                  (Logan: 3 property crimes for 26,532 people) — the Carroll, MD split the
+                  other way round. Reporting county-level agencies of different kinds now
+                  count together over the population of those that have one. Crime 86% →
+                  96.7%.
+            - [x] **Queue done** (owner, 2026-10-02): Florida, Pennsylvania, Virginia,
+                  Washington, Michigan, Maryland, Colorado, Ohio, Missouri, Louisiana, New
+                  Mexico, Georgia, Massachusetts, Oregon, Minnesota, Oklahoma, Mississippi,
+                  South Carolina, West Virginia. With Texas, California, New York and Cook
+                  County: 23 states live. Next: decide on the remaining 28 (incl. DC).
             - [x] **First CI run (2026-10-02) failed, usefully.** FEMA answers GitHub's runners
                   with 403 (any user agent) for the NRI tract table, and the build then
                   crashed writing its report (no output folder on a fresh machine — fixed).
