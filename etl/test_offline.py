@@ -832,6 +832,14 @@ def test_tract_crime_and_gate() -> None:
     check(_norm("West Lake Hills") == "west lake hills", "a plain place name is unchanged")
     check(_norm("St. Paul") == _norm("St Paul"), "punctuation ignored")
     check(_norm("Townsend") == "townsend", "only a whole trailing word is a suffix")
+    from .tracts.crime import _area_kind, _compatible, _kind
+
+    check(_kind("Hempstead Village") == "village" and _kind("Yonkers") is None, "agency kind from its suffix")
+    check(_area_kind("Hempstead", "Hempstead town") == "town", "area kind from the legal name")
+    check(not _compatible(_kind("Hempstead Village"), "town"), "a village's police don't cover the town")
+    check(_compatible(_kind("Bristol"), "town"), "an agency without a suffix covers its town (New England)")
+    check(_compatible(_kind("Cherry Hill Township"), _area_kind("Cherry Hill", "Cherry Hill township")),
+          "a township's police cover the township")
 
     def cov(**over) -> pd.DataFrame:
         row = {"fips": "44001", "tracts": 10, "populated": 10, "state": "RI", **{c: 100 for c in gate.FLOORS}}
