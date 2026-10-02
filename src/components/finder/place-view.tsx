@@ -115,8 +115,28 @@ export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
     <div>
       <div className="px-gutter pt-4">
         {withIdentity && <PlaceIdentity {...props} />}
+        {/* First under the name: on phones the sheet opens half-way, and below the facts
+            this was out of sight until you scrolled. */}
+        {props.onExploreInside && (
+          <button
+            type="button"
+            onClick={props.onExploreInside}
+            className={`flex w-full items-center justify-between gap-3 rounded-lg border border-emerald-600/40 bg-emerald-50 px-3 py-2.5 text-left hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-950/40 dark:hover:bg-emerald-950 ${withIdentity ? "mt-4" : ""}`}
+          >
+            <span>
+              <span className="block text-label font-semibold text-emerald-800 dark:text-emerald-300">
+                Explore inside {data.countyName[s.index]}
+              </span>
+              <span className="block text-caption text-emerald-800/80 dark:text-emerald-300/80">
+                {props.areaCount ? `${props.areaCount} areas` : "Its towns and neighborhoods"}: schools, home values,
+                walkability, distances
+              </span>
+            </span>
+            <span aria-hidden className="text-title text-emerald-700 dark:text-emerald-400">→</span>
+          </button>
+        )}
         {(facts.length > 0 || koppen) && (
-          <dl className={`grid grid-cols-2 gap-2 ${withIdentity ? "mt-4" : ""}`}>
+          <dl className={`grid grid-cols-2 gap-2 ${withIdentity || props.onExploreInside ? "mt-4" : ""}`}>
             {facts.map((f) => (
               <Stat
                 key={f.metric}
@@ -132,24 +152,6 @@ export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
               </Stat>
             )}
           </dl>
-        )}
-        {props.onExploreInside && (
-          <button
-            type="button"
-            onClick={props.onExploreInside}
-            className="mt-3 flex w-full items-center justify-between gap-3 rounded-lg border border-emerald-600/40 bg-emerald-50 px-3 py-2.5 text-left hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-950/40 dark:hover:bg-emerald-950"
-          >
-            <span>
-              <span className="block text-label font-semibold text-emerald-800 dark:text-emerald-300">
-                Explore inside {data.countyName[s.index]}
-              </span>
-              <span className="block text-caption text-emerald-800/80 dark:text-emerald-300/80">
-                {props.areaCount ? `${props.areaCount} areas` : "Its towns and neighborhoods"}: schools, home values,
-                walkability, distances
-              </span>
-            </span>
-            <span aria-hidden className="text-title text-emerald-700 dark:text-emerald-400">→</span>
-          </button>
         )}
       </div>
 
