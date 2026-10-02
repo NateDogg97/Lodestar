@@ -6,6 +6,7 @@ Build tract tables (plan §9 Phase 8).
     python -m etl.tracts.build --state TX               # every county in a state
     python -m etl.tracts.build --state TX --no-crime    # skip crime
     python -m etl.tracts.build --state TX --force       # rebuild counties already built
+    python -m etl.tracts.build --state all              # the whole country (or --state TX,OK,NM)
 
 Per county, writes to data/out/tracts/:
     {fips}.csv         one row per tract: every column from the sources, plus
@@ -76,7 +77,7 @@ def build_county(fips: str, with_crime: bool = True) -> pd.DataFrame:
         "names": names.fetch(fips, geo_table, name),
     }
     if with_crime:
-        parts["crime"] = crime.fetch(fips, parts["names"])
+        parts["crime"] = crime.fetch(fips, parts["names"], geo_table)
     parts["market"] = market.fetch(parts["names"])
     base = set(parts["geo"]["geoid"])
     for src, df in parts.items():
@@ -127,6 +128,26 @@ def coverage(fips: str, df: pd.DataFrame, seconds: float) -> dict:
     return row
 
 
+# Tables from the county pipeline the tract build reads: the county list (spine),
+# population centers and county ACS (to size metros, geo.py). Made here when
+# missing, so a fresh machine (CI) needs no county run first.
+PREREQS = [("spine", "etl.sources.spine"), ("popcenter", "etl.sources.popcenter"), ("acs", "etl.sources.acs")]
+
+
+def ensure_prereqs() -> None:
+    from ..build import run_source
+
+    for name, module in PREREQS:
+        if not (config.INTERIM_DIR / f"{name}.csv").exists() and not run_source(name, module):
+            raise SystemExit(f"could not build data/interim/{name}.csv")
+
+
+def states(arg: str) -> list[str]:
+    if arg.lower() == "all":
+        return sorted(read_interim("spine")["state"].unique())
+    return [st.strip().upper() for st in arg.split(",") if st.strip()]
+
+
 def build_state(st: str, with_crime: bool, force: bool) -> None:
     spine = read_interim("spine")
     counties = sorted(spine.loc[spine["state"] == st.upper(), "fips"])
@@ -162,12 +183,18 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--county", action="append", default=[], help="5-digit county FIPS (repeatable)")
     ap.add_argument("--pilot", action="store_true", help="build the Phase 8a pilot counties")
-    ap.add_argument("--state", help="two-letter state: build every county in it")
+    ap.add_argument("--state", help="two-letter state(s), comma-separated, or 'all': build every county")
     ap.add_argument("--no-crime", action="store_true", help="skip FBI crime data")
     ap.add_argument("--force", action="store_true", help="with --state: rebuild counties already built")
     args = ap.parse_args()
+    ensure_prereqs()
     if args.state:
-        build_state(args.state, with_crime=not args.no_crime, force=args.force)
+        todo = states(args.state)
+        started = time.time()
+        for st in todo:
+            build_state(st, with_crime=not args.no_crime, force=args.force)
+        if len(todo) > 1:
+            log.info("%d states in %.0f min", len(todo), (time.time() - started) / 60)
         return
     counties = list(config.TRACT_PILOT_COUNTIES) if args.pilot else args.county
     if not counties:

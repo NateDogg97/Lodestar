@@ -391,8 +391,10 @@ DOWNTOWN_RADIUS_MI = 1.0
 
 # FBI Crime Data Explorer (Phase 8, etl/tracts/crime.py): the bulk NIBRS file
 # per state and year (no key, no quota).
-CRIME_YEAR = 2025          # newest full year (complete for Austin PD, checked 2026-09-30)
-CRIME_FALLBACK_YEAR = 2024  # used for an agency whose CRIME_YEAR is incomplete
+# The year is picked per state: the newest the FBI has published (it releases a
+# year's files the following summer), with the year before as the fallback for
+# agencies that didn't report all 12 months. Pin it here only to override.
+CRIME_YEAR: int | None = None
 # A rate from an agency serving fewer people than this is low confidence: a
 # few incidents, or a big shopping center in a tiny town (Sunset Valley, TX:
 # ~700 residents, 33,000 property crimes per 100k), swing it wildly.

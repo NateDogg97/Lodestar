@@ -8,6 +8,11 @@
 > Last updated: 2026-10-02
 >
 > **Changelog**
+> - 2026-10-02 — **Area data refreshes itself.** A monthly GitHub Action
+>   (`tracts-refresh.yml`) rebuilds every county's areas from fresh sources on a clean
+>   runner, runs a quality gate, and syncs changed files to R2. The hand-downloaded SEDA
+>   files moved out of git into a private R2 bucket (`etl/inputs.py`); crime picks the
+>   newest FBI year by itself. The national run is this workflow with `states: all`.
 > - 2026-10-01 — **8c Texas rehearsal done.** The tract ETL builds a whole state in one run
 >   (`build --state TX`): 254 counties, 6,884 tracts, ~5 min, 0 failures, with a per-county
 >   coverage report. Crime moved from the rate-limited CDE API to the FBI's **bulk NIBRS file
@@ -1344,7 +1349,44 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                   localhost:3000), set in the dashboard (the object token can't). Explore
                   inside works in production (checked on Tarrant County, 2026-10-02).
             - [x] Apex and www set to DNS only (Vercel's advice); `data` stays proxied (R2).
-      - [ ] National run.
+      - [ ] **Automatic refresh** (owner, 2026-10-02: solve data hosting and refreshing
+            completely before the national run).
+            - [x] Repo holds no tract data (`public/data/tracts/` was always ignored). The
+                  20 MB SEDA county file left git; all manual downloads (SEDA county,
+                  geodist, school) live in a **private** R2 bucket (`R2_INPUTS_BUCKET`;
+                  the public one would expose them) — `python -m etl.inputs push|pull|status`.
+                  Still in git, deliberately: `counties.json`, `counties.topo.json`,
+                  `climate.json`, `laws.json` (~3.7 MB): they ship with the app and are
+                  precached, and the laws workflow's commits are the audit trail of every
+                  law value (LAWS.md §8). The SEDA file stays in old history (rewriting
+                  it means a force push — not done).
+            - [x] `.github/workflows/tracts-refresh.yml`: monthly (3rd, 06:23 UTC) and by
+                  hand (`states`: `all`, or `RI` to test). Clean runner → manual inputs from
+                  R2 → `build --state all` (makes the county tables it needs: spine,
+                  popcenter, county ACS) → `tracts.check` quality gate → merge with the live
+                  index → publish → upload changed files. A failed gate uploads nothing; a
+                  failed county keeps its old files.
+            - [x] Quality gate (`etl/tracts/check.py`): fails on more than 1% failed
+                  counties (min 3) or a core measure under its national floor (income,
+                  walkability, hazards, downtown 95%; districts, schools, high schools 90%;
+                  home value 85%; crime 70%; names 99%); per-state lows are warnings.
+            - [x] Crime year automatic: the newest year CDE has published per state
+                  (`CRIME_YEAR` pins it). Other vintages (ACS year, CRDC, LODES, TIGER) stay
+                  manual in `config.py` — a yearly look, since their variables can change.
+            - [x] Clean-machine test (2026-10-02): a copy holding only what git has, Python
+                  3.12 (CI's), no caches — Rhode Island built end to end in 5 min with 2.9 GB of
+                  downloads. The gate **failed it** (crime 57%), which found a real gap:
+            - [x] **Town police.** New England towns and NJ/PA/Midwest townships run police
+                  departments but aren't Census places, so their tracts fell to a sheriff (RI
+                  has none). A tract outside a policed place now matches its county
+                  subdivision — only those that are governments (TIGER `FUNCSTAT` A; Texas's
+                  CCDs are statistical and would hand unincorporated land to city police).
+                  Names compare without "Township", "Borough"… RI crime 57% → 99.2%; Texas
+                  unchanged (0 town matches, 99.6%).
+            - [ ] Owner: create the private bucket, give the token access to both, add the
+                  Actions secrets; `python -m etl.inputs push`; run the workflow with `RI`.
+            - The laws workflow needs no change: laws live in git, not R2.
+      - [ ] National run: the workflow with `states: all`.
 - [ ] **8d — Extras, as wanted.** CDC PLACES health, OSM amenities (parks, groceries),
       neighborhood names beyond Zillow's cities.
 - [ ] **8e — Filters and must-haves inside the county.** Decide after 8b, with the data on

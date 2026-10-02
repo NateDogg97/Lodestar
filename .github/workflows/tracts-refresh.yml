@@ -1,0 +1,111 @@
+# Rebuild the "Explore inside" area data (census tracts) and publish it to
+# Cloudflare R2 (data.lodestarmap.com), monthly. Plan §9 Phase 8c.
+#
+# Every run starts from scratch, so every source is fetched fresh: Zillow and
+# Redfin monthly, the newest FBI crime year when it's out, and so on. The
+# yearly vintages in etl/config.py (ACS, CRDC, LODES…) are still bumped by hand.
+#
+# Nothing reaches the site unless the quality gate passes (etl/tracts/check.py):
+# too many failed counties, or a measure whose national coverage collapses,
+# fails the run before the upload, and GitHub emails the repo owner. A county
+# that fails keeps its previous files: the index is merged, never replaced.
+#
+# Run it by hand from the Actions tab ("Run workflow"); `states` takes "all",
+# or e.g. "RI" or "TX,OK" for a quick test.
+#
+# Secrets: CENSUS_API_KEY; R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
+# (a token with Object Read & Write on both buckets); R2_BUCKET (public data),
+# R2_INPUTS_BUCKET (private: the manual SEDA downloads, etl/inputs.py).
+
+name: Refresh area data
+
+on:
+  schedule:
+    - cron: "23 6 3 * *"   # 06:23 UTC on the 3rd of each month
+  workflow_dispatch:
+    inputs:
+      states:
+        description: 'States to rebuild: "all", or e.g. "RI" / "TX,OK"'
+        default: all
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tracts-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      DATA_URL: https://data.lodestarmap.com
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      R2_INPUTS_BUCKET: ${{ secrets.R2_INPUTS_BUCKET }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: etl/requirements.txt
+
+      # mapshaper (tract shapes) runs through npx.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # National source files run to several GB; the runner's preinstalled
+      # toolchains we don't use take ~20 GB.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Install
+        run: pip install -r etl/requirements.txt
+
+      - name: Offline tests
+        run: python -m etl.test_offline
+
+      - name: Fetch manual source files (private bucket)
+        run: python -m etl.inputs pull
+
+      - name: Build
+        env:
+          CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}
+        run: python -m etl.tracts.build --state "${{ inputs.states || 'all' }}"
+
+      - name: Quality gate
+        run: |
+          set +e
+          python -m etl.tracts.check --md > check.md
+          code=$?
+          set -e
+          cat check.md >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+
+      # Start from the live index so counties not rebuilt this run (a test of
+      # one state, or a county that failed) stay explorable.
+      - name: Publish
+        run: |
+          mkdir -p public/data/tracts
+          curl -fsS "$DATA_URL/tracts/index.json" -o public/data/tracts/index.json || echo "no live index yet"
+          python -m etl.tracts.publish
+
+      - name: Upload to R2
+        run: python -m etl.tracts.upload
+
+      - name: Keep the coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: etl/data/out/tracts/_coverage_*.csv
+          if-no-files-found: ignore

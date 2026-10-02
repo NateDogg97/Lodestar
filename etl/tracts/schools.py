@@ -47,7 +47,8 @@ HIGH SCHOOLS (added 2026-10-01): CRDC 2023–24
     within the county.
 
 SOURCES
-    SEDA 6.0 (manual downloads in data/raw/, like the county file):
+    SEDA 6.0 (manual downloads in data/raw/, like the county file; stored in the
+    private R2 bucket — `python -m etl.inputs pull`):
       seda_geodist_pool_cs_6.0.csv  GEOGRAPHIC school districts: every school
                                     inside a district's boundary (charters
                                     included), which is what a tract can sit in.

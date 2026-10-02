@@ -820,6 +820,29 @@ def test_phase5_sources() -> None:
           "metros: metropolitan only, summed population, population-weighted center")
 
 
+def test_tract_crime_and_gate() -> None:
+    """Phase 8c: police names match places and towns; the quality gate's arithmetic."""
+    print("\ntract crime matching and quality gate")
+    import pandas as pd
+
+    from .tracts import check as gate
+    from .tracts.crime import _norm
+
+    check(_norm("Cherry Hill Township") == _norm("Cherry Hill"), "a township's police match its town")
+    check(_norm("West Lake Hills") == "west lake hills", "a plain place name is unchanged")
+    check(_norm("St. Paul") == _norm("St Paul"), "punctuation ignored")
+    check(_norm("Townsend") == "townsend", "only a whole trailing word is a suffix")
+
+    def cov(**over) -> pd.DataFrame:
+        row = {"fips": "44001", "tracts": 10, "populated": 10, "state": "RI", **{c: 100 for c in gate.FLOORS}}
+        return pd.DataFrame([{**row, **over}])
+
+    check(gate.check(cov())[0], "a complete build passes")
+    check(not gate.check(cov(crime=50))[0], "a measure under its national floor fails")
+    failed = pd.concat([cov()] + [cov(fips=f"4400{i}", error="boom") for i in range(4)], ignore_index=True)
+    check(not gate.check(failed)[0], "more failed counties than allowed fails")
+
+
 def test_tract_acs_confidence() -> None:
     """Phase 8: tract ACS parsing — MOE codes, derived shares, low-confidence flags."""
     print("\ntract ACS: margins of error and low confidence")
@@ -890,6 +913,7 @@ def main() -> int:
         test_gazetteer_encoding_guard()
         test_app_payload_is_compact_and_lossless_where_it_matters()
         test_tract_acs_confidence()
+        test_tract_crime_and_gate()
 
         fixtures = _make_synthetic()
         try:

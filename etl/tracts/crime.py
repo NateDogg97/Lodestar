@@ -37,8 +37,10 @@ SOURCE: THE BULK NIBRS FILES, NOT THE API (8c)
     data/interim/crime/ (the zip is deleted after).
 
 THE YEAR AND LOW CONFIDENCE
-    CRIME_YEAR (newest full year); an agency that didn't report all 12 months
-    falls back to CRIME_FALLBACK_YEAR if that year is more complete. Fewer than
+    The newest year CDE has published for the state (found by asking for this
+    year's file, then last year's…; config.CRIME_YEAR pins it), so a monthly
+    rebuild picks up a new year by itself. An agency that didn't report all 12
+    months falls back to the year before if that year is more complete. Fewer than
     12 months, no data at all, or an agency serving fewer than
     CRIME_MIN_POPULATION people (tiny towns with a mall), makes the value low
     confidence. Partial years aren't scaled up. Agencies that report only the
@@ -54,6 +56,7 @@ from __future__ import annotations
 
 import functools
 import re
+from datetime import date
 import sys
 import zipfile
 
@@ -63,6 +66,7 @@ import requests
 
 from .. import config
 from ..util import get_logger, read_interim
+from . import geo
 from .geo import STATE_ABBR
 
 log = get_logger("tracts.crime")
@@ -82,15 +86,31 @@ def _key(name: str) -> str:
     return re.sub(r"[^A-Z]", "", name.upper())
 
 
+def _signed_url(st: str, year: int) -> str | None:
+    k = f"nibrs/incident/{year}/{st}-{year}.zip"
+    r = requests.get(SIGNED_URL, params={"key": k}, timeout=config.HTTP_TIMEOUT,
+                     headers={"User-Agent": config.HTTP_USER_AGENT})
+    r.raise_for_status()
+    return r.json().get(k)
+
+
+@functools.lru_cache(maxsize=64)
+def crime_years(st: str) -> tuple[int, int]:
+    """(year, fallback year) for a state: the newest published, or config.CRIME_YEAR."""
+    if config.CRIME_YEAR:
+        return config.CRIME_YEAR, config.CRIME_YEAR - 1
+    this = date.today().year
+    for year in range(this, this - 4, -1):
+        if (CACHE_DIR / f"nibrs_{st}_{year}.csv").exists() or _signed_url(st, year):
+            return year, year - 1
+    raise RuntimeError(f"no NIBRS file for {st} in {this - 3}–{this}")
+
+
 def _download(st: str, year: int) -> zipfile.ZipFile | None:
     """The state's NIBRS zip for a year, or None if CDE hasn't published it."""
-    k = f"nibrs/incident/{year}/{st}-{year}.zip"
     path = config.RAW_DIR / f"nibrs_{st}-{year}.zip"
     if not path.exists():
-        r = requests.get(SIGNED_URL, params={"key": k}, timeout=config.HTTP_TIMEOUT,
-                         headers={"User-Agent": config.HTTP_USER_AGENT})
-        r.raise_for_status()
-        url = r.json().get(k)
+        url = _signed_url(st, year)
         if not url:
             log.warning("CDE has no NIBRS file for %s %d", st, year)
             return None
@@ -165,7 +185,7 @@ def county_agencies(county_fips: str) -> pd.DataFrame:
         serves = df["counties"].fillna("").map(lambda s: key in {_key(c) for c in s.split(",")})
         return df[serves & df["agency_type"].isin(KEEP_TYPES)].assign(crime_year=year)
 
-    main, fallback = pick(config.CRIME_YEAR), pick(config.CRIME_FALLBACK_YEAR)
+    main, fallback = (pick(y) for y in crime_years(st))
     both = pd.concat([main, fallback]).sort_values(["months", "crime_year"], ascending=False)
     df = both.drop_duplicates("ori").copy()
     scale = 100_000 / df["population"].where(df["population"] > 0)
@@ -179,18 +199,52 @@ def _display(a: pd.Series) -> str:
     return f"{a['agency_name']} Police" if a["agency_type"] == "City" else f"{a['agency_name']} County Sheriff"
 
 
-def fetch(county_fips: str, names: pd.DataFrame) -> pd.DataFrame:
-    """`names` needs geoid and place (from names.py)."""
+# Town governments with their own police that Census doesn't count as places
+# (New England towns, New Jersey/Pennsylvania townships, Midwest townships) are
+# county subdivisions: a tract outside a policed place is matched to its town.
+COUSUB_URL = "https://www2.census.gov/geo/tiger/TIGER2024/COUSUB/tl_2024_{state}_cousub.zip"
+_SUFFIX = re.compile(r"\b(city|town|township|borough|village|charter township|plantation)$")
+
+
+def _norm(name: str) -> str:
+    """Agency and place names compared without case, punctuation or a civil-division suffix."""
+    n = re.sub(r"[^a-z ]", "", str(name).lower()).strip()
+    return _SUFFIX.sub("", n).strip()
+
+
+def _towns(county_fips: str, tracts: pd.DataFrame) -> list[str | None]:
+    """Each tract's county subdivision (by its population center), if it's a government.
+
+    Only FUNCSTAT "A" (an active government, like a New England town or a
+    township): elsewhere subdivisions are statistical (Texas's "Austin CCD")
+    and would hand unincorporated tracts to a city's police.
+    """
+    polys = geo.load_polygons(COUSUB_URL.format(state=county_fips[:2]), f"tl_2024_{county_fips[:2]}_cousub",
+                              ["NAME", "COUNTYFP", "FUNCSTAT"])
+    polys = [(p, g) for p, g in polys if p.get("COUNTYFP") == county_fips[2:] and p.get("FUNCSTAT") == "A"]
+    found = geo.locate(tracts["pop_lat"].to_numpy(float), tracts["pop_lon"].to_numpy(float), polys)
+    return [f["NAME"] if f else None for f in found]
+
+
+def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame) -> pd.DataFrame:
+    """`names` needs geoid and place (names.py); `tracts` geoid, pop_lat, pop_lon (geo.py)."""
     agencies = county_agencies(county_fips)
     cities = agencies[agencies["agency_type"] == "City"].copy()
-    cities["place"] = cities["agency_name"].str.strip()
+    cities["key"] = cities["agency_name"].map(_norm)
+    by_name = cities.drop_duplicates("key").set_index("key")
     sheriff = agencies[agencies["agency_type"] == "County"]
     sheriff = sheriff.iloc[0] if len(sheriff) else None
 
-    by_place = cities.drop_duplicates("place").set_index("place")
-    out = []
+    towns = dict(zip(tracts["geoid"], _towns(county_fips, tracts))) if len(cities) else {}
+    out, via_town = [], 0
     for r in names.itertuples():
-        a = by_place.loc[r.place] if isinstance(r.place, str) and r.place in by_place.index else sheriff
+        a = None
+        if isinstance(r.place, str) and _norm(r.place) in by_name.index:
+            a = by_name.loc[_norm(r.place)]
+        elif isinstance(towns.get(r.geoid), str) and _norm(towns[r.geoid]) in by_name.index:
+            a, via_town = by_name.loc[_norm(towns[r.geoid])], via_town + 1
+        else:
+            a = sheriff
         if a is None:
             out.append({"geoid": r.geoid})
             continue
@@ -202,16 +256,17 @@ def fetch(county_fips: str, names: pd.DataFrame) -> pd.DataFrame:
                                             "crime_months", "crime_population"])
     df["crime_low_confidence"] = (df["crime_months"].fillna(0) < 12) | (
         df["crime_population"].fillna(0) < config.CRIME_MIN_POPULATION)
-    unmatched = sorted(set(names["place"].dropna()) - set(by_place.index))
-    log.info("crime %s: %d city agencies + %s; places with no police agency of their own (sheriff): %s",
-             county_fips, len(cities), "sheriff" if sheriff is not None else "no sheriff", unmatched[:12])
+    unmatched = sorted({p for p in names["place"].dropna() if _norm(p) not in by_name.index})
+    log.info("crime %s: %d city/town agencies (%d tracts matched by town) + %s; places without their own: %s",
+             county_fips, len(cities), via_town, "sheriff" if sheriff is not None else "no sheriff", unmatched[:12])
     return df
 
 
 if __name__ == "__main__":
     if len(sys.argv) > 2 and sys.argv[1] == "--state":
-        for y in (config.CRIME_YEAR, config.CRIME_FALLBACK_YEAR):
-            state_agencies(sys.argv[2], y)
+        st = sys.argv[2].upper()
+        for y in crime_years(st):
+            state_agencies(st, y)
     else:
         fips = sys.argv[1] if len(sys.argv) > 1 else "48453"
         ag = county_agencies(fips)
