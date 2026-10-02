@@ -1327,7 +1327,7 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
       - [ ] Small UI notes from the rehearsal: tied county ranks (Dawson County: four high
             schools without AP all "1st of 4"); 12 counties have one ACS/walkability tract not
             in the shapes (water tracts, harmless).
-      - [ ] **R2 hosting first** (owner, 2026-10-01): move the tract files to Cloudflare R2
+      - [x] **R2 hosting first** (owner, 2026-10-01): move the tract files to Cloudflare R2
             and ship to production with what's built (Texas + Cook County), then run the
             rest of the country.
             - [x] `python -m etl.tracts.upload` syncs `public/data/tracts/` to the bucket under
@@ -1340,11 +1340,10 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
             - [x] Vercel: `NEXT_PUBLIC_DATA_URL=https://data.lodestarmap.com` (inlined at build
                   time, so set it before the deploy), then push main.
             - [x] Uploaded Texas + Cook County (511 files, 9 MB), deployed 2026-10-02.
-            - [ ] Bucket CORS rule (GET/HEAD from www.lodestarmap.com, lodestarmap.com,
-                  localhost:3000): set in the dashboard — the object token can't. Until
-                  then browsers can't read the files and "Explore inside" stays hidden.
-            - [ ] Apex and www are proxied (orange cloud) since the DNS move; Vercel advises
-                  DNS only. Works today; switch if Vercel shows certificate or redirect issues.
+            - [x] Bucket CORS rule (GET/HEAD from www.lodestarmap.com, lodestarmap.com,
+                  localhost:3000), set in the dashboard (the object token can't). Explore
+                  inside works in production (checked on Tarrant County, 2026-10-02).
+            - [x] Apex and www set to DNS only (Vercel's advice); `data` stays proxied (R2).
       - [ ] National run.
 - [ ] **8d — Extras, as wanted.** CDC PLACES health, OSM amenities (parks, groceries),
       neighborhood names beyond Zillow's cities.
