@@ -1458,6 +1458,18 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                   and Long Beach, NY). And a dropped city's tracts now get no rate, not the
                   county's (Orlando isn't Orange County's to describe). Broward Sheriff
                   isn't on FIBRS at all: Broward 38%. These fill in as agencies report.
+            - [x] **Pennsylvania** (2026-10-02, published): 67 counties, 3,445 tracts. Crime
+                  66% → 98.3%: half its towns have no police and are patrolled by the
+                  **State Police**, which PA's NIBRS file lists per county with the
+                  population served — now a county-level agency like a sheriff ("State
+                  Police in Adams County"). Also found: statewide yearly tables matched
+                  same-named townships in other counties (Adams got Butler's and Berwick's
+                  numbers) — outside New England a town now needs its full name there; a
+                  county-level agency reporting with population 0 (Allegheny County Police:
+                  parks, airport) means no county patrol, so leftover towns stay blank
+                  rather than take it; a 5k+ town with zero property crime isn't reporting.
+                  Open: regional departments ("Northern Regional") cover several townships
+                  under a name that matches none — those tracts fall to the State Police.
             - [ ] **Queue** (owner, 2026-10-02): Florida, Pennsylvania, Virginia, Washington,
                   Michigan, Maryland, Colorado, Ohio, Missouri, Louisiana, New Mexico,
                   Georgia, Massachusetts, Oregon, Minnesota, Oklahoma, Mississippi,

@@ -84,7 +84,10 @@ from .geo import STATE_ABBR
 
 log = get_logger("tracts.crime")
 
-KEEP_TYPES = {"City", "County"}
+# "State Police": the patrol for towns without their own police in states that
+# report it per county with a population (Pennsylvania). It plays the sheriff's part.
+KEEP_TYPES = {"City", "County", "State Police"}
+COUNTY_LEVEL = {"County", "State Police"}
 SIGNED_URL = "https://cde.ucr.cjis.gov/LATEST/s3/signedurl"
 CACHE_DIR = config.INTERIM_DIR / "crime"
 
@@ -221,6 +224,11 @@ def county_agencies(county_fips: str) -> pd.DataFrame:
         return df[serves & df["agency_type"].isin(KEEP_TYPES)].assign(crime_year=year)
 
     main, fallback = (pick(y) for y in crime_years(st))
+    # "State Police: State Police" names nothing; name it after the county it covers here.
+    county_label = re.sub(r"\s+(County|Parish|Borough|Census Area|Municipality|City and Borough)$", "",
+                          spine.loc[spine["fips"] == county_fips, "county_name"].iloc[0])
+    main, fallback = (d.assign(agency_name=d["agency_name"].where(d["agency_type"] != "State Police", county_label))
+                      for d in (main, fallback))
     both = pd.concat([main, fallback]).sort_values(["months", "crime_year"], ascending=False)
     df = both.drop_duplicates("ori").copy()
 
@@ -320,7 +328,11 @@ def _display(a: pd.Series) -> str:
     policed by the sheriff but reported under their own name."""
     # A county-level agency may be the sheriff or a county police department (Nassau, NY):
     # the FBI's type doesn't say which.
-    return str(a["agency_name"]) if a["agency_type"] == "City" else f"{a['agency_name']} County (sheriff or county police)"
+    if a["agency_type"] == "City":
+        return str(a["agency_name"])
+    if a["agency_type"] == "State Police":
+        return f"State Police in {a['agency_name']} County"
+    return f"{a['agency_name']} County (sheriff or county police)"
 
 
 # Town governments with their own police that Census doesn't count as places
@@ -402,15 +414,22 @@ def _towns(county_fips: str, tracts: pd.DataFrame) -> list[tuple[str, str, bool]
                   lambda p: p.get("COUNTYFP") == county_fips[2:] and p.get("FUNCSTAT") == "A", ("COUNTYFP",))
 
 
+# New England town names are unique statewide; elsewhere townships repeat across
+# counties (Pennsylvania has many Butler Townships), and the yearly tables name
+# a city only by state.
+UNIQUE_TOWN_STATES = {"CT", "MA", "ME", "NH", "RI", "VT"}
+
+
 def _from_tables(st: str, years: tuple[int, int], key: str, kind: str | None = None,
-                 county_key: str | None = None) -> pd.Series | None:
+                 county_key: str | None = None, full_name: bool = False) -> pd.Series | None:
     """A city (name key, area kind) or, with county_key, a county agency from the yearly tables:
     the newest year that has it."""
     for year in years:
         cities, sheriffs = cius(year)
         if county_key is None:
             m = cities[(cities["st"] == st) & (cities["key"] == key)]
-            m = m.loc[m["agency_name"].map(lambda n: _compatible(_kind(n), kind or "")).astype(bool)]
+            m = m.loc[m["agency_name"].map(lambda n: _kind(n) == kind if full_name else _compatible(_kind(n), kind or ""))
+                      .astype(bool)]
             exact = m[m["agency_name"].map(_kind) == kind]
             m = exact if len(exact) else m
             if len(m) == 1:  # two same-named, same-kind cities in a state: can't tell which, skip
@@ -444,7 +463,8 @@ def _plausible(a: pd.Series | None) -> bool:
         return True
     too_safe = pop >= IMPLAUSIBLE_POP and pd.notna(rate) and rate < IMPLAUSIBLE_RATE
     too_quiet = pop >= IMPLAUSIBLE_PROPERTY_POP and pd.notna(prop) and prop < IMPLAUSIBLE_PROPERTY
-    return not (too_safe or too_quiet)
+    nothing = pop >= 5_000 and prop == 0  # a year without one theft: not reporting (Reading Twp, PA)
+    return not (too_safe or too_quiet or nothing)
 
 
 def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, population: pd.DataFrame) -> pd.DataFrame:
@@ -461,15 +481,24 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
     county_name = spine.loc[spine["fips"] == county_fips, "county_name"].iloc[0]
     # With both a sheriff and a county police department, the one that polices people
     # is the one the FBI gives a population (then: the most offenses).
-    county_agencies_ = reported[reported["agency_type"] == "County"].sort_values(
+    # Population 0: not a patrol agency (Allegheny County Police: parks, the airport).
+    county_agencies_ = reported[reported["agency_type"].isin(COUNTY_LEVEL)
+                                & (reported["crime_population"].fillna(0) > 0)].sort_values(
         ["crime_population", "violent"], ascending=False)
-    sheriff = county_agencies_.iloc[0] if len(county_agencies_) else _from_tables(
+    # The yearly tables' county row (population inferred from the tracts left over) only
+    # where the FBI's file has no county-level agency at all — California's absent
+    # sheriffs. One listed with population 0 means no county patrol (Allegheny, PA:
+    # every town has its own police or the State Police), so leftovers stay blank.
+    # (Listed but never reporting — months 0 — is just absent: LA's sheriff.)
+    listed = (reported["agency_type"].isin(COUNTY_LEVEL) & (reported["crime_population"].fillna(0) == 0)).any()
+    sheriff = county_agencies_.iloc[0] if len(county_agencies_) else None if listed else _from_tables(
         st, years, re.sub(r"\s+(County|Parish|Borough|Census Area|Municipality|City and Borough)$", "", county_name),
         county_key=_key(county_name))
     from_tables: set[str] = set()
 
-    def lookup(area: tuple[str, str, bool] | None) -> pd.Series | None:
-        """The police for an area: NIBRS agency of a compatible kind, or (a government) the yearly tables'."""
+    def lookup(area: tuple[str, str, bool] | None, town: bool = False) -> pd.Series | None:
+        """The police for an area: NIBRS agency of a compatible kind, or (a government) the yearly tables'.
+        A town matches the statewide tables only by its full name ("Butler Township"), outside New England."""
         if area is None:
             return None
         name, kind, governed = area
@@ -480,7 +509,7 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
             return found[0]
         if not governed:
             return None
-        extra = _from_tables(st, years, k, kind)
+        extra = _from_tables(st, years, k, kind, full_name=town and st not in UNIQUE_TOWN_STATES)
         if extra is None:
             return None
         extra = _with_rates(extra)
@@ -494,7 +523,7 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
     chosen, by_town, dropped = [], [], set()
     for place, town in zip(places, towns):
         a = lookup(place)
-        town_match = a is None and (a := lookup(town)) is not None
+        town_match = a is None and (a := lookup(town, town=True)) is not None
         if a is not None and not _plausible(a):
             # The city polices itself but its numbers are partial: no rate. The
             # county's would describe somewhere else (Long Beach, NY isn't Nassau's).
@@ -539,7 +568,7 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
         out.append({"geoid": g, "crime_agency": _display(a), "violent_rate": a["violent_rate"],
                     "property_rate": a["property_rate"], "crime_year": a["crime_year"],
                     "crime_months": a["crime_months"], "crime_population": a["crime_population"],
-                    "crime_county_low": a["agency_type"] == "County" and a["violent_rate"] < LOW_COUNTY_RATE})
+                    "crime_county_low": a["agency_type"] in COUNTY_LEVEL and a["violent_rate"] < LOW_COUNTY_RATE})
     # Same columns whether or not any agency reports (a few rural counties have none).
     df = pd.DataFrame(out).reindex(columns=["geoid", "crime_agency", "violent_rate", "property_rate", "crime_year",
                                             "crime_months", "crime_population", "crime_county_low"])
