@@ -1493,6 +1493,14 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                   alone implausible. Several county-level agencies of different kinds in one
                   county are now combined: "Carroll County (sheriff and State Police)",
                   93/100k.
+            - [x] **Colorado, Ohio, Missouri** (2026-10-02, published): clean — crime 97.2%,
+                  96.8%, 99.3%; schools ≥99.6%. Ohio's township police handled by the town
+                  rules; Missouri's St. Louis City as its own county.
+            - [x] **Louisiana** (2026-10-02, published): 64 parishes, 1,379 tracts. New Orleans
+                  PD is in neither FBI source for 2024 or 2025: the yearly tables now reach
+                  one year further back (2023) for agencies silent since — shown with its year
+                  and always flagged. (2023's tables are named without "CIUS_" and write
+                  "ALABAMA - Metropolitan Counties": both handled.) Crime 82.6% → see below.
             - [ ] **Queue** (owner, 2026-10-02): Florida, Pennsylvania, Virginia, Washington,
                   Michigan, Maryland, Colorado, Ohio, Missouri, Louisiana, New Mexico,
                   Georgia, Massachusetts, Oregon, Minnesota, Oklahoma, Mississippi,

@@ -269,12 +269,14 @@ STATE_NAMES = {
 
 def _table(zf: zipfile.ZipFile, number: int) -> pd.DataFrame:
     """A CIUS table with its real header row; state filled down; footnote digits stripped."""
-    name = next(n for n in zf.namelist() if re.search(rf"(^|/)CIUS_Table_{number}_", n))
+    # "CIUS_Table_8_…" since 2024; "Table_8_…" in 2023 (beside zipped per-state cuts).
+    name = next(n for n in zf.namelist() if re.search(rf"(^|/)(CIUS_)?Table_{number}_.*\.xlsx$", n))
     raw = pd.read_excel(zf.open(name), header=None, dtype=str)
     head = raw.index[raw[0].astype(str).str.strip() == "State"][0]
     df = raw.iloc[head + 1:].copy()
     df.columns = [re.sub(r"\s+", " ", str(c)).strip().lower() for c in raw.iloc[head]]
-    df["state"] = df["state"].ffill().str.replace(r"[\d,]+$", "", regex=True).str.strip()
+    df["state"] = (df["state"].ffill().str.replace(r"\s*-\s*(Metropolitan|Nonmetropolitan).*$", "", regex=True)  # 2023
+                   .str.replace(r"[\d,]+$", "", regex=True).str.strip())
     df["st"] = df["state"].str.upper().map({k.upper(): v for k, v in STATE_NAMES.items()})  # 2024: "ALABAMA"
     num = lambda c: pd.to_numeric(df[c].astype(str).str.replace(",", ""), errors="coerce")
     df["violent"], df["property"] = num("violent crime"), num("property crime")
@@ -480,6 +482,9 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
     """`names`: geoid (names.py); `tracts`: geoid, pop_lat, pop_lon (geo.py); `population`: geoid, population."""
     st = STATE_ABBR[county_fips[:2]].upper()
     years = crime_years(st)
+    # The yearly tables reach one year further back, for agencies silent since (New
+    # Orleans PD isn't in the FBI's 2024 or 2025 files): shown with its year, flagged.
+    table_years = (*years, years[1] - 1)
     agencies = county_agencies(county_fips)
     reported = agencies[agencies["crime_months"] > 0]
     cities = reported[reported["agency_type"] == "City"].copy()
@@ -501,7 +506,7 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
     # (Listed but never reporting — months 0 — is just absent: LA's sheriff.)
     listed = (reported["agency_type"].isin(COUNTY_LEVEL) & (reported["crime_population"].fillna(0) == 0)).any()
     sheriff = county_agencies_.iloc[0] if len(county_agencies_) else None if listed else _from_tables(
-        st, years, re.sub(r"\s+(County|Parish|Borough|Census Area|Municipality|City and Borough)$", "", county_name),
+        st, table_years, re.sub(r"\s+(County|Parish|Borough|Census Area|Municipality|City and Borough)$", "", county_name),
         county_key=_key(county_name))
     # Sheriff and State Police splitting a county's patrol (Carroll, MD): the FBI gives
     # nearly all the population to one, so each alone looks absurd (19/100k; a sheriff
@@ -528,7 +533,7 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
             return found[0]
         if not governed:
             return None
-        extra = _from_tables(st, years, k, kind, full_name=town and st not in UNIQUE_TOWN_STATES)
+        extra = _from_tables(st, table_years, k, kind, full_name=town and st not in UNIQUE_TOWN_STATES)
         if extra is None:
             return None
         extra = _with_rates(extra)
@@ -591,7 +596,8 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
     # Same columns whether or not any agency reports (a few rural counties have none).
     df = pd.DataFrame(out).reindex(columns=["geoid", "crime_agency", "violent_rate", "property_rate", "crime_year",
                                             "crime_months", "crime_population", "crime_county_low"])
-    df["crime_low_confidence"] = (df["crime_months"].fillna(0) < 12) | (
+    # A number older than the two newest years (an agency silent since) is flagged.
+    df["crime_low_confidence"] = (df["crime_year"].fillna(0) < years[1]) | (df["crime_months"].fillna(0) < 12) | (
         df["crime_population"].fillna(0) < config.CRIME_MIN_POPULATION) | df["crime_county_low"].fillna(False).astype(bool)
     df = df.drop(columns=["crime_county_low"])
     log.info("crime %s: %d NIBRS city/town agencies, %d tracts matched by town, %s; from the yearly tables: %s%s%s",
