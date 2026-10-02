@@ -225,6 +225,13 @@ def _district_polygons(state: str) -> list:
     return polys
 
 
+# Districts reorganized after the 2019 boundaries: the old boundary's ID -> the
+# successor SEDA scores (same territory). Found state by state (8c).
+SUCCESSOR_DISTRICTS = {
+    "2612000": "2601103",  # Detroit City SD -> Detroit Public Schools Community District (2016)
+}
+
+
 def build(county_fips: str, tracts: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """`tracts` needs geoid, pop_lat, pop_lon. Returns (per-tract columns, county schools)."""
     lat, lon = tracts["pop_lat"].to_numpy(float), tracts["pop_lon"].to_numpy(float)
@@ -235,7 +242,7 @@ def build(county_fips: str, tracts: pd.DataFrame) -> tuple[pd.DataFrame, pd.Data
     hit = geo.locate(lat, lon, polys)
     out = pd.DataFrame({
         "geoid": tracts["geoid"],
-        "district_id": [h["GEOID"] if h else None for h in hit],
+        "district_id": [SUCCESSOR_DISTRICTS.get(h["GEOID"], h["GEOID"]) if h else None for h in hit],
         "district_name": [h["NAME"] if h else None for h in hit],
     })
     scores = district_scores()

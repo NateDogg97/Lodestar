@@ -40,6 +40,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import requests
 
 from .. import config
 from ..sources.bea import load_cbsa_crosswalk
@@ -247,8 +248,22 @@ STATE_ABBR = {
 def _state_jobs(state: str) -> pd.DataFrame:
     """geoid, jobs: all jobs by workplace tract in a state (LODES WAC, summed from blocks)."""
     st = STATE_ABBR[state]
-    body = http_get(config.LODES_WAC_URL.format(st=st, year=config.LODES_YEAR), binary=True,
-                    cache_hint=f"lodes_wac_{st}_{config.LODES_YEAR}")
+    # Some states lag in LODES (Michigan: nothing after 2021 as of 2026-10): take the newest
+    # year published. Where a downtown's jobs cluster sits barely moves in a few years.
+    body = None
+    for year in range(config.LODES_YEAR, config.LODES_YEAR - 4, -1):
+        try:
+            body = http_get(config.LODES_WAC_URL.format(st=st, year=year), binary=True,
+                            cache_hint=f"lodes_wac_{st}_{year}")
+        except requests.HTTPError as exc:
+            if exc.response is None or exc.response.status_code != 404:
+                raise
+            continue
+        if year != config.LODES_YEAR:
+            log.warning("LODES %s: no %d file, using %d", st.upper(), config.LODES_YEAR, year)
+        break
+    if body is None:
+        raise RuntimeError(f"no LODES WAC file for {st} in {config.LODES_YEAR - 3}–{config.LODES_YEAR}")
     assert isinstance(body, bytes)
     wac = pd.read_csv(io.BytesIO(body), compression="gzip", usecols=["w_geocode", "C000"],
                       dtype={"w_geocode": str})

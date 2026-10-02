@@ -1479,6 +1479,12 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                   has a paper district with no test scores — nearby schools still show.
             - [x] **Washington** (2026-10-02, published): 39 counties, 1,772 tracts, 1 min.
                   Clean: crime 99.4%, schools 99.9%, home value 98.3%. No fixes needed.
+            - [x] **Michigan** (2026-10-02, published): 83 counties, 2,971 tracts. Census has
+                  no LODES jobs file for MI after 2021, so every county failed: the jobs
+                  loader now takes the newest year published (downtowns barely move).
+                  Detroit's schools were unscored: the 2019 boundary is the old Detroit City
+                  SD, SEDA scores its 2016 successor (DPSCD) — `SUCCESSOR_DISTRICTS` maps old
+                  IDs to new. Crime 97.8%, schools 99.9%, districts 90%.
             - [ ] **Queue** (owner, 2026-10-02): Florida, Pennsylvania, Virginia, Washington,
                   Michigan, Maryland, Colorado, Ohio, Missouri, Louisiana, New Mexico,
                   Georgia, Massachusetts, Oregon, Minnesota, Oklahoma, Mississippi,
