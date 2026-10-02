@@ -87,7 +87,7 @@ log = get_logger("tracts.crime")
 # "State Police": the patrol for towns without their own police in states that
 # report it per county with a population (Pennsylvania). It plays the sheriff's part.
 KEEP_TYPES = {"City", "County", "State Police"}
-COUNTY_LEVEL = {"County", "State Police"}
+COUNTY_LEVEL = {"County", "State Police", "County+State Police"}
 SIGNED_URL = "https://cde.ucr.cjis.gov/LATEST/s3/signedurl"
 CACHE_DIR = config.INTERIM_DIR / "crime"
 
@@ -323,6 +323,10 @@ def cius(year: int) -> tuple[pd.DataFrame, pd.DataFrame]:
     return cities, sheriffs
 
 
+def county_label_of(county_name: str) -> str:
+    return re.sub(r"\s+(County|Parish|Borough|Census Area|Municipality|City and Borough)$", "", county_name)
+
+
 def _display(a: pd.Series) -> str:
     """The jurisdiction, not the department: contract cities (Santa Clarita, CA) are
     policed by the sheriff but reported under their own name."""
@@ -330,6 +334,8 @@ def _display(a: pd.Series) -> str:
     # the FBI's type doesn't say which.
     if a["agency_type"] == "City":
         return str(a["agency_name"])
+    if a["agency_type"] == "County+State Police":
+        return f"{a['agency_name']} County (sheriff and State Police)"
     if a["agency_type"] == "State Police":
         return f"State Police in {a['agency_name']} County"
     # Some files give the full name ("Fairfax County Police Department"): say which it is.
@@ -497,6 +503,16 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
     sheriff = county_agencies_.iloc[0] if len(county_agencies_) else None if listed else _from_tables(
         st, years, re.sub(r"\s+(County|Parish|Borough|Census Area|Municipality|City and Borough)$", "", county_name),
         county_key=_key(county_name))
+    # Sheriff and State Police splitting a county's patrol (Carroll, MD): the FBI gives
+    # nearly all the population to one, so each alone looks absurd (19/100k; a sheriff
+    # "serving" 2,793). Together they're the county's patrol: one figure.
+    if len(county_agencies_) > 1 and county_agencies_["agency_type"].nunique() > 1:
+        g = county_agencies_
+        sheriff = _with_rates(pd.Series({
+            "agency_name": county_label_of(county_name), "agency_type": "County+State Police",
+            "crime_year": g["crime_year"].max(), "crime_months": g["crime_months"].min(),
+            "crime_population": g["crime_population"].sum(),
+            "violent": g["violent"].sum(), "property": g["property"].sum()}))
     from_tables: set[str] = set()
 
     def lookup(area: tuple[str, str, bool] | None, town: bool = False) -> pd.Series | None:

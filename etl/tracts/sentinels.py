@@ -35,6 +35,7 @@ SENTINELS = {
     "12095": "Orange, FL — partial reporters dropped (Orlando), not given the county's rate",
     "42001": "Adams, PA — State Police; same-named townships elsewhere (Butler, Berwick)",
     "42003": "Allegheny, PA — county police with no population: no county patrol",
+    "24013": "Carroll, MD — sheriff and State Police split the patrol: combined",
 }
 CRIME = ["crime_agency", "violent_rate", "property_rate", "crime_year", "crime_months", "crime_population"]
 

@@ -1485,6 +1485,14 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                   Detroit's schools were unscored: the 2019 boundary is the old Detroit City
                   SD, SEDA scores its 2016 successor (DPSCD) — `SUCCESSOR_DISTRICTS` maps old
                   IDs to new. Crime 97.8%, schools 99.9%, districts 90%.
+            - [x] **Maryland** (2026-10-02, published): 24 counties, 1,464 tracts. Crime 97.9%
+                  → ~100%, schools 100%. County police (Montgomery, Prince George's,
+                  Baltimore County) come through by name. Carroll County's patrol is split
+                  between the sheriff and the State Police, and the FBI gives nearly all the
+                  population to one (State Police 122,587 at 19/100k; sheriff 2,793) — each
+                  alone implausible. Several county-level agencies of different kinds in one
+                  county are now combined: "Carroll County (sheriff and State Police)",
+                  93/100k.
             - [ ] **Queue** (owner, 2026-10-02): Florida, Pennsylvania, Virginia, Washington,
                   Michigan, Maryland, Colorado, Ohio, Missouri, Louisiana, New Mexico,
                   Georgia, Massachusetts, Oregon, Minnesota, Oklahoma, Mississippi,
