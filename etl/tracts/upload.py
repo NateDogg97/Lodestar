@@ -3,6 +3,7 @@ Upload published tract files to Cloudflare R2 (plan §9 Phase 8c, "Data hosting"
 
     python -m etl.tracts.upload --dry-run   # what would change
     python -m etl.tracts.upload             # sync public/data/tracts/ -> bucket tracts/
+    python -m etl.tracts.upload --state CA  # only that state's counties (+ index.json)
     python -m etl.tracts.upload --cors      # (once) let the app's origins read the bucket
                                             # (needs an Admin token; or set the same rule in the
                                             # dashboard: bucket → Settings → CORS policy)
@@ -45,8 +46,12 @@ def set_cors(s3, bucket: str) -> None:
     log.info("CORS on %s: GET from %s", bucket, ", ".join(ORIGINS))
 
 
-def sync(dry_run: bool) -> None:
+def sync(dry_run: bool, state_fips: list[str] | None = None) -> None:
+    """`state_fips`: only counties in these states (2-digit FIPS), so adding a state from
+    a laptop never overwrites what CI published for the others."""
     files = sorted(PUBLISH_DIR.glob("*.json"), key=lambda p: p.name == "index.json")  # index last
+    if state_fips:
+        files = [p for p in files if p.name == "index.json" or p.name[:2] in state_fips]
     if not any(p.name == "index.json" for p in files):
         raise SystemExit(f"No index.json in {PUBLISH_DIR}: run `python -m etl.tracts.publish` first")
     s3, bucket = r2.client("R2_BUCKET")
@@ -68,12 +73,19 @@ def sync(dry_run: bool) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dry-run", action="store_true", help="list what would upload")
+    ap.add_argument("--state", help="only this state's counties (two-letter, comma-separated) and index.json")
     ap.add_argument("--cors", action="store_true", help="set the bucket's CORS rule for the app's origins")
     args = ap.parse_args()
     if args.cors:
         set_cors(*r2.client("R2_BUCKET"))
         return
-    sync(args.dry_run)
+    state_fips = None
+    if args.state:
+        from .geo import STATE_ABBR
+
+        wanted = {st.strip().lower() for st in args.state.split(",")}
+        state_fips = [f for f, ab in STATE_ABBR.items() if ab in wanted]
+    sync(args.dry_run, state_fips)
 
 
 if __name__ == "__main__":

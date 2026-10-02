@@ -1407,7 +1407,12 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                   - Contract cities (Santa Clarita, Compton…) are sheriff-patrolled but
                     reported under their own name: the label is now the jurisdiction
                     ("Reported for Santa Clarita"), not "… Police".
-                  - Not yet published: waiting for the first CI test run to finish.
+                  - **Published 2026-10-02** (`upload --state CA`: only that state's files and
+                    the index, merged into the live one — never overwriting what CI published).
+                    313 counties live. Los Angeles is the largest file so far (2 MB).
+                  - The county index is now network-first in the service worker: with
+                    stale-while-revalidate a returning visitor saw a new state only on the
+                    second visit.
             - [x] **First CI run (2026-10-02) failed, usefully.** FEMA answers GitHub's runners
                   with 403 (any user agent) for the NRI tract table, and the build then
                   crashed writing its report (no output folder on a fresh machine — fixed).
@@ -1416,6 +1421,9 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                   pushes the copies listed in `inputs.MIRRORED` (now: the NRI tract table,
                   635 MB). Tested by simulating FEMA's 403. Re-push when FEMA publishes a new
                   NRI version. Other sources may refuse CI too: each run will say.
+                  Second run passed (Texas + Cook rebuilt on GitHub and uploaded).
+                  Rule: only rarely-changing sources may be mirrored; a monthly one (Zillow,
+                  Redfin) that refuses CI needs another route, never a stale copy.
 - [ ] **8d — Extras, as wanted.** CDC PLACES health, OSM amenities (parks, groceries),
       neighborhood names beyond Zillow's cities.
 - [ ] **8e — Filters and must-haves inside the county.** Decide after 8b, with the data on
