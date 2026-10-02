@@ -43,9 +43,21 @@ THE YEAR AND LOW CONFIDENCE
     months falls back to the year before if that year is more complete. Fewer than
     12 months, no data at all, or an agency serving fewer than
     CRIME_MIN_POPULATION people (tiny towns with a mall), makes the value low
-    confidence. Partial years aren't scaled up. Agencies that report only the
-    older summary format (not NIBRS) aren't in these files: their tracts get
-    no rate, flagged low confidence.
+    confidence. Partial years aren't scaled up.
+
+AGENCIES NOT IN NIBRS: THE YEARLY TABLES (8c, found on California)
+    Agencies still reporting the older summary format aren't in the incident
+    files — in California that's San Francisco PD and the Los Angeles, Riverside
+    and San Bernardino sheriffs. The FBI's yearly "Offenses Known to Law
+    Enforcement" tables (cius/{year}/offenses-known-to-le-{year}.zip) list every
+    agency that reported a full year, either format:
+      Table 8   cities: state, city, population, violent and property crime
+      Table 10  sheriffs and county police: state, county, counts (no population)
+    They fill in only where the incident files have nothing (an agency absent,
+    or present with 0 months). Tables carry no months: they publish full years,
+    so 12. A sheriff's population, absent from Table 10, is the population of
+    the tracts it serves here (those outside a policed city) — what the FBI's
+    own sheriff populations mean: the unincorporated area.
 
 RUN STANDALONE
     python -m etl.tracts.crime 48453              # one county's agencies
@@ -133,7 +145,12 @@ def _member(zf: zipfile.ZipFile, name: str) -> str:
 def _reduce(zf: zipfile.ZipFile) -> pd.DataFrame:
     """One row per agency: ori, agency_name, agency_type, counties, population, months, violent, property."""
     def read(name: str, cols: list[str]) -> pd.DataFrame:
-        return pd.read_csv(zf.open(_member(zf, name)), usecols=cols, dtype=str)
+        # Mostly UTF-8, but some state-years are Windows-1252 (California 2024: a
+        # non-breaking space in an agency name).
+        try:
+            return pd.read_csv(zf.open(_member(zf, name)), usecols=cols, dtype=str)
+        except UnicodeDecodeError:
+            return pd.read_csv(zf.open(_member(zf, name)), usecols=cols, dtype=str, encoding="cp1252")
 
     ag = read("agencies.csv", ["agency_id", "ori", "pub_agency_name", "agency_type_name", "county_name", "population"])
     months = read("NIBRS_month.csv", ["agency_id", "month_num"]).groupby("agency_id")["month_num"].nunique()
@@ -195,8 +212,77 @@ def county_agencies(county_fips: str) -> pd.DataFrame:
     return df.rename(columns={"months": "crime_months", "population": "crime_population"})
 
 
+CIUS_KEY = "cius/{year}/offenses-known-to-le-{year}.zip"
+STATE_NAMES = {
+    "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR", "California": "CA", "Colorado": "CO",
+    "Connecticut": "CT", "Delaware": "DE", "District of Columbia": "DC", "Florida": "FL", "Georgia": "GA",
+    "Hawaii": "HI", "Idaho": "ID", "Illinois": "IL", "Indiana": "IN", "Iowa": "IA", "Kansas": "KS",
+    "Kentucky": "KY", "Louisiana": "LA", "Maine": "ME", "Maryland": "MD", "Massachusetts": "MA",
+    "Michigan": "MI", "Minnesota": "MN", "Mississippi": "MS", "Missouri": "MO", "Montana": "MT",
+    "Nebraska": "NE", "Nevada": "NV", "New Hampshire": "NH", "New Jersey": "NJ", "New Mexico": "NM",
+    "New York": "NY", "North Carolina": "NC", "North Dakota": "ND", "Ohio": "OH", "Oklahoma": "OK",
+    "Oregon": "OR", "Pennsylvania": "PA", "Rhode Island": "RI", "South Carolina": "SC", "South Dakota": "SD",
+    "Tennessee": "TN", "Texas": "TX", "Utah": "UT", "Vermont": "VT", "Virginia": "VA", "Washington": "WA",
+    "West Virginia": "WV", "Wisconsin": "WI", "Wyoming": "WY",
+}
+
+
+def _table(zf: zipfile.ZipFile, number: int) -> pd.DataFrame:
+    """A CIUS table with its real header row; state filled down; footnote digits stripped."""
+    name = next(n for n in zf.namelist() if re.search(rf"(^|/)CIUS_Table_{number}_", n))
+    raw = pd.read_excel(zf.open(name), header=None, dtype=str)
+    head = raw.index[raw[0].astype(str).str.strip() == "State"][0]
+    df = raw.iloc[head + 1:].copy()
+    df.columns = [re.sub(r"\s+", " ", str(c)).strip().lower() for c in raw.iloc[head]]
+    df["state"] = df["state"].ffill().str.replace(r"[\d,]+$", "", regex=True).str.strip()
+    df["st"] = df["state"].str.upper().map({k.upper(): v for k, v in STATE_NAMES.items()})  # 2024: "ALABAMA"
+    num = lambda c: pd.to_numeric(df[c].astype(str).str.replace(",", ""), errors="coerce")
+    df["violent"], df["property"] = num("violent crime"), num("property crime")
+    if "population" in df:
+        df["population"] = num("population")
+    return df.dropna(subset=["st", "violent"])
+
+
+@functools.lru_cache(maxsize=4)
+def cius(year: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(cities: st, key, agency_name, population, violent, property; sheriffs: st, county_key, violent, property)."""
+    cpath, spath = CACHE_DIR / f"cius_{year}_cities.csv", CACHE_DIR / f"cius_{year}_sheriffs.csv"
+    if cpath.exists() and spath.exists():
+        return pd.read_csv(cpath, dtype=str).astype({"population": float, "violent": float, "property": float}), \
+            pd.read_csv(spath, dtype=str).astype({"violent": float, "property": float})
+    k = CIUS_KEY.format(year=year)
+    r = requests.get(SIGNED_URL, params={"key": k}, timeout=config.HTTP_TIMEOUT,
+                     headers={"User-Agent": config.HTTP_USER_AGENT})
+    r.raise_for_status()
+    url = r.json().get(k)
+    empty = (pd.DataFrame(columns=["st", "key", "agency_name", "population", "violent", "property"]),
+             pd.DataFrame(columns=["st", "county_key", "violent", "property"]))
+    if not url:
+        log.warning("CDE has no yearly tables for %d", year)
+        return empty
+    import io
+
+    body = requests.get(url, timeout=config.HTTP_TIMEOUT).content
+    with zipfile.ZipFile(io.BytesIO(body)) as zf:
+        t8, t10 = _table(zf, 8), _table(zf, 10)
+    cities = pd.DataFrame({"st": t8["st"], "agency_name": t8["city"].str.replace(r"[\d,]+$", "", regex=True).str.strip(),
+                           "population": t8["population"], "violent": t8["violent"], "property": t8["property"]})
+    cities["key"] = cities["agency_name"].map(_norm)
+    county = t10["county"].str.replace(r"[\d,]+$", "", regex=True).str.replace(
+        r"\s+(Police Department|Sheriff'?s? Office|County Police)$", "", regex=True, flags=re.I)
+    sheriffs = pd.DataFrame({"st": t10["st"], "county_key": county.map(_key), "violent": t10["violent"],
+                             "property": t10["property"]}).drop_duplicates(["st", "county_key"])
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cities.to_csv(cpath, index=False)
+    sheriffs.to_csv(spath, index=False)
+    log.info("CIUS %d: %d cities, %d sheriffs (cached)", year, len(cities), len(sheriffs))
+    return cities, sheriffs
+
+
 def _display(a: pd.Series) -> str:
-    return f"{a['agency_name']} Police" if a["agency_type"] == "City" else f"{a['agency_name']} County Sheriff"
+    """The jurisdiction, not the department: contract cities (Santa Clarita, CA) are
+    policed by the sheriff but reported under their own name."""
+    return str(a["agency_name"]) if a["agency_type"] == "City" else f"{a['agency_name']} County Sheriff"
 
 
 # Town governments with their own police that Census doesn't count as places
@@ -210,6 +296,22 @@ def _norm(name: str) -> str:
     """Agency and place names compared without case, punctuation or a civil-division suffix."""
     n = re.sub(r"[^a-z ]", "", str(name).lower()).strip()
     return _SUFFIX.sub("", n).strip()
+
+
+def _incorporated(county_fips: str, tracts: pd.DataFrame) -> list[str | None]:
+    """Each tract's place if it's an incorporated city (FUNCSTAT "A"), else None.
+
+    The yearly tables list cities by name only, statewide; a census-designated
+    place (no government, no police) can share a name with a city elsewhere in
+    the state — Riverside County's El Cerrito vs the Bay Area's.
+    """
+    from .names import PLACE_URL
+
+    polys = geo.load_polygons(PLACE_URL.format(state=county_fips[:2]), f"tl_2024_{county_fips[:2]}_place",
+                              ["NAME", "FUNCSTAT"])
+    polys = [(p, g) for p, g in polys if p.get("FUNCSTAT") == "A"]
+    found = geo.locate(tracts["pop_lat"].to_numpy(float), tracts["pop_lon"].to_numpy(float), polys)
+    return [f["NAME"] if f else None for f in found]
 
 
 def _towns(county_fips: str, tracts: pd.DataFrame) -> list[str | None]:
@@ -226,29 +328,90 @@ def _towns(county_fips: str, tracts: pd.DataFrame) -> list[str | None]:
     return [f["NAME"] if f else None for f in found]
 
 
-def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame) -> pd.DataFrame:
-    """`names` needs geoid and place (names.py); `tracts` geoid, pop_lat, pop_lon (geo.py)."""
-    agencies = county_agencies(county_fips)
-    cities = agencies[agencies["agency_type"] == "City"].copy()
-    cities["key"] = cities["agency_name"].map(_norm)
-    by_name = cities.drop_duplicates("key").set_index("key")
-    sheriff = agencies[agencies["agency_type"] == "County"]
-    sheriff = sheriff.iloc[0] if len(sheriff) else None
-
-    towns = dict(zip(tracts["geoid"], _towns(county_fips, tracts))) if len(cities) else {}
-    out, via_town = [], 0
-    for r in names.itertuples():
-        a = None
-        if isinstance(r.place, str) and _norm(r.place) in by_name.index:
-            a = by_name.loc[_norm(r.place)]
-        elif isinstance(towns.get(r.geoid), str) and _norm(towns[r.geoid]) in by_name.index:
-            a, via_town = by_name.loc[_norm(towns[r.geoid])], via_town + 1
+def _from_tables(st: str, years: tuple[int, int], key: str, county_key: str | None = None) -> pd.Series | None:
+    """A city (by name key) or, with county_key, a sheriff from the yearly tables: the newest year that has it."""
+    for year in years:
+        cities, sheriffs = cius(year)
+        if county_key is None:
+            m = cities[(cities["st"] == st) & (cities["key"] == key)]
+            if len(m) == 1:  # two same-named cities in a state: can't tell which, skip
+                a = m.iloc[0]
+                return pd.Series({"agency_name": a["agency_name"], "agency_type": "City", "crime_year": year,
+                                  "crime_months": 12, "crime_population": a["population"],
+                                  "violent": a["violent"], "property": a["property"]})
         else:
-            a = sheriff
+            m = sheriffs[(sheriffs["st"] == st) & (sheriffs["county_key"] == county_key)]
+            if len(m):
+                a = m.iloc[0]
+                return pd.Series({"agency_name": key, "agency_type": "County", "crime_year": year,
+                                  "crime_months": 12, "crime_population": np.nan,
+                                  "violent": a["violent"], "property": a["property"]})
+    return None
+
+
+def _with_rates(a: pd.Series) -> pd.Series:
+    a = a.copy()
+    pop = a["crime_population"]
+    scale = 100_000 / pop if pd.notna(pop) and pop > 0 else np.nan
+    a["violent_rate"], a["property_rate"] = a["violent"] * scale, a["property"] * scale
+    return a
+
+
+def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, population: pd.DataFrame) -> pd.DataFrame:
+    """`names`: geoid, place (names.py); `tracts`: geoid, pop_lat, pop_lon (geo.py); `population`: geoid, population."""
+    st = STATE_ABBR[county_fips[:2]].upper()
+    years = crime_years(st)
+    agencies = county_agencies(county_fips)
+    reported = agencies[agencies["crime_months"] > 0]
+    cities = reported[reported["agency_type"] == "City"].copy()
+    cities["key"] = cities["agency_name"].map(_norm)
+    by_name: dict[str, pd.Series] = {k: r for k, r in cities.drop_duplicates("key").set_index("key").iterrows()}
+    spine = read_interim("spine")
+    county_name = spine.loc[spine["fips"] == county_fips, "county_name"].iloc[0]
+    sheriffs = reported[reported["agency_type"] == "County"]
+    sheriff = sheriffs.iloc[0] if len(sheriffs) else _from_tables(st, years, re.sub(
+        r"\s+(County|Parish|Borough|Census Area|Municipality|City and Borough)$", "", county_name), _key(county_name))
+    from_tables: set[str] = set()
+
+    def city(name: object, governed: bool) -> pd.Series | None:
+        """The NIBRS agency by that name, or (`governed`: a real city or town) the yearly tables'."""
+        if not isinstance(name, str):
+            return None
+        k = _norm(name)
+        if k not in by_name:
+            if not governed:
+                return None
+            extra = _from_tables(st, years, k)
+            if extra is None:
+                return None
+            by_name[k] = _with_rates(extra)
+            from_tables.add(extra["agency_name"])
+        return by_name[k]
+
+    towns = dict(zip(tracts["geoid"], _towns(county_fips, tracts)))
+    incorporated = dict(zip(tracts["geoid"], _incorporated(county_fips, tracts)))
+    chosen, via_town = [], 0
+    for r in names.itertuples():
+        a = city(r.place, governed=incorporated.get(r.geoid) == r.place)
+        if a is None and (a := city(towns.get(r.geoid), governed=True)) is not None:
+            via_town += 1
+        chosen.append(a if a is not None else "sheriff")
+
+    # A sheriff from the yearly tables has no population: use the tracts it serves.
+    if sheriff is not None and pd.isna(sheriff["crime_population"]):
+        pops = dict(zip(population["geoid"], population["population"]))
+        served = sum(pops.get(g, 0) or 0 for g, c in zip(names["geoid"], chosen) if isinstance(c, str))
+        sheriff = sheriff.copy()
+        sheriff["crime_population"] = served
+        sheriff = _with_rates(sheriff)
+        from_tables.add(f"{sheriff['agency_name']} sheriff")
+    out = []
+    for g, c in zip(names["geoid"], chosen):
+        a = sheriff if isinstance(c, str) else c
         if a is None:
-            out.append({"geoid": r.geoid})
+            out.append({"geoid": g})
             continue
-        out.append({"geoid": r.geoid, "crime_agency": _display(a), "violent_rate": a["violent_rate"],
+        out.append({"geoid": g, "crime_agency": _display(a), "violent_rate": a["violent_rate"],
                     "property_rate": a["property_rate"], "crime_year": a["crime_year"],
                     "crime_months": a["crime_months"], "crime_population": a["crime_population"]})
     # Same columns whether or not any agency reports (a few rural counties have none).
@@ -256,9 +419,9 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame) -> pd.Dat
                                             "crime_months", "crime_population"])
     df["crime_low_confidence"] = (df["crime_months"].fillna(0) < 12) | (
         df["crime_population"].fillna(0) < config.CRIME_MIN_POPULATION)
-    unmatched = sorted({p for p in names["place"].dropna() if _norm(p) not in by_name.index})
-    log.info("crime %s: %d city/town agencies (%d tracts matched by town) + %s; places without their own: %s",
-             county_fips, len(cities), via_town, "sheriff" if sheriff is not None else "no sheriff", unmatched[:12])
+    log.info("crime %s: %d NIBRS city/town agencies, %d tracts matched by town, %s; from the yearly tables: %s",
+             county_fips, len(cities), via_town, "sheriff" if sheriff is not None else "no sheriff",
+             sorted(from_tables)[:10])
     return df
 
 

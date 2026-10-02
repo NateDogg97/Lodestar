@@ -78,7 +78,7 @@ def build_county(fips: str, with_crime: bool = True) -> pd.DataFrame:
         "names": names.fetch(fips, geo_table, name),
     }
     if with_crime:
-        parts["crime"] = crime.fetch(fips, parts["names"], geo_table)
+        parts["crime"] = crime.fetch(fips, parts["names"], geo_table, parts["acs"][["geoid", "population"]])
     parts["market"] = market.fetch(parts["names"])
     base = set(parts["geo"]["geoid"])
     for src, df in parts.items():

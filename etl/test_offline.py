@@ -842,6 +842,26 @@ def test_tract_crime_and_gate() -> None:
     failed = pd.concat([cov()] + [cov(fips=f"4400{i}", error="boom") for i in range(4)], ignore_index=True)
     check(not gate.check(failed)[0], "more failed counties than allowed fails")
 
+    # The FBI's yearly tables: title rows above the header, state names in either
+    # case (2025 "Alabama", 2024 "ALABAMA"), footnote digits on names.
+    import io
+    import zipfile
+
+    from .tracts.crime import _table
+
+    rows = [["Table 8"], ["Offenses Known"], ["State", "City", "Population", "Violent\ncrime", "Property\ncrime"],
+            ["CALIFORNIA", "Ontario1", "187,756", "458", "2985"], [None, "Rialto", "105159", "613", "2179"],
+            ["Nowhere", "X", "1", "1", "1"]]
+    xlsx = io.BytesIO()
+    pd.DataFrame(rows).to_excel(xlsx, header=False, index=False)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("CIUS_Table_8_Offenses_2024.xlsx", xlsx.getvalue())
+    with zipfile.ZipFile(buf) as zf:
+        t = _table(zf, 8)
+    check(list(t["st"]) == ["CA", "CA"], "yearly table: upper-case state mapped, filled down, unknown dropped")
+    check(t["population"].iloc[0] == 187756 and t["violent"].iloc[1] == 613, "yearly table: numbers with commas")
+
 
 def test_tract_acs_confidence() -> None:
     """Phase 8: tract ACS parsing — MOE codes, derived shares, low-confidence flags."""

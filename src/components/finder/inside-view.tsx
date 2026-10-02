@@ -296,7 +296,7 @@ function AreaDetail({ area, county, countyName }: { area: Area; county: CountyAr
         <MeasureRow k="property_rate" value={v("property_rate")} flagged={flagged.has("crime")} />
         {r.crime_agency && (
           <p className="text-caption text-neutral-500">
-            {String(r.crime_agency)}, {String(r.crime_year)} (FBI Crime Data Explorer)
+            Reported for {String(r.crime_agency)}, {String(r.crime_year)} (FBI Crime Data Explorer)
           </p>
         )}
       </Section>
