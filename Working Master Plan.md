@@ -1477,6 +1477,8 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                   now reads "Fairfax County Police". Small gap: a city or county that shares
                   a school system with a neighbor (Fairfax City, Emporia, James City County)
                   has a paper district with no test scores — nearby schools still show.
+            - [x] **Washington** (2026-10-02, published): 39 counties, 1,772 tracts, 1 min.
+                  Clean: crime 99.4%, schools 99.9%, home value 98.3%. No fixes needed.
             - [ ] **Queue** (owner, 2026-10-02): Florida, Pennsylvania, Virginia, Washington,
                   Michigan, Maryland, Colorado, Ohio, Missouri, Louisiana, New Mexico,
                   Georgia, Massachusetts, Oregon, Minnesota, Oklahoma, Mississippi,
