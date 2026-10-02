@@ -332,6 +332,9 @@ def _display(a: pd.Series) -> str:
         return str(a["agency_name"])
     if a["agency_type"] == "State Police":
         return f"State Police in {a['agency_name']} County"
+    # Some files give the full name ("Fairfax County Police Department"): say which it is.
+    if m := re.match(r"^(.*?)\s+County\s+(Police|Sheriff)", str(a["agency_name"]), re.I):
+        return f"{m.group(1)} County {'Police' if m.group(2).lower() == 'police' else 'Sheriff'}"
     return f"{a['agency_name']} County (sheriff or county police)"
 
 

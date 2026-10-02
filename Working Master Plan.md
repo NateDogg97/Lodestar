@@ -1470,6 +1470,13 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                   rather than take it; a 5k+ town with zero property crime isn't reporting.
                   Open: regional departments ("Northern Regional") cover several townships
                   under a name that matches none — those tracts fall to the State Police.
+            - [x] **Virginia** (2026-10-02, published): 133 counties and independent cities,
+                  2,186 tracts. Crime 100%, schools 99.8%. Independent cities work as their
+                  own counties (Richmond, Virginia Beach; Fairfax and Arlington by county
+                  police). Labels: a full agency name ("Fairfax County Police Department")
+                  now reads "Fairfax County Police". Small gap: a city or county that shares
+                  a school system with a neighbor (Fairfax City, Emporia, James City County)
+                  has a paper district with no test scores — nearby schools still show.
             - [ ] **Queue** (owner, 2026-10-02): Florida, Pennsylvania, Virginia, Washington,
                   Michigan, Maryland, Colorado, Ohio, Missouri, Louisiana, New Mexico,
                   Georgia, Massachusetts, Oregon, Minnesota, Oklahoma, Mississippi,
