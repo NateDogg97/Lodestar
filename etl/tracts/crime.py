@@ -408,8 +408,10 @@ def _areas(url: str, hint: str, tracts: pd.DataFrame, keep, extra: tuple[str, ..
     polys = geo.load_polygons(url, hint, ["NAME", "NAMELSAD", "FUNCSTAT", *extra])
     polys = [(p, g) for p, g in polys if keep(p)]
     found = geo.locate(tracts["pop_lat"].to_numpy(float), tracts["pop_lon"].to_numpy(float), polys)
-    return [None if f is None else (f["NAME"], _area_kind(f["NAME"], f["NAMELSAD"]), f.get("FUNCSTAT") == "A")
-            for f in found]
+    from .names import clean_place
+
+    return [None if f is None else (clean_place(f["NAME"]), _area_kind(f["NAME"], f["NAMELSAD"]),
+                                    f.get("FUNCSTAT") == "A") for f in found]
 
 
 def _places(county_fips: str, tracts: pd.DataFrame) -> list[tuple[str, str, bool] | None]:

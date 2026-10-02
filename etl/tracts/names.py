@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import functools
 import io
+import re
 import sys
 import tempfile
 import zipfile
@@ -48,6 +49,20 @@ PLACE_URL = "https://www2.census.gov/geo/tiger/TIGER2024/PLACE/tl_2024_{state}_p
 ZCTA_REL_URL = "https://www2.census.gov/geo/docs/maps-data/data/rel2020/zcta520/tab20_zcta520_tract20_natl.txt"
 
 _zillow_cache: list | None = None
+
+
+def clean_place(name: str | None) -> str | None:
+    """Consolidated city-counties' Census names, made readable (8c, Georgia):
+    "Athens-Clarke County unified government (balance)" -> "Athens-Clarke County",
+    "Nashville-Davidson metropolitan government (balance)" -> "Nashville-Davidson",
+    "Indianapolis city (balance)" -> "Indianapolis"."""
+    if not isinstance(name, str):
+        return name
+    if "(balance)" not in name and "government" not in name:
+        return name
+    n = re.sub(r"\s*\(balance\)$", "", name)
+    n = re.sub(r"\s+(unified|consolidated|metropolitan|metro)\s+government$", "", n)
+    return re.sub(r"\s+(city|town|village)$", "", n)
 
 
 def zillow_neighborhoods() -> list:
@@ -106,7 +121,7 @@ def fetch(county_fips: str, tracts: pd.DataFrame, county_name: str) -> pd.DataFr
     out = pd.DataFrame({
         "geoid": tracts["geoid"],
         "neighborhood": [h["Name"] if h else None for h in hood],
-        "place": [p["NAME"] if p else None for p in place],
+        "place": [clean_place(p["NAME"]) if p else None for p in place],
     })
     out["zip"] = out["geoid"].map(_zips(county_fips))
 
@@ -120,7 +135,7 @@ def fetch(county_fips: str, tracts: pd.DataFrame, county_name: str) -> pd.DataFr
             near.append(None)
             continue
         pt = _points(lon[i], lat[i])
-        near.append(min(places, key=lambda pg: pg[1].distance(pt))[0]["NAME"])
+        near.append(clean_place(min(places, key=lambda pg: pg[1].distance(pt))[0]["NAME"]))
     out["near_place"] = near
 
     def label(r) -> str:

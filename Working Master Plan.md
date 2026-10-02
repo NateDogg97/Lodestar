@@ -1507,6 +1507,12 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                   school districts didn't submit to CRDC 2023–24, so Lea/Chaves high schools
                   are thin (33–35%). Open: fall back to CRDC 2021–22 for districts missing
                   from 2023–24.
+            - [x] **Georgia** (2026-10-02, published): 159 counties, 2,791 tracts. Consolidated
+                  city-counties carry Census names like "Athens-Clarke County unified
+                  government (balance)": labels showed them whole and crime couldn't match the
+                  police. `names.clean_place` → "Athens-Clarke County" (also Augusta,
+                  Louisville, Nashville, Indianapolis to come). Crime 91.1% (Savannah reported
+                  146 property crimes for 242k people: dropped as partial).
             - [ ] **Queue** (owner, 2026-10-02): Florida, Pennsylvania, Virginia, Washington,
                   Michigan, Maryland, Colorado, Ohio, Missouri, Louisiana, New Mexico,
                   Georgia, Massachusetts, Oregon, Minnesota, Oklahoma, Mississippi,
