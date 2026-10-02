@@ -1446,6 +1446,22 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                   coverage → fix what it reveals → `sentinels` if shared code changed →
                   `publish` + `upload --state ST` → add a reference county if it taught us
                   something.
+            - [x] **Florida** (2026-10-02, published): 67 counties, 5,122 tracts, 2 min.
+                  Everything ≥97.6% except crime, 83%. Florida's switch to FIBRS left many
+                  agencies out of both FBI sources (the Broward, Volusia, Lake, Manatee
+                  sheriffs; Orlando). Added `crime_states.py`: a state's own program fills
+                  agencies the FBI lacks — Florida's FDLE offense workbook (link found on its
+                  page; counts offenses not victims and includes fondling, so a little high).
+                  But most of what FDLE adds is partial too (Deltona: 14 property crimes for
+                  98,792 people), so a second floor: under 100 property crimes per 100k for
+                  10k+ people is partial reporting, dropped (it also caught NY zero-reporters
+                  and Long Beach, NY). And a dropped city's tracts now get no rate, not the
+                  county's (Orlando isn't Orange County's to describe). Broward Sheriff
+                  isn't on FIBRS at all: Broward 38%. These fill in as agencies report.
+            - [ ] **Queue** (owner, 2026-10-02): Florida, Pennsylvania, Virginia, Washington,
+                  Michigan, Maryland, Colorado, Ohio, Missouri, Louisiana, New Mexico,
+                  Georgia, Massachusetts, Oregon, Minnesota, Oklahoma, Mississippi,
+                  South Carolina, West Virginia — then decide on the rest.
             - [x] **First CI run (2026-10-02) failed, usefully.** FEMA answers GitHub's runners
                   with 403 (any user agent) for the NRI tract table, and the build then
                   crashed writing its report (no output folder on a fresh machine — fixed).

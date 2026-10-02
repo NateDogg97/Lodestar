@@ -223,6 +223,20 @@ def county_agencies(county_fips: str) -> pd.DataFrame:
     main, fallback = (pick(y) for y in crime_years(st))
     both = pd.concat([main, fallback]).sort_values(["months", "crime_year"], ascending=False)
     df = both.drop_duplicates("ori").copy()
+
+    # The state's own program (crime_states.py) for agencies the FBI lacks or has nothing for.
+    from . import crime_states
+
+    have = {(_norm(n), t) for n, t, m in zip(df["agency_name"], df["agency_type"], df["months"]) if m > 0}
+    extra = []
+    for year in crime_years(st):
+        s_ = crime_states.agencies(st, year)
+        s_ = s_[s_["county_key"] == key].assign(crime_year=year, ori=None, counties=key)
+        extra.append(s_[[(_norm(n), t) not in have for n, t in zip(s_["agency_name"], s_["agency_type"])]])
+    if extra and any(len(e) for e in extra):
+        state = pd.concat(extra).sort_values(["months", "crime_year"], ascending=False)
+        state = state.drop_duplicates(["agency_name", "agency_type"]).drop(columns="county_key")
+        df = pd.concat([df, state.assign(source="state")], ignore_index=True)
     scale = 100_000 / df["population"].where(df["population"] > 0)
     has = df["months"] > 0
     df["violent_rate"] = (df["violent"] * scale).where(has)
@@ -322,6 +336,10 @@ _SUFFIX = re.compile(r"\b(charter township|township|city|town|borough|village|pl
 # this safe: below the floor, show nothing rather than a wrong number. A
 # county agency merely low is shown but flagged.
 IMPLAUSIBLE_RATE, IMPLAUSIBLE_POP = 20.0, 50_000
+# Property crime is common everywhere (US ~1,800/100k; the safest real towns a
+# few hundred): under 100 for 10,000+ people means partial reporting — an agency
+# mid-switch to a new system (Deltona, FL: 14 in a year for 98,792 people).
+IMPLAUSIBLE_PROPERTY, IMPLAUSIBLE_PROPERTY_POP = 100.0, 10_000
 LOW_COUNTY_RATE = 50.0
 # A suffix-less agency name may be a town's police (New England: "Bristol"), or a
 # village's that happens to share its township's name (Illinois: the Village of
@@ -421,8 +439,12 @@ def _with_rates(a: pd.Series) -> pd.Series:
 def _plausible(a: pd.Series | None) -> bool:
     if a is None:
         return False
-    pop, rate = a.get("crime_population"), a.get("violent_rate")
-    return not (pd.notna(pop) and pop >= IMPLAUSIBLE_POP and pd.notna(rate) and rate < IMPLAUSIBLE_RATE)
+    pop, rate, prop = a.get("crime_population"), a.get("violent_rate"), a.get("property_rate")
+    if pd.isna(pop):
+        return True
+    too_safe = pop >= IMPLAUSIBLE_POP and pd.notna(rate) and rate < IMPLAUSIBLE_RATE
+    too_quiet = pop >= IMPLAUSIBLE_PROPERTY_POP and pd.notna(prop) and prop < IMPLAUSIBLE_PROPERTY
+    return not (too_safe or too_quiet)
 
 
 def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, population: pd.DataFrame) -> pd.DataFrame:
@@ -474,22 +496,26 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
         a = lookup(place)
         town_match = a is None and (a := lookup(town)) is not None
         if a is not None and not _plausible(a):
+            # The city polices itself but its numbers are partial: no rate. The
+            # county's would describe somewhere else (Long Beach, NY isn't Nassau's).
             dropped.add(a["agency_name"])
-            a, town_match = None, False
+            chosen.append(None)
+            by_town.append(False)
+            continue
         chosen.append(a if a is not None else "sheriff")
         by_town.append(town_match)
 
     # Undo town matches that would have an agency serve far more people than it does.
     served: dict[str, float] = {}
     for g, c in zip(tracts["geoid"], chosen):
-        if not isinstance(c, str):
+        if c is not None and not isinstance(c, str):
             served[c["agency_name"]] = served.get(c["agency_name"], 0) + (pops.get(g, 0) or 0)
     too_big = {name for name, n in served.items()
-               if any(not isinstance(c, str) and c["agency_name"] == name and pd.notna(c["crime_population"])
+               if any(c is not None and not isinstance(c, str) and c["agency_name"] == name and pd.notna(c["crime_population"])
                       and n > TOWN_MATCH_MAX_RATIO * c["crime_population"] for c in chosen)}
     undone: set[str] = set()
     for i, c in enumerate(chosen):
-        if by_town[i] and not isinstance(c, str) and c["agency_name"] in too_big:
+        if by_town[i] and c is not None and not isinstance(c, str) and c["agency_name"] in too_big:
             undone.add(c["agency_name"])
             chosen[i], by_town[i] = "sheriff", False
     via_town = sum(by_town)
@@ -506,7 +532,7 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
         sheriff = None
     out = []
     for g, c in zip(tracts["geoid"], chosen):
-        a = sheriff if isinstance(c, str) else c
+        a = sheriff if isinstance(c, str) else c  # None: a city whose own numbers were dropped
         if a is None:
             out.append({"geoid": g})
             continue
