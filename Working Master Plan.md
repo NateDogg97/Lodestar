@@ -1390,7 +1390,24 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
             time, fix what each one reveals, and run the rest together only once confident.
             The monthly schedule rebuilds exactly the live counties (`--state published`);
             a new state is built deliberately (locally, or the workflow with `states: CA`).
-            Next: California.
+            - [x] **California** (2026-10-02): 58 counties, 9,109 tracts, 2 min, 0 failures.
+                  Coverage: crime 100%, schools 99.9%, high schools 99.5%, home value 96.6%,
+                  Redfin 98.7%, inside a place 93%. What it found:
+                  - The 2024 NIBRS file isn't UTF-8 (cp1252): every county failed until the
+                    reader fell back — one bad state file fails a whole state, and the gate
+                    would have stopped it.
+                  - Crime 82% at first: SFPD and the LA, Riverside and San Bernardino sheriffs
+                    still report the summary format, absent from NIBRS files. Filled from the
+                    FBI's yearly tables (CIUS Table 8 cities with population, Table 10
+                    sheriffs without — a sheriff's population is the tracts it serves: LA
+                    1.03M, Riverside 437k, San Bernardino 342k, matching their unincorporated
+                    populations). Statewide tables match by name only, so only incorporated
+                    cities (place `FUNCSTAT` A) and real towns use them (Riverside County's
+                    El Cerrito CDP had matched the Bay Area city).
+                  - Contract cities (Santa Clarita, Compton…) are sheriff-patrolled but
+                    reported under their own name: the label is now the jurisdiction
+                    ("Reported for Santa Clarita"), not "… Police".
+                  - Not yet published: waiting for the first CI test run to finish.
 - [ ] **8d — Extras, as wanted.** CDC PLACES health, OSM amenities (parks, groceries),
       neighborhood names beyond Zillow's cities.
 - [ ] **8e — Filters and must-haves inside the county.** Decide after 8b, with the data on
