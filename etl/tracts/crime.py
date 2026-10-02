@@ -501,6 +501,15 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
         by_name.setdefault(_norm(r["agency_name"]), []).append(r)
     spine = read_interim("spine")
     county_name = spine.loc[spine["fips"] == county_fips, "county_name"].iloc[0]
+    # A joint city-county department ("Charlotte-Mecklenburg", NC: 1.03M people) polices
+    # the city and the county around it: it answers to the city's name and is the
+    # county's patrol.
+    joint = None
+    for _, r in cities.iterrows():
+        parts = re.split(r"\s*-\s*", str(r["agency_name"]))
+        if len(parts) == 2 and _key(parts[1]) == _key(county_name):
+            by_name.setdefault(_norm(parts[0]), []).append(r)
+            joint = r
     # With both a sheriff and a county police department, the one that polices people
     # is the one the FBI gives a population (then: the most offenses).
     # Population 0: not a patrol agency (Allegheny County Police: parks, the airport).
@@ -531,6 +540,8 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
             "crime_year": g["crime_year"].max(), "crime_months": g["crime_months"].min(),
             "crime_population": g["crime_population"].sum(),
             "violent": g["violent"].sum(), "property": g["property"].sum()}))
+    if sheriff is None and joint is not None:
+        sheriff = joint
     from_tables: set[str] = set()
 
     def lookup(area: tuple[str, str, bool] | None, town: bool = False) -> pd.Series | None:

@@ -1529,6 +1529,12 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                   Mexico, Georgia, Massachusetts, Oregon, Minnesota, Oklahoma, Mississippi,
                   South Carolina, West Virginia. With Texas, California, New York and Cook
                   County: 23 states live. Next: decide on the remaining 28 (incl. DC).
+            - [ ] **The rest, one by one** (owner, 2026-10-02: order mine; the owner runs the
+                  refresh workflow after): IL, NC, NJ, AZ, TN, IN, WI, KY, AL, AR, IA, KS, NE,
+                  NV, UT, CT, RI, NH, VT, ME, DE, DC, ID, MT, ND, SD, WY, HI, AK.
+                  - IL: clean (crime 97.4%). NC: Charlotte's police are the joint
+                    "Charlotte-Mecklenburg" department — a "City-County" agency now answers to
+                    the city's name and is the county's patrol (Mecklenburg 14% → 100%).
             - [x] **First CI run (2026-10-02) failed, usefully.** FEMA answers GitHub's runners
                   with 403 (any user agent) for the NRI tract table, and the build then
                   crashed writing its report (no output folder on a fresh machine — fixed).
