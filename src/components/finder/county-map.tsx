@@ -179,6 +179,8 @@ export interface InsideLayer {
   labels: Map<string, string>;
   legend: { title: string; low: string; high: string };
   selected: string | null;
+  /** Areas to outline while the pointer is over them in the list (a town: all its areas). */
+  highlight: string[];
   /** A pick from the list: zoom to that area. A new object re-zooms. */
   focus: { geoid: string; n: number } | null;
   onSelectArea: (geoid: string) => void;
@@ -420,6 +422,9 @@ export default function CountyMap({
       paint: { "fill-color": AREA_FILL, "fill-opacity": 0.8 } }, firstLabel);
     map.addLayer({ id: "tract-line", type: "line", source: "tracts",
       paint: { "line-color": dark ? "#0a0a0a" : "#ffffff", "line-width": 0.6, "line-opacity": 0.8 } }, firstLabel);
+    map.addLayer({ id: "tract-hover", type: "line", source: "tracts",
+      paint: { "line-color": dark ? "#fff" : "#111",
+        "line-width": ["case", ["boolean", ["feature-state", "hover"], false], 2, 0] } });
     map.addLayer({ id: "tract-selected", type: "line", source: "tracts",
       paint: { "line-color": dark ? "#fff" : "#111",
         "line-width": ["case", ["boolean", ["feature-state", "selected"], false], 3, 0] } });
@@ -429,7 +434,7 @@ export default function CountyMap({
       map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: { top: 30, left: 30, right: 30, bottom: inset + 30 }, duration: 600 });
     }
     return () => {
-      for (const id of ["tract-selected", "tract-line", "tract-fill"]) if (map.getLayer(id)) map.removeLayer(id);
+      for (const id of ["tract-selected", "tract-hover", "tract-line", "tract-fill"]) if (map.getLayer(id)) map.removeLayer(id);
       if (map.getSource("tracts")) map.removeSource("tracts");
       tractFeatures.current = new Map();
     };
@@ -453,6 +458,17 @@ export default function CountyMap({
     prevArea.current = insideSelected;
     if (insideSelected) map.setFeatureState({ source: "tracts", id: insideSelected }, { selected: true });
   }, [ready, insideSelected, insideFips, insideShapes, dark]);
+
+  // Outline what the pointer is over in the area list.
+  const insideHighlight = inside?.highlight;
+  const prevHighlight = useRef<string[]>([]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || !map.getSource("tracts")) return;
+    for (const id of prevHighlight.current) map.setFeatureState({ source: "tracts", id }, { hover: false });
+    prevHighlight.current = insideHighlight ?? [];
+    for (const id of prevHighlight.current) map.setFeatureState({ source: "tracts", id }, { hover: true });
+  }, [ready, insideHighlight, insideFips, insideShapes, dark]);
 
   // A pick from the area list zooms to it.
   const insideFocus = inside?.focus ?? null;

@@ -1592,6 +1592,11 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
                   Second run passed (Texas + Cook rebuilt on GitHub and uploaded).
                   Rule: only rarely-changing sources may be mirrored; a monthly one (Zillow,
                   Redfin) that refuses CI needs another route, never a stale copy.
+- [x] **Area list ↔ map** (owner, 2026-10-02): hovering a town in the area list outlines all
+      its areas on the map; hovering one area outlines just it (keyboard focus too). A town
+      with a single area has no dropdown — the row is the area (its value, caution icon), and
+      a click opens it. Hover state is kept apart from the map's colors so hovering never
+      recolors the map.
 - [ ] **8d — Extras, as wanted.** CDC PLACES health, OSM amenities (parks, groceries),
       neighborhood names beyond Zillow's cities.
 - [ ] **8e — Filters and must-haves inside the county.** Decide after 8b, with the data on

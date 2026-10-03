@@ -34,10 +34,12 @@ interface Props {
   onMeasure: (key: string) => void;
   selected: string | null;
   onSelect: (geoid: string | null) => void;
+  /** The areas the pointer (or keyboard focus) is on in the list, for the map to outline. */
+  onHover: (geoids: string[]) => void;
   onBack: () => void;
 }
 
-export function InsideView({ countyName, state, measure, onMeasure, selected, onSelect, onBack }: Props) {
+export function InsideView({ countyName, state, measure, onMeasure, selected, onSelect, onHover, onBack }: Props) {
   const areas = state.status === "ready" ? state.data.areas : null;
   const area = selected && areas ? (areas.byGeoid.get(selected) ?? null) : null;
 
@@ -67,7 +69,9 @@ export function InsideView({ countyName, state, measure, onMeasure, selected, on
 
       {state.status === "loading" && <Note>Loading areas…</Note>}
       {state.status === "error" && <Note>{state.message}</Note>}
-      {areas && !area && <AreaList areas={areas} measure={measure} onMeasure={onMeasure} onSelect={onSelect} />}
+      {areas && !area && (
+        <AreaList areas={areas} measure={measure} onMeasure={onMeasure} onSelect={onSelect} onHover={onHover} />
+      )}
       {areas && area && <AreaDetail area={area} county={areas} countyName={countyName} />}
     </div>
   );
@@ -104,11 +108,13 @@ function AreaList({
   measure,
   onMeasure,
   onSelect,
+  onHover,
 }: {
   areas: CountyAreas;
   measure: string;
   onMeasure: (key: string) => void;
   onSelect: (geoid: string) => void;
+  onHover: (geoids: string[]) => void;
 }) {
   const groups = useMemo(() => groupAreas(areas.areas), [areas]);
   const [open, setOpen] = useState<Set<string>>(() => new Set(groups.slice(0, 1).map((g) => g.name)));
@@ -145,11 +151,44 @@ function AreaList({
           const values = g.areas.map((a) => areaValue(a, measure)).filter((v): v is number => v !== null);
           const median = values.length ? values.sort((a, b) => a - b)[values.length >> 1] : null;
           const isOpen = open.has(g.name);
+          const all = g.areas.map((a) => a.geoid);
+          // Hover or focus outlines on the map: a town, all its areas; one area, just it.
+          const outline = (geoids: string[]) => ({
+            onMouseEnter: () => onHover(geoids),
+            onFocus: () => onHover(geoids),
+          });
+          // A town with a single area has nothing to expand: the row is the area.
+          if (g.areas.length === 1) {
+            const a = g.areas[0];
+            return (
+              <li key={g.name} onMouseLeave={() => onHover([])} onBlur={() => onHover([])}>
+                <div className="flex items-center gap-1 hover:bg-neutral-100 dark:hover:bg-neutral-900">
+                  <button
+                    type="button"
+                    onClick={() => onSelect(a.geoid)}
+                    {...outline(all)}
+                    className="flex min-w-0 flex-1 items-center justify-between gap-3 py-3 text-left"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate pl-[1.125rem] text-body font-semibold">{g.name}</span>
+                      <span className="block pl-[1.125rem] text-caption text-neutral-500">
+                        {a.zip ? `ZIP ${a.zip} · ` : ""}
+                        {g.population.toLocaleString()} people
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-right text-label tabular-nums">{formatAreaValue(a, measure)}</span>
+                  </button>
+                  <Caution flags={headlineFlags(a)} />
+                </div>
+              </li>
+            );
+          }
           return (
-            <li key={g.name}>
+            <li key={g.name} onMouseLeave={() => onHover([])} onBlur={() => onHover([])}>
               <button
                 type="button"
                 onClick={() => toggle(g.name)}
+                {...outline(all)}
                 aria-expanded={isOpen}
                 className="flex w-full items-center justify-between gap-3 py-3 text-left"
               >
@@ -159,7 +198,7 @@ function AreaList({
                     {g.name}
                   </span>
                   <span className="block pl-[1.125rem] text-caption text-neutral-500">
-                    {g.areas.length} {g.areas.length === 1 ? "area" : "areas"} · {g.population.toLocaleString()} people
+                    {g.areas.length} areas · {g.population.toLocaleString()} people
                   </span>
                 </span>
                 <span className="shrink-0 text-right text-label tabular-nums">
@@ -168,7 +207,10 @@ function AreaList({
                 </span>
               </button>
               {isOpen && (
-                <ul className="mb-2 ml-[1.125rem] border-l border-neutral-200 dark:border-neutral-800">
+                <ul
+                  className="mb-2 ml-[1.125rem] border-l border-neutral-200 dark:border-neutral-800"
+                  onMouseLeave={() => onHover(all)}
+                >
                   {[...g.areas]
                     .sort((a, b) => (areaValue(b, measure) ?? -Infinity) - (areaValue(a, measure) ?? -Infinity))
                     .map((a) => (
@@ -177,6 +219,7 @@ function AreaList({
                           <button
                             type="button"
                             onClick={() => onSelect(a.geoid)}
+                            {...outline([a.geoid])}
                             className="flex min-w-0 flex-1 items-center justify-between gap-3 py-2 text-left"
                           >
                             <span className="truncate text-label">{areaName(a)}</span>

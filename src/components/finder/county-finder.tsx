@@ -303,18 +303,21 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   const areasState = useCountyAreas(insideOpen ? insideFips : null);
   const placeInUrl = insideOpen && selectedArea ? selectedArea : showPlace ? selectedFips : null;
 
+  const [hoverAreas, setHoverAreas] = useState<string[]>([]);
   const selectArea = (geoid: string | null) => {
+    setHoverAreas([]);
     setSelectedArea(geoid);
     if (geoid) setAreaFocus((f) => ({ geoid, n: (f?.n ?? 0) + 1 }));
   };
   const leaveInside = () => {
+    setHoverAreas([]);
     setInsideFips(null);
     setSelectedArea(null);
   };
 
   // The map layer for the explored county: each area's position within the
   // county for the chosen measure (rank, 0–1), so colors spread evenly.
-  const insideLayer = useMemo<InsideLayer | null>(() => {
+  const baseInsideLayer = useMemo<Omit<InsideLayer, "highlight"> | null>(() => {
     if (!insideOpen || areasState.status !== "ready") return null;
     const { areas, shapes } = areasState.data;
     const vals = areas.areas
@@ -338,6 +341,12 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       onSelectArea: selectArea,
     };
   }, [insideOpen, areasState, areaMeasure, selectedArea, areaFocus]);
+  // Hovering the list outlines areas on the map. Kept apart so a hover doesn't
+  // rebuild the colors above (the map recolors when `values` changes).
+  const insideLayer = useMemo<InsideLayer | null>(
+    () => (baseInsideLayer ? { ...baseInsideLayer, highlight: hoverAreas } : null),
+    [baseInsideLayer, hoverAreas],
+  );
 
   // Keep the address bar on the current search, so it can be copied or
   // bookmarked as is. Debounced: Safari throttles rapid replaceState calls.
@@ -499,6 +508,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
             onMeasure={setAreaMeasure}
             selected={selectedArea}
             onSelect={selectArea}
+            onHover={setHoverAreas}
             onBack={leaveInside}
           />
         </div>
