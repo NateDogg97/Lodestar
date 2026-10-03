@@ -8,7 +8,6 @@ import {
   CLIMATE_FAMILIES,
   DIRECTIONS,
   formatValue,
-  getMetric,
   MAX_WEIGHT,
   METRICS,
   type CategoryDef,
@@ -17,6 +16,8 @@ import {
   type MetricGroup,
   type MetricKey,
 } from "@/lib/scoring";
+
+import { AREA_PRIORITIES } from "@/lib/tracts";
 
 import { InfoTip } from "@/components/ui/info-tip";
 import { Modal } from "@/components/ui/modal";
@@ -34,7 +35,7 @@ import type { Preferences } from "./preferences";
  */
 export type FiltersMode = "priorities" | "musts";
 
-type SectionId = MetricGroup | "policies";
+type SectionId = MetricGroup | "policies" | "inside";
 
 const SECTIONS: { id: SectionId; label: string; mustsOnly?: boolean }[] = [
   { id: "cost", label: "Cost of living" },
@@ -46,11 +47,14 @@ const SECTIONS: { id: SectionId; label: string; mustsOnly?: boolean }[] = [
   { id: "people", label: "People & income" },
   { id: "taxes", label: "Taxes" },
   { id: "policies", label: "Policies", mustsOnly: true },
+  { id: "inside", label: "Inside a county" },
 ];
 
 const SECTION_TIPS: Partial<Record<SectionId, string>> = {
   hazards:
     "FEMA National Risk Index (Dec 2025): where a county ranks nationally on the share of its buildings, people and farms expected to be lost to each hazard in a typical year.",
+  inside:
+    "These rank the areas inside a county (Explore inside) and don't change county results. Your other priorities that vary within a county — home value, rent, household income, schools, natural hazards, distance to an airport — rank areas too, as do must-haves in the same units (a maximum home value).",
   policies:
     "Policies are never weighted — a county whose state isn’t one you allow is ruled out. States with no value (their sources disagree) are kept as unknown.",
 };
@@ -78,6 +82,11 @@ function sectionCategories(id: SectionId): (typeof CATEGORIES)[number][] {
 
 /** How many filters in a section are doing something, in one mode. */
 function sectionCount(prefs: Preferences, mode: FiltersMode, id: SectionId): number {
+  if (id === "inside") {
+    return mode === "priorities"
+      ? AREA_PRIORITIES.filter((d) => (prefs.area.weights[d.key] ?? 0) > 0).length
+      : AREA_PRIORITIES.filter((d) => hasLimit(prefs.area.limits[d.key])).length;
+  }
   const metrics = METRICS.filter((m) => m.group === id);
   if (mode === "priorities") return metrics.filter((m) => (prefs.weights[m.key] ?? 0) > 0).length;
   return (
@@ -292,10 +301,11 @@ export function FiltersModal({
               mode === "priorities" ? (
                 <PriorityCard
                   key={m.key}
-                  metric={m.key}
+                  id={m.key}
+                  label={m.label}
                   weight={prefs.weights[m.key] ?? 0}
                   direction={prefs.directions[m.key] ?? m.defaultDirection}
-                  range={ranges[m.key]}
+                  typical={ranges[m.key] ? `Aiming for the typical county: ${formatValue(m.key, ranges[m.key]!.median)}` : undefined}
                   source={sources[m.key]}
                   onWeight={(w) => onChange({ ...prefs, weights: { ...prefs.weights, [m.key]: w } })}
                   onDirection={(d) => onChange({ ...prefs, directions: { ...prefs.directions, [m.key]: d } })}
@@ -303,9 +313,11 @@ export function FiltersModal({
               ) : (
                 <LimitCard
                   key={`${m.key}-${resetKey}`}
-                  metric={m.key}
+                  id={m.key}
+                  label={m.label}
+                  unit={m.unit}
                   limit={prefs.limits[m.key]}
-                  range={ranges[m.key]}
+                  placeholders={ranges[m.key] ? [plainNumber(ranges[m.key]!.min), plainNumber(ranges[m.key]!.max)] : undefined}
                   source={sources[m.key]}
                   onLimit={(bound, v) =>
                     onChange({ ...prefs, limits: { ...prefs.limits, [m.key]: { ...prefs.limits[m.key], [bound]: v } } })
@@ -313,6 +325,39 @@ export function FiltersModal({
                 />
               ),
             )}
+            {current === "inside" &&
+              AREA_PRIORITIES.map((d) =>
+                mode === "priorities" ? (
+                  <PriorityCard
+                    key={d.key}
+                    id={`area-${d.key}`}
+                    label={d.label}
+                    note={d.note}
+                    weight={prefs.area.weights[d.key] ?? 0}
+                    direction={prefs.area.directions[d.key] ?? d.defaultDirection}
+                    typical="Aiming for the county's typical area"
+                    onWeight={(w) => onChange({ ...prefs, area: { ...prefs.area, weights: { ...prefs.area.weights, [d.key]: w } } })}
+                    onDirection={(dir) =>
+                      onChange({ ...prefs, area: { ...prefs.area, directions: { ...prefs.area.directions, [d.key]: dir } } })
+                    }
+                  />
+                ) : (
+                  <LimitCard
+                    key={`area-${d.key}-${resetKey}`}
+                    id={`area-${d.key}`}
+                    label={d.label}
+                    note={d.note}
+                    unit={d.unit}
+                    limit={prefs.area.limits[d.key]}
+                    onLimit={(bound, v) =>
+                      onChange({
+                        ...prefs,
+                        area: { ...prefs.area, limits: { ...prefs.area.limits, [d.key]: { ...prefs.area.limits[d.key], [bound]: v } } },
+                      })
+                    }
+                  />
+                ),
+              )}
             {categories.map((def) => (
               <CategoryCard
                 key={def.key}
@@ -477,12 +522,13 @@ function Card({ active, children }: { active: boolean; children: ReactNode }) {
   );
 }
 
-function CardTitle({ id, label, source }: { id?: string; label: string; source?: LawSourceSummary }) {
+function CardTitle({ id, label, source, note }: { id?: string; label: string; source?: LawSourceSummary; note?: string }) {
   return (
     <div className="flex items-center gap-1">
       <span id={id} className="text-label font-semibold">
         {label}
       </span>
+      {note && <InfoTip label={label}>{note}</InfoTip>}
       {source && (
         <InfoTip label={`${label} source`}>
           <SourceNote source={source} />
@@ -553,27 +599,32 @@ const IMPORTANCE = Array.from({ length: MAX_WEIGHT + 1 }, (_, w) => ({
 }));
 
 function PriorityCard({
-  metric,
+  id,
+  label,
+  note,
   weight,
   direction,
-  range,
+  typical,
   source,
   onWeight,
   onDirection,
 }: {
-  metric: MetricKey;
+  id: string;
+  label: string;
+  /** For the "i" beside the title (area-only measures). */
+  note?: string;
   weight: number;
   direction: Direction;
-  range: MetricRange | undefined;
-  source: LawSourceSummary | undefined;
+  /** Shown when "Average" is chosen: what that aims for. */
+  typical?: string;
+  source?: LawSourceSummary;
   onWeight: (w: number) => void;
   onDirection: (d: Direction) => void;
 }) {
-  const def = getMetric(metric);
-  const titleId = `prio-${metric}`;
+  const titleId = `prio-${id}`;
   return (
     <Card active={weight > 0}>
-      <CardTitle id={titleId} label={def.label} source={source} />
+      <CardTitle id={titleId} label={label} source={source} note={note} />
       <p id={`${titleId}-imp`} className="mt-3 mb-1.5 text-caption text-neutral-500 dark:text-neutral-400">
         Importance
       </p>
@@ -607,10 +658,8 @@ function PriorityCard({
             onChange={onDirection}
             pressedClass={() => "bg-neutral-800 font-semibold text-white dark:bg-neutral-200 dark:text-neutral-900"}
           />
-          {direction === "middle" && range && (
-            <p className="mt-2 text-caption text-neutral-500 dark:text-neutral-400">
-              Aiming for the typical county: {formatValue(metric, range.median)}
-            </p>
+          {direction === "middle" && typical && (
+            <p className="mt-2 text-caption text-neutral-500 dark:text-neutral-400">{typical}</p>
           )}
         </>
       )}
@@ -619,35 +668,43 @@ function PriorityCard({
 }
 
 function LimitCard({
-  metric,
+  id,
+  label,
+  note,
+  unit,
   limit,
-  range,
+  placeholders,
   source,
   onLimit,
 }: {
-  metric: MetricKey;
+  id: string;
+  label: string;
+  note?: string;
+  unit: string;
   limit: { min?: number; max?: number } | undefined;
-  range: MetricRange | undefined;
-  source: LawSourceSummary | undefined;
+  /** [min, max] hints: the national range, in the units you type. */
+  placeholders?: [string, string];
+  source?: LawSourceSummary;
   onLimit: (bound: "min" | "max", v: number | undefined) => void;
 }) {
-  const def = getMetric(metric);
   return (
     <Card active={hasLimit(limit)}>
-      <CardTitle label={def.label} source={source} />
+      <CardTitle label={label} source={source} note={note} />
       <div className="mt-3 grid grid-cols-2 gap-3">
         <LimitField
           label="Min"
-          metric={metric}
+          id={id}
+          unit={unit}
           value={limit?.min}
-          placeholder={range ? plainNumber(range.min) : undefined}
+          placeholder={placeholders?.[0]}
           onChange={(v) => onLimit("min", v)}
         />
         <LimitField
           label="Max"
-          metric={metric}
+          id={id}
+          unit={unit}
           value={limit?.max}
-          placeholder={range ? plainNumber(range.max) : undefined}
+          placeholder={placeholders?.[1]}
           onChange={(v) => onLimit("max", v)}
         />
       </div>
@@ -667,19 +724,20 @@ function plainNumber(v: number): string {
 
 function LimitField({
   label,
-  metric,
+  id: fieldOf,
+  unit,
   value,
   placeholder,
   onChange,
 }: {
   label: string;
-  metric: MetricKey;
+  id: string;
+  unit: string;
   value: number | undefined;
   placeholder: string | undefined;
   onChange: (v: number | undefined) => void;
 }) {
-  const id = `limit-${metric}-${label.toLowerCase()}`;
-  const unit = getMetric(metric).unit;
+  const id = `limit-${fieldOf}-${label.toLowerCase()}`;
   return (
     <div>
       <label htmlFor={id} className="mb-1 block text-caption text-neutral-500 dark:text-neutral-400">

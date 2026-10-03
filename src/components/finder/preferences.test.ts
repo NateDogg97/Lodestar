@@ -22,6 +22,7 @@ describe("sanitizePreferences", () => {
       limits: { rpp_all: { min: "x" }, snow_days: { min: 0, max: null } },
       includeStates: { AK: "yes", HI: true, TX: true },
       categories: { marijuana_status: ["medical", "legal-ish", 3, "medical"], not_a_law: ["x"], abortion_access: "banned" },
+      area: { weights: { walkability: 7, rpp_all: 2 }, directions: { violent_rate: "up" }, limits: { violent_rate: { max: 300 } } },
     });
     expect(out).toEqual({
       weights: { rpp_all: 5 },
@@ -30,6 +31,8 @@ describe("sanitizePreferences", () => {
       categories: { marijuana_status: ["medical"] },
       includeUnknown: true,
       includeStates: { AK: false, HI: true },
+      // Area-only priorities: only known area keys; a county metric isn't one.
+      area: { weights: { walkability: 5 }, directions: {}, limits: { violent_rate: { max: 300 } } },
     });
   });
 

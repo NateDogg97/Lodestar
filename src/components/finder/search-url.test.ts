@@ -14,12 +14,18 @@ describe("search URLs", () => {
       categories: { koppen: ["Cfa", "Dfa"], marijuana_status: ["medical", "recreational"] },
       includeUnknown: false,
       includeStates: { AK: false, HI: true },
+      area: {
+        weights: { walkability: 4, violent_rate: 2 },
+        directions: { density_per_sq_mi: "higher" },
+        limits: { violent_rate: { max: 400 } },
+      },
     };
     const q = encodeSearch(prefs, "24027");
     expect(q).toBe(
       "v=1&w=population:1,rpp_all:3,school_achievement:5&dir=population:middle,days_above_90f:higher" +
         "&lim=population:10000~,median_gross_rent:~2000,hottest_month_high_f:70.5~92" +
-        "&cat=koppen:Cfa.Dfa,marijuana_status:medical.recreational&unk=0&inc=HI&place=24027",
+        "&cat=koppen:Cfa.Dfa,marijuana_status:medical.recreational" +
+        "&aw=walkability:4,violent_rate:2&adir=density_per_sq_mi:higher&alim=violent_rate:~400&unk=0&inc=HI&place=24027",
     );
     expect(decode(q)).toEqual({ prefs, place: "24027" });
   });

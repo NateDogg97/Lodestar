@@ -11,6 +11,7 @@ import {
   STATE_CATEGORY_KEYS,
   STATE_METRIC_KEYS,
   METRIC_KEYS,
+  getMetric,
   prepareDataset,
   rankCounties,
   scoreCounties,
@@ -33,6 +34,7 @@ import {
   EMPTY_PREFERENCES,
   excludedStates,
   savePreferences,
+  toAreaSearch,
   toScoringInput,
   type Preferences,
 } from "./preferences";
@@ -46,7 +48,8 @@ import { SidePanel } from "./side-panel";
 import { useCountyData, useLawData } from "./use-county-data";
 import { useCountyAreas, useTractIndex } from "./use-tract-data";
 import type { InsideLayer } from "./county-map";
-import { AREA_MEASURE, areaValue, formatArea } from "@/lib/tracts";
+import { AREA_MEASURE, areaCriteria, areaValue, formatArea, scoreAreas } from "@/lib/tracts";
+import type { AreaRankingView } from "./inside-view";
 
 // MapLibre needs the browser (WebGL, window), so it never renders on the
 // server, and it loads in its own chunk after the panels are usable.
@@ -191,8 +194,9 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   const tractIndex = useTractIndex();
   const [insideFips, setInsideFips] = useState<string | null>(initial.area ? initial.place : null);
   const [selectedArea, setSelectedArea] = useState<string | null>(initial.area);
-  // Census home value by default: it varies area by area (Zillow's is per ZIP).
-  const [areaMeasure, setAreaMeasure] = useState("median_home_value");
+  // With no filter that varies inside the county, areas show Census home value
+  // (it varies area by area; Zillow's is per ZIP).
+  const areaMeasure = "median_home_value";
   const [areaFocus, setAreaFocus] = useState<{ geoid: string; n: number } | null>(
     initial.area ? { geoid: initial.area, n: 1 } : null,
   );
@@ -317,30 +321,61 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
 
   // The map layer for the explored county: each area's position within the
   // county for the chosen measure (rank, 0–1), so colors spread evenly.
+  // Areas ranked by the same search (plan §9 Phase 8e, "one search, two levels").
+  const areaRanking = useMemo<AreaRankingView | null>(() => {
+    if (!insideOpen || areasState.status !== "ready") return null;
+    const { criteria, limits } = areaCriteria(
+      toAreaSearch(prefs),
+      (k) => getMetric(k).label,
+      (k) => getMetric(k).defaultDirection,
+    );
+    const scores = scoreAreas(areasState.data.areas.areas, criteria, limits);
+    const shown = (st: string) => st === "match" || (st === "unknown" && prefs.includeUnknown);
+    // Position among the county's scored areas, 0–100, for color (like counties' `rel`).
+    const scored = [...scores.values()].filter((x) => x.score !== null && shown(x.status));
+    scored.sort((a, b) => a.score! - b.score!);
+    const rel = new Map(scored.map((x, i) => [x.geoid, scored.length > 1 ? (100 * i) / (scored.length - 1) : 50]));
+    const hidden = new Set([...scores.values()].filter((x) => !shown(x.status)).map((x) => x.geoid));
+    return { criteria, limits, scores, rel, hidden };
+  }, [insideOpen, areasState, prefs]);
+
   const baseInsideLayer = useMemo<Omit<InsideLayer, "highlight"> | null>(() => {
     if (!insideOpen || areasState.status !== "ready") return null;
     const { areas, shapes } = areasState.data;
+    const common = {
+      fips: areas.county,
+      shapes,
+      labels: new Map(areas.areas.map((a) => [a.geoid, a.label])),
+      selected: selectedArea,
+      focus: areaFocus,
+      onSelectArea: selectArea,
+    };
+    if (areaRanking && areaRanking.criteria.length > 0) {
+      return {
+        ...common,
+        palette: "score" as const,
+        values: new Map(areas.areas.map((a) => [a.geoid, areaRanking.rel.get(a.geoid) ?? null])),
+        legend: { title: "Your match", low: "Weaker", high: "Stronger" },
+      };
+    }
     const vals = areas.areas
+      .filter((a) => !areaRanking?.hidden.has(a.geoid))
       .map((a) => [a.geoid, areaValue(a, areaMeasure)] as const)
       .filter((x): x is readonly [string, number] => x[1] !== null)
       .sort((a, b) => a[1] - b[1]);
     const values = new Map<string, number | null>(areas.areas.map((a) => [a.geoid, null]));
     vals.forEach(([g], i) => values.set(g, vals.length > 1 ? i / (vals.length - 1) : 0.5));
     return {
-      fips: areas.county,
-      shapes,
+      ...common,
+      palette: "measure" as const,
       values,
-      labels: new Map(areas.areas.map((a) => [a.geoid, a.label])),
       legend: {
         title: AREA_MEASURE.get(areaMeasure)?.label ?? areaMeasure,
         low: formatArea(areaMeasure, vals[0]?.[1] ?? null),
         high: formatArea(areaMeasure, vals.at(-1)?.[1] ?? null),
       },
-      selected: selectedArea,
-      focus: areaFocus,
-      onSelectArea: selectArea,
     };
-  }, [insideOpen, areasState, areaMeasure, selectedArea, areaFocus]);
+  }, [insideOpen, areasState, areaRanking, selectedArea, areaFocus]);
   // Hovering the list outlines areas on the map. Kept apart so a hover doesn't
   // rebuild the colors above (the map recolors when `values` changes).
   const insideLayer = useMemo<InsideLayer | null>(
@@ -504,8 +539,9 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
           <InsideView
             countyName={`${scoped.countyName[placeProps.score.index]}, ${scoped.state[placeProps.score.index]}`}
             state={areasState}
-            measure={areaMeasure}
-            onMeasure={setAreaMeasure}
+            ranking={areaRanking}
+            fallbackMeasure={areaMeasure}
+            onEditFilters={() => setFiltersOpen(true)}
             selected={selectedArea}
             onSelect={selectArea}
             onHover={setHoverAreas}

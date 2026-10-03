@@ -9,6 +9,7 @@ import {
   type RangeFilter,
   type ScoringInput,
 } from "@/lib/scoring";
+import { AREA_PRIORITIES, type AreaSearch } from "@/lib/tracts";
 
 /**
  * Places that are opt-in (plan §6): off means cut from the data before
@@ -36,6 +37,28 @@ export interface Preferences {
   includeUnknown: boolean;
   /** Opt-in places; both off by default. */
   includeStates: Record<OptionalState, boolean>;
+  /** Priorities and limits that only apply inside a county (Filters → Inside a county). */
+  area: AreaPrefs;
+}
+
+export interface AreaPrefs {
+  weights: Partial<Record<string, number>>;
+  directions: Partial<Record<string, Direction>>;
+  limits: Partial<Record<string, { min?: number; max?: number }>>;
+}
+
+const EMPTY_AREA: AreaPrefs = { weights: {}, directions: {}, limits: {} };
+
+/** The search, for ranking areas inside a county (lib/tracts/scoring). */
+export function toAreaSearch(prefs: Preferences): AreaSearch {
+  return {
+    weights: prefs.weights,
+    directions: prefs.directions,
+    limits: prefs.limits,
+    areaWeights: prefs.area.weights,
+    areaDirections: prefs.area.directions,
+    areaLimits: prefs.area.limits,
+  };
 }
 
 /**
@@ -55,6 +78,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   categories: {},
   includeUnknown: true,
   includeStates: { AK: false, HI: false },
+  area: EMPTY_AREA,
 };
 
 export const EMPTY_PREFERENCES: Preferences = {
@@ -64,6 +88,7 @@ export const EMPTY_PREFERENCES: Preferences = {
   categories: {},
   includeUnknown: true,
   includeStates: { AK: false, HI: false },
+  area: EMPTY_AREA,
 };
 
 /** States left out of scoring entirely under these preferences. */
@@ -108,6 +133,7 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
     categories: {},
     includeUnknown: typeof raw.includeUnknown === "boolean" ? raw.includeUnknown : true,
     includeStates: { AK: false, HI: false },
+    area: { weights: {}, directions: {}, limits: {} },
   };
   if (isRecord(raw.weights)) {
     for (const [k, w] of Object.entries(raw.weights)) {
@@ -138,6 +164,29 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
   }
   if (isRecord(raw.includeStates)) {
     for (const { state } of OPTIONAL_STATES) out.includeStates[state] = raw.includeStates[state] === true;
+  }
+  if (isRecord(raw.area)) {
+    const areaKeys = new Set(AREA_PRIORITIES.map((d) => d.key));
+    const { weights, directions, limits } = raw.area;
+    if (isRecord(weights)) {
+      for (const [k, w] of Object.entries(weights)) {
+        if (areaKeys.has(k) && isNumber(w)) out.area.weights[k] = Math.min(5, Math.max(0, w));
+      }
+    }
+    if (isRecord(directions)) {
+      for (const [k, d] of Object.entries(directions)) {
+        if (areaKeys.has(k) && DIRECTIONS.includes(d as Direction)) out.area.directions[k] = d as Direction;
+      }
+    }
+    if (isRecord(limits)) {
+      for (const [k, l] of Object.entries(limits)) {
+        if (!areaKeys.has(k) || !isRecord(l)) continue;
+        const limit: { min?: number; max?: number } = {};
+        if (isNumber(l.min)) limit.min = l.min;
+        if (isNumber(l.max)) limit.max = l.max;
+        if (limit.min !== undefined || limit.max !== undefined) out.area.limits[k] = limit;
+      }
+    }
   }
   return out;
 }

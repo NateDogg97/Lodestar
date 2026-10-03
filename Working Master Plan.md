@@ -5,7 +5,7 @@
 > If something here conflicts with what you actually built, the code is right and this file is
 > stale — fix the file.
 >
-> Last updated: 2026-10-02
+> Last updated: 2026-10-03
 >
 > **Changelog**
 > - 2026-10-02 — **Area data refreshes itself.** A monthly GitHub Action
@@ -1599,8 +1599,28 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
       recolors the map.
 - [ ] **8d — Extras, as wanted.** CDC PLACES health, OSM amenities (parks, groceries),
       neighborhood names beyond Zillow's cities.
-- [ ] **8e — Filters and must-haves inside the county.** Decide after 8b, with the data on
-      screen: which priorities rank areas, which county-level must-haves also hide areas.
+- [x] **8e — Filters and must-haves inside the county** (2026-10-03). Owner's choice: **one
+      search, two levels** — the same Filters rank counties and the areas inside them.
+      - County priorities that vary by area carry over with their importance and direction:
+        home value, rent, household income, schools (→ nearby elementary & middle schools),
+        hazards (all seven), airport distance (`CARRIED_OVER`, `src/lib/tracts/scoring.ts`).
+        County-wide ones (climate, taxes, cost of living…) don't rank areas, and the "i" says
+        so.
+      - Area-only priorities in Filters → **Inside a county**: walkability, violent and
+        property crime, high schools, distance to downtown, households with kids, people per
+        sq mi, commute. Must-haves for the same, plus county limits in the same units (a
+        maximum home value; not school grades vs percentiles). Saved, and in share links
+        (`aw`, `adir`, `alim`).
+      - Scoring: each measure's percentile among the county's areas, by direction, weighted
+        like counties. Excluded areas are hidden ("N areas hidden by your must-haves");
+        unknowns follow the county "include unknown" setting.
+      - The "Color the map by" dropdown is gone: the map is colored by match on the
+        red→green score scale ("Your match"), the list ranked by match (towns by their best
+        area). With no priority that varies inside a county, areas show Census home value
+        and a hint to add some. "Edit filters" opens the Filters modal.
+      - Open: the area view could show why an area scores as it does (as counties do);
+        repeated labels ("Wells Branch · 78728" ×4) when several tracts share a
+        neighborhood and ZIP.
 
 #### Open questions for Phase 8
 - ~~Schools: national or within the county?~~ **Both** (owner, 2026-09-30).

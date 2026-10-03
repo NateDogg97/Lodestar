@@ -177,6 +177,9 @@ export interface InsideLayer {
   shapes: Topology;
   values: Map<string, number | null>;
   labels: Map<string, string>;
+  /** "score": values are each area's match position, 0–100, on the red→green score
+   * scale (plan §9 Phase 8e). "measure": a measure's rank, 0–1, on neutral viridis. */
+  palette: "score" | "measure";
   legend: { title: string; low: string; high: string };
   selected: string | null;
   /** Areas to outline while the pointer is over them in the list (a town: all its areas). */
@@ -191,6 +194,12 @@ const AREA_FILL = [
   "case",
   ["==", ["typeof", ["feature-state", "v"]], "number"],
   ["interpolate", ["linear"], ["feature-state", "v"], ...AREA_STOPS],
+  UNKNOWN_COLOR,
+] as unknown as ExpressionSpecification;
+const AREA_SCORE_FILL = [
+  "case",
+  ["==", ["typeof", ["feature-state", "v"]], "number"],
+  ["interpolate", ["linear"], ["feature-state", "v"], ...SCORE_STOPS],
   UNKNOWN_COLOR,
 ] as unknown as ExpressionSpecification;
 
@@ -440,13 +449,15 @@ export default function CountyMap({
     };
   }, [ready, insideFips, insideShapes, dark]);
 
-  // Area colors for the chosen measure.
+  // Area colors: match scores, or a measure when no filter varies inside the county.
   const insideValues = inside?.values ?? null;
+  const insidePalette = inside?.palette ?? "measure";
   useEffect(() => {
     const map = mapRef.current;
     if (!ready || !map || !insideValues || !map.getSource("tracts")) return;
+    map.setPaintProperty("tract-fill", "fill-color", insidePalette === "score" ? AREA_SCORE_FILL : AREA_FILL);
     for (const [geoid, v] of insideValues) map.setFeatureState({ source: "tracts", id: geoid }, { v });
-  }, [ready, insideValues, insideFips, insideShapes, dark]);
+  }, [ready, insideValues, insidePalette, insideFips, insideShapes, dark]);
 
   // The selected area's outline.
   const insideSelected = inside?.selected ?? null;
@@ -548,7 +559,7 @@ export default function CountyMap({
           {error}
         </p>
       )}
-      {ready && inside ? <AreaLegend {...inside.legend} /> : ready && relative.size > 0 && <Legend count={relative.size} />}
+      {ready && inside ? <AreaLegend {...inside.legend} palette={inside.palette} /> : ready && relative.size > 0 && <Legend count={relative.size} />}
       {basemapOnline === false && (
         <p className="pointer-events-none absolute bottom-[calc(var(--map-inset)+0.5rem)] left-2 rounded bg-white/85 px-2 py-1 text-caption text-neutral-700 dark:bg-neutral-900/85 dark:text-neutral-300">
           Offline — showing county lines only
@@ -558,13 +569,14 @@ export default function CountyMap({
   );
 }
 
-function AreaLegend({ title, low, high }: { title: string; low: string; high: string }) {
+function AreaLegend({ title, low, high, palette }: { title: string; low: string; high: string; palette: "score" | "measure" }) {
+  const stops = palette === "score" ? SCORE_STOPS : AREA_STOPS;
   return (
     <div className="pointer-events-none absolute right-2 bottom-[calc(var(--map-inset)+2rem)] w-52 rounded-md bg-white/90 px-2.5 py-2 text-caption text-neutral-700 shadow-sm dark:bg-neutral-900/90 dark:text-neutral-300">
       <p className="font-medium">{title}</p>
       <div
         className="mt-1 h-2 rounded-sm"
-        style={{ background: `linear-gradient(to right, ${AREA_STOPS.filter((_, i) => i % 2 === 1).join(", ")})` }}
+        style={{ background: `linear-gradient(to right, ${stops.filter((_, i) => i % 2 === 1).join(", ")})` }}
       />
       <div className="mt-0.5 flex justify-between text-neutral-500">
         <span>{low}</span>

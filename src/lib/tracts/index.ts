@@ -271,3 +271,4 @@ export function groupAreas(areas: Area[]): { name: string; areas: Area[]; popula
     .map(([name, list]) => ({ name, areas: list, population: list.reduce((s, a) => s + (a.population ?? 0), 0) }))
     .sort((x, y) => y.population - x.population);
 }
+export * from "./scoring";
