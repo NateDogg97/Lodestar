@@ -202,12 +202,12 @@ function Summary({ i, parts, common }: { i: number; parts: AreaPart[]; common: C
   const name = common.areas.label[i].split(" · ")[0];
   const bars = (list: AreaPart[]) =>
     list.map((p) => (
-      <li key={p.key} className="grid grid-cols-[7.5rem_1fr_3.5rem] items-center gap-2.5 text-label">
-        <span className="truncate text-neutral-600 dark:text-neutral-400">{p.label}</span>
+      <li key={p.key} className="col-span-3 grid grid-cols-subgrid items-center text-label">
+        <span className="leading-snug break-words text-neutral-600 dark:text-neutral-400">{p.label}</span>
         <span className="block h-2 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
           {p.points !== null && <Fill points={p.points} />}
         </span>
-        <span className="text-right font-medium tabular-nums">{partValue(p)}</span>
+        <span className="text-right font-medium whitespace-nowrap tabular-nums">{partValue(p)}</span>
       </li>
     ));
   return (
@@ -219,7 +219,8 @@ function Summary({ i, parts, common }: { i: number; parts: AreaPart[]; common: C
         </p>
       )}
       {/* One list that grows; the toggle stays below it. */}
-      <ul className="space-y-1.5">{bars(all ? [...top, ...rest] : top)}</ul>
+      {/* Rows share columns (subgrid), so the bars line up whatever each value's width. */}
+      <ul className="grid grid-cols-[7.5rem_minmax(3rem,1fr)_auto] gap-x-2.5 gap-y-1.5">{bars(all ? [...top, ...rest] : top)}</ul>
       {rest.length > 0 && parts.length > 3 && (
         <button type="button" onClick={() => setAll((a) => !a)} aria-expanded={all} className="text-label font-medium text-emerald-700 hover:underline dark:text-emerald-400">
           {all ? `Hide the other ${rest.length}` : `Show the other ${rest.length} ${rest.length === 1 ? "priority" : "priorities"}`}
