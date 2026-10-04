@@ -38,9 +38,10 @@ import type { Preferences } from "./preferences";
  */
 export type FiltersMode = "priorities" | "musts";
 
-type SectionId = AreaGroup | "policies";
+type SectionId = AreaGroup | "states" | "policies";
 
 const SECTIONS: { id: SectionId; label: string; mustsOnly?: boolean }[] = [
+  { id: "states", label: "States", mustsOnly: true },
   { id: "cost", label: "Cost of living" },
   { id: "housing", label: "Housing" },
   { id: "schools", label: "Schools" },
@@ -57,6 +58,8 @@ const SECTION_TIPS: Partial<Record<SectionId, string>> = {
   hazards:
     "FEMA National Risk Index (Dec 2025): where an area ranks nationally on the share of its buildings, people and farms expected to be lost to each hazard in a typical year.",
   safety: "FBI crime rates for the police agency covering each area.",
+  states:
+    "Rule out states, or keep only a few: tap a state to turn it off, or “None” and then pick the ones you want. Scores still compare places with the whole country. Alaska and Hawaii are turned on in Settings.",
   policies:
     "Policies are never weighted — a county whose state isn’t one you allow is ruled out. States with no value (their sources disagree) are kept as unknown.",
 };
@@ -78,7 +81,8 @@ const hasLimit = (l: { min?: number; max?: number } | undefined) => l?.min !== u
 
 function sectionCategories(id: SectionId): (typeof CATEGORIES)[number][] {
   if (id === "policies") return CATEGORIES.filter((c) => c.scope === "state");
-  if (id === "climate") return CATEGORIES.filter((c) => c.scope === "county");
+  if (id === "climate") return CATEGORIES.filter((c) => c.key === "koppen");
+  if (id === "states") return CATEGORIES.filter((c) => c.key === "state");
   return [];
 }
 
@@ -183,7 +187,9 @@ export function FiltersModal({
   const metrics = countyMetrics(current);
   const areas = areaMeasures(current);
   // Climate type gets its own picker (family cards) above the limits.
-  const categories = mode === "musts" ? sectionCategories(current).filter((c) => c.key !== "koppen") : [];
+  // Climate type and states get their own pickers.
+  const categories =
+    mode === "musts" ? sectionCategories(current).filter((c) => c.key !== "koppen" && c.key !== "state") : [];
   const showClimatePicker = mode === "musts" && current === "climate";
 
   return (
@@ -303,6 +309,13 @@ export function FiltersModal({
             <h3 className="text-title font-semibold">{currentDef.label}</h3>
             {SECTION_TIPS[current] && <InfoTip label={currentDef.label}>{SECTION_TIPS[current]}</InfoTip>}
           </div>
+          {mode === "musts" && current === "states" && (
+            <StatePicker
+              accept={prefs.categories.state}
+              counts={categoryCounts.state ?? {}}
+              onChange={(accept) => setCategory("state", accept)}
+            />
+          )}
           {showClimatePicker && (
             <ClimatePicker
               accept={prefs.categories.koppen}
@@ -391,6 +404,70 @@ export function FiltersModal({
       </div>
       )}
     </Modal>
+  );
+}
+
+/**
+ * States as a grid of toggles (2026-10-04): all on by default; tap to rule one out,
+ * or "None" then pick a few to keep only those. Only states in scope are shown
+ * (Alaska and Hawaii when turned on in Settings).
+ */
+function StatePicker({
+  accept,
+  counts,
+  onChange,
+}: {
+  accept: string[] | undefined;
+  counts: Record<string, number>;
+  onChange: (accept: string[] | undefined) => void;
+}) {
+  const def = CATEGORIES.find((c) => c.key === "state")!;
+  const visible = def.options.filter((o) => (counts[o.value] ?? 0) > 0);
+  const all = visible.map((o) => o.value);
+  const on = (v: string) => accept === undefined || accept.includes(v);
+  const allowed = all.filter(on).length;
+  const set = (next: string[]) => onChange(all.every((v) => next.includes(v)) ? undefined : all.filter((v) => next.includes(v)));
+  const toggle = (v: string) => {
+    const current = all.filter(on);
+    set(on(v) ? current.filter((x) => x !== v) : [...current, v]);
+  };
+  const quick = "rounded-full border border-neutral-300 px-3 py-1 text-label font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900";
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="mr-auto text-label text-neutral-600 dark:text-neutral-400" aria-live="polite">
+          {allowed === all.length ? "All states" : allowed === 0 ? "No states — pick some" : `${allowed} of ${all.length} states`}
+        </span>
+        <button type="button" onClick={() => onChange(undefined)} className={quick}>
+          All
+        </button>
+        <button type="button" onClick={() => onChange([])} className={quick}>
+          None
+        </button>
+      </div>
+      <div role="group" aria-label="States" className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-1.5">
+        {visible.map((o) => {
+          const pressed = on(o.value);
+          return (
+            <button
+              key={o.value}
+              type="button"
+              aria-pressed={pressed}
+              onClick={() => toggle(o.value)}
+              title={`${o.label}: ${counts[o.value]} counties`}
+              className={`flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left text-label ${
+                pressed
+                  ? "border-emerald-600/50 bg-emerald-50 text-neutral-900 dark:border-emerald-500/40 dark:bg-emerald-950/40 dark:text-neutral-100"
+                  : "border-neutral-200 text-neutral-400 line-through dark:border-neutral-800 dark:text-neutral-600"
+              }`}
+            >
+              <span className="truncate">{o.label}</span>
+              <span className="text-caption tabular-nums opacity-70">{o.value}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

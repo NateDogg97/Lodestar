@@ -239,3 +239,14 @@ describe("performance", () => {
     expect(perRun).toBeLessThan(16); // one frame
   });
 });
+
+describe("the States filter", () => {
+  it("keeps only the states picked, without changing anyone's score", () => {
+    const weights = { rpp_all: 3 };
+    const base = run({ weights });
+    const only = run({ weights, categoryFilters: [{ category: "state", accept: ["TX", "MD"] }] });
+    expect(new Set(only.ranked.map((r) => data.state[r.index]))).toEqual(new Set(["TX", "MD"]));
+    expect(only.get(TRAVIS).score).toBe(base.get(TRAVIS).score);
+    expect(only.get(SAN_FRANCISCO).status).toBe("excluded");
+  });
+});

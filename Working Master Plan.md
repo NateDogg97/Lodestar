@@ -1725,6 +1725,12 @@ neighborhood near a specific school), not a county average. Decided with the own
 - [x] Many areas share a label (a ZIP covers several tracts: 43,951 labels for 84,119
   areas), so lists name them by direction from the group's middle — "Grand Forks · 58201 ·
   west" (`distinctNames`).
+- [x] **States filter** (owner, 2026-10-04): Must-haves → States, a grid of state toggles
+  with All / None — rule some out, or None and pick a few. A must-have like the policies
+  (`state` category from counties.json; `cat=state:TX.NC` in links): ruled-out states are
+  gated, percentiles stay national. Alaska and Hawaii still turn on in Settings. Known edge:
+  a state list saved while Alaska/Hawaii were off doesn't include them, so turning them on
+  later keeps them ruled out until "All" is pressed.
 - [ ] Data overload: one-line sections with verdict words and a smaller number on county
   and area pages.
 
