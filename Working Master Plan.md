@@ -1775,6 +1775,38 @@ neighborhood near a specific school), not a county average. Decided with the own
   unemployment, and "In your top 100: N areas" (the area count outside area mode),
   replacing the county-average school score (owner, 2026-10-04).
 
+### Results audit (2026-10-04) — accuracy before anything else
+
+Owner: "the most important thing is that it actually works, the data is accurate and the
+results are genuinely helpful, not misleading." `npm run audit:results` runs 16 realistic
+searches over the real data (scripts/audit) and writes a report. First run's findings,
+worst first — each needs fixing (or an owner call) before more features:
+
+- [ ] **Missing data lifts scores.** A weighted priority with no value is dropped from the
+      area's average, so an area known on one good measure outranks areas known on all.
+      Up to 63 of a top 100 (budget + commute), and many #1s ("Young family" #2–#7).
+- [ ] **Places nobody lives.** 493 areas have 0 residents (water, airports, parks), 605 ≤ 50;
+      they reach top results ("Near Destin", SFO, Memphis tracts with 0 people).
+- [ ] **Military bases and campuses** (Fort Hood, Fort Carson, Naval Academy, Kirtland AFB,
+      Virginia Tech, Berkeley 94720): not places to move to. Needs group-quarters share from
+      the Census (ETL) to leave out areas that are mostly barracks, dorms, prisons.
+- [ ] **"Unknown" outranks verified.** An area unknown for a must-have ranks with real
+      matches. Iowa tops "recreational marijuana" because its two sources disagree
+      (CBD-only vs medical) — neither says recreational. Same for home-value limits.
+- [ ] **Ties at the best value score below 100.** Percentiles use mid-rank, so "no hurricane
+      risk" shared by most areas gets 57–88 points and a 0% income tax gets 91 — the best
+      possible value should score 100 (engine-wide, counties too).
+- [ ] **Zero crime.** 108 areas report 0 violent and 0 property crime (106 flagged low
+      confidence); "Safety above all" returns 100 areas tied at the top.
+- [ ] **Must-haves only, no priorities → no results** (1,800 areas match, 0 shown).
+- [ ] **Mobile-home parks as "cheapest homes"** (Oakland County MI tracts at $25–58k beside
+      $400k ZIPs). Real values, misleading next to houses: add mobile-home share (ETL) and a
+      caution.
+- [ ] Small: distance to the coast prints without "mi".
+
+Looked right: county-only rankings, walkable downtowns, typical-density suburbs, affluent
+areas with top high schools, Texas-only, no-income-tax states.
+
 ### Phase 9 — First-run tutorial (added 2026-10-01) ✅ **BUILT 2026-10-04**
 
 The app has a lot in it (priorities, must-haves, climate cards, saved searches, the map,
