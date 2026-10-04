@@ -1752,8 +1752,17 @@ neighborhood near a specific school), not a county average. Decided with the own
   tiles show that estimate with Zillow's ZIP value under it. In CI (`--merge-live`) the
   national fallback ratio comes from the refreshed counties only — close enough, since it
   only applies where a county has no Zillow at all.
-- [ ] Data overload: one-line sections with verdict words and a smaller number on county
-  and area pages.
+- [x] **Data overload — area page** (owner, 2026-10-04; mockup round 3, option C): every
+  section (Why it ranks here, Schools, Safety, Homes & people, Getting around, Housing market,
+  Natural hazards) has an icon, a one-line takeaway in words (`src/lib/tracts/verdicts.ts`,
+  tested), one or two headline visuals (percentile bars, bars against the typical US area,
+  own/rent and home-type splits, risk bars), and "Show details" for the full analysis.
+  Details start closed; folded sections and opened details are remembered per device
+  (`lodestar.area-sections` in browser storage, synced across tabs). "Typical US area" =
+  medians over all 84,119 areas, computed 2026-10-04 (`US_TYPICAL`); recompute on a new
+  Census release. Built in `src/components/finder/area-detail.tsx`.
+- [ ] Data overload — county page: the same section style for its Overview (Location,
+  Natural hazards, How it's scored), if wanted.
 
 ### Phase 9 — First-run tutorial (added 2026-10-01)
 

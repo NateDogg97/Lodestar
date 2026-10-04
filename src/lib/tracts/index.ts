@@ -275,3 +275,4 @@ export function groupAreas(areas: Area[]): { name: string; areas: Area[]; popula
 }
 export * from "./scoring";
 export * from "./national";
+export * from "./verdicts";
