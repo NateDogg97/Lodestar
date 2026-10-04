@@ -73,9 +73,10 @@ body {
 }
 
 
-/* The top 1% (99–100 points) on bars: metallic gold with a gold rim that gently glows
-   (owner, 2026-10-04, mockup round 4 "D"). Bars run horizontally; fingerprint columns
-   vertically. Still, with the rim, for "reduce motion". */
+/* The top 1% (100 points as shown) on bars: metallic green — the top of the score scale —
+   with a gold rim that gently glows (owner, 2026-10-04; started from mockup round 4 "D").
+   Bars run horizontally; fingerprint columns vertically. Still, with the rim, for
+   "reduce motion". */
 @keyframes gold-glow {
   0%,
   100% {
@@ -90,10 +91,15 @@ body {
   animation: gold-glow 2.4s ease-in-out infinite;
 }
 .gold-bar {
-  background: linear-gradient(90deg, #c8960c 0%, #f3cf55 55%, #e2b020 75%, #fbe38e 100%);
+  /* A sheen across the bar over a lit-from-above green. */
+  background:
+    linear-gradient(90deg, transparent 0 50%, rgb(255 255 255 / 0.22) 68%, transparent 84%),
+    linear-gradient(180deg, #6fd08c 0%, #1f8a40 45%, #15692e 72%, #0e4d21 100%);
 }
 .gold-col {
-  background: linear-gradient(180deg, #fdeaa0 0%, #e7b726 45%, #c8960c 70%, #a87b00 100%);
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 0.25) 0%, transparent 60%),
+    linear-gradient(180deg, #6fd08c 0%, #1f8a40 40%, #15692e 75%, #0e4d21 100%);
 }
 @media (prefers-reduced-motion: reduce) {
   .gold-bar,
