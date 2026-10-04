@@ -982,6 +982,20 @@ def test_tract_crime_rates() -> None:
     patch_crime(payload)
     check([list(r) for r in payload["rows"]] == before, "the crime backfill is idempotent (crime_note marks a done file)")
 
+    from etl.tracts.backfill import patch_topcodes
+
+    tc = {"columns": ["geoid", "median_household_income", "median_home_value", "topcoded", "low_confidence"], "rows": [
+        ["1", 250001, 500000, "", "median_household_income;kids_share"],  # at the cap: a floor, not uncertain
+        ["2", 90000, 2000001, "median_home_value", ""],                    # already noted
+        ["3", 60000, 300000, "", "median_household_income"],               # really uncertain
+    ]}
+    counts = patch_topcodes(tc)
+    row = {r[0]: dict(zip(tc["columns"], r)) for r in tc["rows"]}
+    check(row["1"]["topcoded"] == "median_household_income" and row["1"]["low_confidence"] == "kids_share",
+          "an income at the cap is top-coded and loses its confidence flag", str(row["1"]))
+    check(row["2"]["topcoded"] == "median_home_value" and row["3"]["low_confidence"] == "median_household_income", "others untouched")
+    check(counts == {"topcoded": 1} and patch_topcodes(tc) == {"topcoded": 0}, "idempotent")
+
 
 def test_tract_acs_confidence() -> None:
     """Phase 8: tract ACS parsing — MOE codes, derived shares, low-confidence flags."""

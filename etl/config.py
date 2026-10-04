@@ -372,8 +372,10 @@ ACS_TRACT_VARIABLES = {
     "B25032_002": "owner_occupied",
     "B25032_011": "owner_mobile_homes",        # owner-occupied mobile homes
 }
-# ACS top-codes: a median at these values means "this much or more".
-ACS_TOPCODE = {"median_home_value": 2_000_001, "median_gross_rent": 3_501}
+# ACS top-codes: a median at these values means "this much or more". (Household income
+# was missing until the full audit, 2026-10-04: 483 areas at the cap were flagged "low
+# confidence" for the MOE the Census can't compute there, instead of "at least $250k".)
+ACS_TOPCODE = {"median_home_value": 2_000_001, "median_gross_rent": 3_501, "median_household_income": 250_001}
 
 # Low confidence (plan §9 Phase 8). A median or ratio is low confidence when
 # its coefficient of variation (MOE / 1.645 / estimate) is above
