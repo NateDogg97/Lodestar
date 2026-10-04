@@ -36,14 +36,18 @@ SOURCE: THE BULK NIBRS FILES, NOT THE API (8c)
     Each state-year is reduced to one row per agency, cached in
     data/interim/crime/ (the zip is deleted after).
 
-THE YEAR AND LOW CONFIDENCE
+THE YEAR, PARTIAL YEARS AND LOW CONFIDENCE
     The newest year CDE has published for the state (found by asking for this
     year's file, then last year's…; config.CRIME_YEAR pins it), so a monthly
     rebuild picks up a new year by itself. An agency that didn't report all 12
-    months falls back to the year before if that year is more complete. Fewer than
-    12 months, no data at all, or an agency serving fewer than
-    CRIME_MIN_POPULATION people (tiny towns with a mall), makes the value low
-    confidence. Partial years aren't scaled up.
+    months falls back to the year before if that year is more complete.
+    Rates are per year: a partial year's counts are annualized (× 12 / months), as
+    the FBI does — unscaled, Phoenix's 4 months of 2025 read as a third of its real
+    rate (full audit, 2026-10-04). Too little to rate at all — fewer than
+    config.CRIME_MIN_MONTHS months, or fewer than CRIME_MIN_EXPOSURE person-years
+    (population × months / 12) — gives no rate, with `crime_note` saying why (the
+    agency is still named). Fewer than 12 months, or an agency serving fewer than
+    CRIME_MIN_POPULATION people (tiny towns with a mall), makes a rate low confidence.
 
 AGENCIES NOT IN NIBRS: THE YEARLY TABLES (8c, found on California)
     Agencies still reporting the older summary format aren't in the incident
@@ -283,8 +287,9 @@ def county_agencies(county_fips: str) -> pd.DataFrame:
         state = pd.concat(extra).sort_values(["months", "crime_year"], ascending=False)
         state = state.drop_duplicates(["agency_name", "agency_type"]).drop(columns="county_key")
         df = pd.concat([df, state.assign(source="state")], ignore_index=True)
-    scale = 100_000 / df["population"].where(df["population"] > 0)
+    # Per 100,000 people per YEAR: a partial year's counts are annualized.
     has = df["months"] > 0
+    scale = 100_000 * 12 / (df["population"].where(df["population"] > 0) * df["months"].where(has))
     df["violent_rate"] = (df["violent"] * scale).where(has)
     df["property_rate"] = (df["property"] * scale).where(has)
     return df.rename(columns={"months": "crime_months", "population": "crime_population"})
@@ -400,9 +405,12 @@ _SUFFIX = re.compile(r"\b(charter township|township|city|town|borough|village|pl
 # county agency merely low is shown but flagged.
 IMPLAUSIBLE_RATE, IMPLAUSIBLE_POP = 20.0, 50_000
 # Property crime is common everywhere (US ~1,800/100k; the safest real towns a
-# few hundred): under 100 for 10,000+ people means partial reporting — an agency
-# mid-switch to a new system (Deltona, FL: 14 in a year for 98,792 people).
-IMPLAUSIBLE_PROPERTY, IMPLAUSIBLE_PROPERTY_POP = 100.0, 10_000
+# few hundred): under 100 for 5,000+ people means partial reporting — an agency
+# mid-switch to a new system (Deltona, FL: 14 in a year for 98,792 people), or a
+# rural sheriff logging two thefts a year for 9,000 people (Green County, KY). Among
+# agencies serving 5,000–10,000 people, 100 is below the 2nd percentile (full audit,
+# 2026-10-04; was 10,000+ people).
+IMPLAUSIBLE_PROPERTY, IMPLAUSIBLE_PROPERTY_POP = 100.0, 5_000
 LOW_COUNTY_RATE = 50.0
 # A suffix-less agency name may be a town's police (New England: "Bristol"), or a
 # village's that happens to share its township's name (Illinois: the Village of
@@ -503,26 +511,62 @@ def _from_tables(st: str, years: tuple[int, int], key: str, kind: str | None = N
 
 
 def _with_rates(a: pd.Series) -> pd.Series:
+    """Rates per 100,000 per year; a partial year's counts are annualized."""
     a = a.copy()
-    pop = a["crime_population"]
-    scale = 100_000 / pop if pd.notna(pop) and pop > 0 else np.nan
+    pop, months = a["crime_population"], a.get("crime_months", 12)
+    scale = 100_000 * 12 / (pop * months) if pd.notna(pop) and pop > 0 and pd.notna(months) and months > 0 else np.nan
     a["violent_rate"], a["property_rate"] = a["violent"] * scale, a["property"] * scale
     return a
 
 
+def rate_note(population: float, months: float, year: object, violent_rate: float, property_rate: float) -> str | None:
+    """Why an agency's numbers can't be a rate (full audit, 2026-10-04), or None when they can.
+
+    Shared with `backfill.py`, which applies the same rule to files already published.
+    `violent_rate` / `property_rate` are annualized. The plausibility rules are
+    `_plausible`'s: a big jurisdiction reporting almost nothing is partial reporting.
+    """
+    pop = float(population) if pd.notna(population) else np.nan
+    m = float(months) if pd.notna(months) else np.nan
+    y = f" of {int(year)}" if pd.notna(year) else ""
+    if pd.notna(m) and m < config.CRIME_MIN_MONTHS:
+        return f"reported only {int(m)} {'month' if m == 1 else 'months'}{y}: too little to rate"
+    if pd.notna(pop) and pd.notna(m) and pop * m / 12 < config.CRIME_MIN_EXPOSURE:
+        who = f"{int(pop):,} people" if pop else "no one"
+        when = f" over {int(m)} months{y}" if m < 12 else ""
+        return f"serves {who}{when}: too few to rate (a single incident would swing it)"
+    if pd.notna(pop) and pd.notna(violent_rate):
+        too_safe = (pop >= IMPLAUSIBLE_POP and violent_rate < IMPLAUSIBLE_RATE
+                    and not (pd.notna(property_rate) and property_rate >= 500))
+        too_quiet = pop >= IMPLAUSIBLE_PROPERTY_POP and pd.notna(property_rate) and property_rate < IMPLAUSIBLE_PROPERTY
+        nothing = pop >= 5_000 and property_rate == 0
+        if too_safe or too_quiet or nothing:
+            return (f"reported implausibly little for {int(pop):,} people ({violent_rate:.0f} violent, "
+                    f"{property_rate:.0f} property per 100k): likely partial reporting, so no rate")
+    return None
+
+
 def _plausible(a: pd.Series | None) -> bool:
+    """Numbers that can be a rate: enough exposure, and not a big jurisdiction reporting
+    almost nothing (see `rate_note`). Very low violent crime alone can be real (Sarpy
+    County, NE suburbs: 17/100k, with 518 property crimes): only with little property
+    crime too is it a sliver of a county; a year without one theft (Reading Twp, PA) is
+    not reporting."""
     if a is None:
         return False
-    pop, rate, prop = a.get("crime_population"), a.get("violent_rate"), a.get("property_rate")
-    if pd.isna(pop):
+    if pd.isna(a.get("crime_population")):
         return True
-    # Very low violent crime alone can be real (Sarpy County, NE suburbs: 17/100k, with 518
-    # property crimes): only with little property crime too is it a sliver of a county.
-    too_safe = (pop >= IMPLAUSIBLE_POP and pd.notna(rate) and rate < IMPLAUSIBLE_RATE
-                and not (pd.notna(prop) and prop >= 500))
-    too_quiet = pop >= IMPLAUSIBLE_PROPERTY_POP and pd.notna(prop) and prop < IMPLAUSIBLE_PROPERTY
-    nothing = pop >= 5_000 and prop == 0  # a year without one theft: not reporting (Reading Twp, PA)
-    return not (too_safe or too_quiet or nothing)
+    return rate_note(a["crime_population"], a.get("crime_months", 12), a.get("crime_year"),
+                     a.get("violent_rate"), a.get("property_rate")) is None
+
+
+def _unrated(a: pd.Series) -> pd.Series:
+    """The agency with no rate and `crime_note` saying why it can't have one."""
+    a = a.copy()
+    a["crime_note"] = rate_note(a.get("crime_population"), a.get("crime_months", 12), a.get("crime_year"),
+                                a.get("violent_rate"), a.get("property_rate"))
+    a["violent_rate"], a["property_rate"] = np.nan, np.nan
+    return a
 
 
 def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, population: pd.DataFrame) -> pd.DataFrame:
@@ -623,10 +667,11 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
         a = lookup(place)
         town_match = a is None and (a := lookup(town, town=True)) is not None
         if a is not None and not _plausible(a):
-            # The city polices itself but its numbers are partial: no rate. The
-            # county's would describe somewhere else (Long Beach, NY isn't Nassau's).
+            # The city polices itself but its numbers are partial: no rate, and the
+            # agency named with why. The county's would describe somewhere else (Long
+            # Beach, NY isn't Nassau's).
             dropped.add(a["agency_name"])
-            chosen.append(None)
+            chosen.append(_unrated(a))
             by_town.append(False)
             continue
         chosen.append(a if a is not None else "sheriff")
@@ -656,21 +701,24 @@ def fetch(county_fips: str, names: pd.DataFrame, tracts: pd.DataFrame, populatio
         from_tables.add(f"{sheriff['agency_name']} sheriff")
     if sheriff is not None and not _plausible(sheriff):
         dropped.add(f"{sheriff['agency_name']} County")
-        sheriff = None
+        sheriff = _unrated(sheriff)
     out = []
     for g, c in zip(tracts["geoid"], chosen):
-        a = sheriff if isinstance(c, str) else c  # None: a city whose own numbers were dropped
+        a = sheriff if isinstance(c, str) else c
         if a is None:
             out.append({"geoid": g})
             continue
+        # An agency that reported too little to rate is still named, with why (`crime_note`).
+        rated = pd.notna(a["violent_rate"])
         out.append({"geoid": g, "crime_agency": _display(a), "violent_rate": a["violent_rate"],
                     "property_rate": a["property_rate"], "crime_year": a["crime_year"],
                     "crime_months": a["crime_months"], "crime_population": a["crime_population"],
-                    "crime_county_low": (a["agency_type"] in COUNTY_LEVEL and a["violent_rate"] < LOW_COUNTY_RATE)
-                                        or (st == "AK" and a["agency_type"] == "State Police")})
+                    "crime_note": a.get("crime_note"),
+                    "crime_county_low": rated and ((a["agency_type"] in COUNTY_LEVEL and a["violent_rate"] < LOW_COUNTY_RATE)
+                                                   or (st == "AK" and a["agency_type"] == "State Police"))})
     # Same columns whether or not any agency reports (a few rural counties have none).
     df = pd.DataFrame(out).reindex(columns=["geoid", "crime_agency", "violent_rate", "property_rate", "crime_year",
-                                            "crime_months", "crime_population", "crime_county_low"])
+                                            "crime_months", "crime_population", "crime_note", "crime_county_low"])
     # A number older than the two newest years (an agency silent since) is flagged.
     df["crime_low_confidence"] = (df["crime_year"].fillna(0) < years[1]) | (df["crime_months"].fillna(0) < 12) | (
         df["crime_population"].fillna(0) < config.CRIME_MIN_POPULATION) | df["crime_county_low"].fillna(False).astype(bool)

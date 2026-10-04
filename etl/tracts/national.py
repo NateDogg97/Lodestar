@@ -13,7 +13,12 @@ Home value and rent are the Census values **at today's prices** (owner, 2026-10-
 each area's Census value (tract by tract, but a 2019–2023 average) times its ZIP's
 Zillow / Census ratio, so areas keep their differences from their neighbours while the
 level is current. Areas whose ZIP has no Zillow value take the county's typical ratio,
-else the national one. See `today_prices`.
+else the national one. A Census value that is top-coded ("$2,000,001 or more", "$3,501
+or more") is a floor, not a value, and one from an area where most owned homes are mobile
+homes isn't a house price (owner: a $30k park beside $400k ZIPs topped "cheapest homes"):
+either way the area takes Zillow's ZIP value as is (no Zillow: a top-code keeps its floor
+times the ratio; a mobile-home value is left unknown), and is left out of the ZIP's ratio
+(full audit, 2026-10-04). See `today_prices`.
 
 Only what ranking, the results list and its summaries need: names, population, the
 measures a search can weigh or limit, the low-confidence flags, and the population
@@ -73,17 +78,36 @@ def _median(xs: list[float]) -> float | None:
     return xs[m] if len(xs) % 2 else (xs[m - 1] + xs[m]) / 2
 
 
+def _topcoded(payload: dict) -> list[set[str]]:
+    """Per row, the Census columns whose value is a top-code floor (publish.py `topcoded`)."""
+    cols = payload["columns"]
+    if "topcoded" not in cols:
+        return [set() for _ in payload["rows"]]
+    it = cols.index("topcoded")
+    return [set(f for f in str(r[it] or "").split(";") if f) for r in payload["rows"]]
+
+
+def _mobile(payload: dict) -> list[bool]:
+    """Per row, whether most owned homes are mobile homes (the `mobile_homes` caution)."""
+    cols = payload["columns"]
+    if "low_confidence" not in cols:
+        return [False] * len(payload["rows"])
+    il = cols.index("low_confidence")
+    return ["mobile_homes" in str(r[il] or "").split(";") for r in payload["rows"]]
+
+
 def zip_ratios(payload: dict, census: str, zillow: str) -> dict[str, float]:
-    """Per ZIP in a county: Zillow's value / the median Census value of its areas."""
+    """Per ZIP in a county: Zillow's value / the median Census value of its areas (top-coded
+    Census values left out: a floor would pull the ratio up)."""
     cols = payload["columns"]
     at = {c: cols.index(c) for c in ("zip", census, zillow)}
     by_zip: dict[str, tuple[list[float], list[float]]] = {}
-    for r in payload["rows"]:
+    for r, topped, mobile in zip(payload["rows"], _topcoded(payload), _mobile(payload)):
         z, c, w = r[at["zip"]], r[at[census]], r[at[zillow]]
         if not z:
             continue
         cs, ws = by_zip.setdefault(str(z), ([], []))
-        if c is not None:
+        if c is not None and census not in topped and not (mobile and census == "median_home_value"):
             cs.append(float(c))
         if w is not None:
             ws.append(float(w))
@@ -101,19 +125,24 @@ def today_prices(payload: dict, national: dict[str, float]) -> dict[str, list[fl
     """Each area's Census home value and rent at today's prices, in row order.
 
     Census x its ZIP's ratio; no ratio for the ZIP: the county's median ratio, else
-    `national` (the median over all ZIPs). An area with no Census value takes Zillow's
-    ZIP value as is.
+    `national` (the median over all ZIPs). An area with no Census value, or a top-coded
+    one ("$2,000,001 or more" is a floor), takes Zillow's ZIP value as is — a top-coded
+    value with no Zillow keeps the floor times the ratio (it is at least that). A home
+    value where most owned homes are mobile homes isn't a house price: Zillow's ZIP value,
+    or unknown.
     """
     cols = payload["columns"]
     out: dict[str, list[float | None]] = {}
+    topcoded, mobile = _topcoded(payload), _mobile(payload)
     for census, zillow in TODAY.items():
         ratios = zip_ratios(payload, census, zillow)
         fallback = _median(list(ratios.values())) or national[census]
         iz, ic, iw = cols.index("zip"), cols.index(census), cols.index(zillow)
         vals: list[float | None] = []
-        for r in payload["rows"]:
+        for r, topped, mob in zip(payload["rows"], topcoded, mobile):
             c, w = r[ic], r[iw]
-            if c is not None:
+            not_a_price = mob and census == "median_home_value"
+            if c is not None and not not_a_price and not (census in topped and w is not None):
                 vals.append(float(c) * ratios.get(str(r[iz]), fallback))
             else:
                 vals.append(float(w) if w is not None else None)

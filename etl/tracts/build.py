@@ -110,7 +110,8 @@ def build_county(fips: str, with_crime: bool = True) -> pd.DataFrame:
     # crime data (--no-crime), crime isn't flagged — it's simply not there yet.
     lowc = df["low_confidence"].fillna("")
     if with_crime:
-        crime_flag = df["crime_low_confidence"].fillna(True).astype(bool)
+        # Only a value can be low confidence: an agency with too little to rate has none.
+        crime_flag = df["crime_low_confidence"].fillna(True).astype(bool) & df["violent_rate"].notna()
         df = df.drop(columns=["crime_low_confidence"])
     else:
         crime_flag = pd.Series(False, index=df.index)

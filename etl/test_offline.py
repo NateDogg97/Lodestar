@@ -918,6 +918,69 @@ def test_tract_today_prices() -> None:
     check(round(hv[3]) == 200_000, "no Zillow for the ZIP: county median ratio (1.0 and 3.0 -> 2.0)")
     check(hv[4] == 250_000, "no Census value: Zillow's ZIP value")
     check(round(out["median_gross_rent"][0]) == 1280, "no Zillow rent in the county: national ratio")
+    # Top-coded Census values (full audit, 2026-10-04): a floor, not a value.
+    topped = {"columns": cols + ["topcoded"], "rows": [
+        ["1", "10001", 2_000_001, 3_000_000, 1000, None, "median_home_value"],
+        ["2", "10001", 1_000_000, 3_000_000, 1000, None, ""],
+        ["3", "10002", 2_000_001, None, 3501, None, "median_home_value;median_gross_rent"],
+    ]}
+    out = today_prices(topped, {"median_home_value": 1.27, "median_gross_rent": 1.28})
+    check(out["median_home_value"][0] == 3_000_000, "a top-coded Census value takes Zillow's ZIP value as is")
+    check(round(out["median_home_value"][1]) == 3_000_000, "the ZIP's ratio ignores the top-coded area (3.0 from the other)")
+    check(round(out["median_home_value"][2]) == 2_000_001 * 3, "top-coded with no Zillow: the floor times the ratio")
+    check(round(out["median_gross_rent"][2]) == round(3501 * 1.28), "a top-coded rent with no Zillow rent keeps the floor times the ratio")
+    # Mostly mobile homes: not a house price (owner's open question, decided in the full audit).
+    parks = {"columns": cols + ["low_confidence"], "rows": [
+        ["1", "48393", 30_000, 450_000, 900, None, "mobile_homes"],
+        ["2", "48393", 400_000, 450_000, 900, None, ""],
+        ["3", "48394", 25_000, None, 900, None, "mobile_homes;crime"],
+    ]}
+    out = today_prices(parks, {"median_home_value": 1.27, "median_gross_rent": 1.28})
+    check(out["median_home_value"][0] == 450_000, "a mobile-home park takes Zillow's ZIP value")
+    check(round(out["median_home_value"][1]) == 450_000, "…and doesn't drag its ZIP's ratio (1.125 from the house alone)")
+    check(out["median_home_value"][2] is None, "a mobile-home park with no Zillow: unknown, never $25k as a house price")
+    check(round(out["median_gross_rent"][0]) == 900 * 1.28, "rent is unaffected")
+
+
+def test_tract_crime_rates() -> None:
+    """Full audit (2026-10-04): yearly rates from partial years; too little to rate is no rate."""
+    print("\ntract crime: annualized rates and the exposure rule")
+    from etl.tracts.backfill import patch_crime
+    from etl.tracts.crime import rate_note
+
+    check(rate_note(1_700_000, 4, 2025, 666, 3000) is None, "a big city with 4 months is rated (annualized)")
+    check(rate_note(536, 6, 2025, 0, 2052) is not None and "too few" in rate_note(536, 6, 2025, 0, 2052),
+          "536 people over 6 months: too few person-years to rate")
+    check("only 1 month" in (rate_note(6118, 1, 2025, 0, 192) or ""), "one month of reports: too little to rate")
+    check(rate_note(8_171, 12, 2025, 0, 12) is not None, "8,000 people, one theft all year: implausible, no rate")
+    check(rate_note(8_171, 12, 2025, 0, 300) is None, "8,000 people, zero violent and some property crime: a real rate")
+    check(rate_note(60_000, 12, 2025, 10, 200) is not None, "a county of 60,000 at 10 violent and 200 property: a sliver")
+    check(rate_note(60_000, 12, 2025, 17, 518) is None, "…but with plenty of property crime it's real (Sarpy, NE)")
+    check(rate_note(None, 12, 2025, 100, 1000) is None, "no population known: nothing to judge by")
+
+    payload = {"columns": ["geoid", "violent_rate", "property_rate", "crime_year", "crime_months", "crime_population", "low_confidence"],
+               "rows": [
+                   ["1", 222, 1100, 2025, 4, 1_688_662, "crime"],   # Phoenix: 4 months -> ×3
+                   ["2", 0, 2052, 2025, 6, 536, "crime;sale_price"],  # Borden: too few person-years
+                   ["3", 10, 69, 2025, 5, 10_178, "crime"],          # San Elizario: 5 months -> ×2.4, kept (4,241 person-years)
+                   ["4", 300, 1500, 2025, 12, 50_000, ""],            # a full year: unchanged
+                   ["5", None, None, None, None, None, "sale_price"], # no agency
+               ]}
+    counts = patch_crime(payload)
+    cols = payload["columns"]
+    row = {r[0]: dict(zip(cols, r)) for r in payload["rows"]}
+    check("crime_note" in cols, "the backfill adds crime_note")
+    check(row["1"]["violent_rate"] == 666 and row["1"]["property_rate"] == 3300 and row["1"]["crime_note"] is None,
+          "4 months of Phoenix: rates × 3, still flagged", str(row["1"]))
+    check(row["2"]["violent_rate"] is None and "too few" in row["2"]["crime_note"] and row["2"]["low_confidence"] == "sale_price",
+          "too few person-years: no rate, a note, and no 'crime' flag", str(row["2"]))
+    check(row["3"]["violent_rate"] == 24 and row["3"]["property_rate"] == 166, "5 months: × 2.4")
+    check(row["4"]["violent_rate"] == 300 and row["4"]["crime_note"] is None, "a full year is unchanged")
+    check(row["5"]["violent_rate"] is None and row["5"]["crime_note"] is None, "no agency: nothing to do")
+    check(counts == {"annualized": 2, "unrated": 1}, "counts", str(counts))
+    before = [list(r) for r in payload["rows"]]
+    patch_crime(payload)
+    check([list(r) for r in payload["rows"]] == before, "the crime backfill is idempotent (crime_note marks a done file)")
 
 
 def test_tract_acs_confidence() -> None:
@@ -992,6 +1055,7 @@ def main() -> int:
         test_tract_acs_confidence()
         test_tract_today_prices()
         test_tract_backfill_audit_columns()
+        test_tract_crime_rates()
         test_tract_crime_and_gate()
 
         fixtures = _make_synthetic()

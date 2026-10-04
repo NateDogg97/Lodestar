@@ -8,12 +8,17 @@ thing; this patches public/data/tracts/{fips}.json in place:
 - low_confidence gains "mobile_homes" where most owned homes are mobile homes, and the
   ACS margin flags for the two shares
 - zero violent AND zero property crime becomes no data (and loses its "crime" flag)
+- crime rates become yearly rates (full audit, 2026-10-04): a partial year's counts are
+  annualized, and an agency with too little to rate (crime.rate_note: few months, too few
+  person-years, implausibly little for its size) loses its rate and gains `crime_note`.
+  `--crime` does only this, with no network.
 
 One Census API call per state (all tracts at once), then `python -m etl.tracts.national`
 to rebuild areas.json, then `python -m etl.tracts.upload`.
 
     python -m etl.tracts.backfill            # every published county
     python -m etl.tracts.backfill --state TX # one state
+    python -m etl.tracts.backfill --crime    # only the crime rule (offline)
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ from collections import defaultdict
 from ..util import get_logger
 from . import acs
 from .build import MOBILE_HOME_SHARE
+from .crime import rate_note
 from .publish import PUBLISH_DIR
 
 log = get_logger("tracts.backfill")
@@ -77,9 +83,44 @@ def patch_county(payload: dict, by_geoid: dict[str, dict]) -> dict[str, int]:
     return counts
 
 
+def patch_crime(payload: dict) -> dict[str, int]:
+    """Yearly crime rates (crime.py's rule) in one published county, in place.
+
+    The published rate was count × 100k / population for however many months the agency
+    reported: × 12 / months makes it a yearly rate. Then `rate_note` decides whether the
+    agency can have a rate at all. The `crime_note` column marks a file already done, so
+    running twice never annualizes twice.
+    """
+    cols: list[str] = payload["columns"]
+    counts = {"annualized": 0, "unrated": 0}
+    if "violent_rate" not in cols or "crime_note" in cols:
+        return counts
+    cols.append("crime_note")
+    for r in payload["rows"]:
+        r.append(None)
+    at = {c: cols.index(c) for c in cols}
+    for r in payload["rows"]:
+        v, p, months, pop = r[at["violent_rate"]], r[at["property_rate"]], r[at["crime_months"]], r[at["crime_population"]]
+        if v is None or not months:
+            continue
+        scale = 12 / months
+        v, p = v * scale, (p * scale if p is not None else None)
+        note = rate_note(pop, months, r[at["crime_year"]], v, p)
+        if note:
+            r[at["violent_rate"]] = r[at["property_rate"]] = None
+            r[at["crime_note"]] = note
+            r[at["low_confidence"]] = ";".join(f for f in (r[at["low_confidence"]] or "").split(";") if f and f != "crime")
+            counts["unrated"] += 1
+        elif months < 12:
+            r[at["violent_rate"]], r[at["property_rate"]] = int(round(v)), None if p is None else int(round(p))
+            counts["annualized"] += 1
+    return counts
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--state", help="two-digit state FIPS, comma-separated (default: all published)")
+    ap.add_argument("--crime", action="store_true", help="only the crime rule (no Census calls)")
     args = ap.parse_args()
     wanted = set(args.state.split(",")) if args.state else None
     files = sorted(PUBLISH_DIR.glob("[0-9][0-9][0-9][0-9][0-9].json"))
@@ -88,6 +129,17 @@ def main() -> None:
         if wanted is None or f.stem[:2] in wanted:
             by_state[f.stem[:2]].append(f)
     total = defaultdict(int)
+    if args.crime:
+        for state, paths in sorted(by_state.items()):
+            for path in paths:
+                payload = json.loads(path.read_text())
+                counts = patch_crime(payload)
+                if any(counts.values()):
+                    path.write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False))
+                for k, v in counts.items():
+                    total[k] += v
+        log.info("done: %d areas' rates annualized, %d left without a rate (crime_note)", total["annualized"], total["unrated"])
+        return
     for state, paths in sorted(by_state.items()):
         parsed = acs.parse(acs._state_raw(state))
         by_geoid = {
@@ -96,7 +148,7 @@ def main() -> None:
         }
         for path in paths:
             payload = json.loads(path.read_text())
-            for k, v in patch_county(payload, by_geoid).items():
+            for k, v in {**patch_county(payload, by_geoid), **patch_crime(payload)}.items():
                 total[k] += v
             path.write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False))
         log.info("state %s: %d counties patched", state, len(paths))

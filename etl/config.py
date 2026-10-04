@@ -404,6 +404,16 @@ CRIME_YEAR: int | None = None
 # few incidents, or a big shopping center in a tiny town (Sunset Valley, TX:
 # ~700 residents, 33,000 property crimes per 100k), swing it wildly.
 CRIME_MIN_POPULATION = 5_000
+# A rate is only computed from enough exposure (full audit, 2026-10-04). Partial years
+# are annualized (count × 12 / months): the FBI's own practice, and without it an agency
+# that reported 4 months (Phoenix, 2025) showed a third of its real rate and topped
+# "safest" lists. Fewer months than this, or fewer person-years of coverage
+# (population × months / 12) than CRIME_MIN_EXPOSURE, and there's no rate at all: at
+# the typical US rate (~250 violent crimes per 100k) 2,500 person-years means ~6
+# expected violent crimes, so a zero there is a real signal; a 536-person county with 6
+# months (Borden, TX) expects under one, and its zero is noise.
+CRIME_MIN_MONTHS = 3
+CRIME_MIN_EXPOSURE = 2_500
 
 # Downtowns of multi-center metros (Phase 8c, found in the Texas rehearsal: Fort
 # Worth was measured to downtown Dallas, 31 mi away). A metro's "major cities"
