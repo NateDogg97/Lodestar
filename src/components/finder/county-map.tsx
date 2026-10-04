@@ -307,9 +307,9 @@ export default function CountyMap({
   const [error, setError] = useState<string | null>(null);
 
   // Latest props for map event handlers, which are registered once.
-  const latest = useRef({ data, scoresByFips, rankByFips, onSelect, bottomInset, inside, onOpenArea });
+  const latest = useRef({ data, scoresByFips, rankByFips, relative, byBestArea, onSelect, bottomInset, inside, onOpenArea });
   useEffect(() => {
-    latest.current = { data, scoresByFips, rankByFips, onSelect, bottomInset, inside, onOpenArea };
+    latest.current = { data, scoresByFips, rankByFips, relative, byBestArea, onSelect, bottomInset, inside, onOpenArea };
   });
 
   // The lower 48 above the phone's results sheet (owner, 2026-10-04): the opening view
@@ -434,18 +434,29 @@ export default function CountyMap({
           if (onArea(e)) return;
           const fips = e.features?.[0]?.properties?.GEOID as string | undefined;
           if (!fips) return;
-          const { data: d, scoresByFips: byFips, rankByFips: ranks } = latest.current;
+          const { data: d, scoresByFips: byFips, rankByFips: ranks, relative: rel, byBestArea: areaMode } = latest.current;
           const i = d.indexByFips.get(fips);
           if (i === undefined) return;
           const sc = byFips.get(fips);
           const rank = ranks.get(fips);
+          // Its rank in the results (owner, 2026-10-04: a county's own score is often
+          // empty — an areas-only search ranks counties by their best area).
+          const best = rel.get(fips);
           const line = !sc
-            ? `${d.state[i] === "AK" ? "Alaska" : d.state[i] === "HI" ? "Hawaii" : "This state"} is turned off in Filters`
+            ? `${d.state[i] === "AK" ? "Alaska" : d.state[i] === "HI" ? "Hawaii" : "This state"} is turned off in Settings`
             : sc.status === "excluded"
-              ? "Ruled out by a limit"
-              : sc.score === null
-                ? sc.status === "unknown" ? "Unknown for a limit" : "No score"
-                : `Score ${Math.round(sc.score)}${rank ? ` · #${rank.toLocaleString()}` : " · hidden"}${sc.status === "unknown" ? " · unknown for a limit" : ""}`;
+              ? "Ruled out by a must-have"
+              : rank
+                ? `#${rank.toLocaleString()} of ${ranks.size.toLocaleString()} ${ranks.size === 1 ? "county" : "counties"}${
+                    areaMode
+                      ? typeof best === "number" ? ` · best area ${Math.round(best)}` : ""
+                      : sc.score !== null ? ` · score ${Math.round(sc.score)}` : ""
+                  }${sc.status === "unknown" ? " · unknown for a must-have" : ""}`
+                : areaMode
+                  ? "None of its areas are in your top results"
+                  : sc.status === "unknown"
+                    ? "Unknown for a must-have"
+                    : "Not in the results";
           map!.getCanvas().style.cursor = "pointer";
           const el = document.createElement("div");
           el.className = "text-xs text-neutral-900";
