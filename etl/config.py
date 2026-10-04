@@ -366,6 +366,11 @@ ACS_TRACT_VARIABLES = {
     "B15003_023": "edu_masters",
     "B15003_024": "edu_professional",
     "B15003_025": "edu_doctorate",
+    # Results audit (2026-10-04): areas that aren't places to move to, and home values
+    # that aren't houses.
+    "B09019_026": "group_quarters",            # people in barracks, dorms, prisons, nursing homes
+    "B25032_002": "owner_occupied",
+    "B25032_011": "owner_mobile_homes",        # owner-occupied mobile homes
 }
 # ACS top-codes: a median at these values means "this much or more".
 ACS_TOPCODE = {"median_home_value": 2_000_001, "median_gross_rent": 3_501}

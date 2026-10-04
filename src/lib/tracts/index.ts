@@ -189,6 +189,9 @@ export const AREA_MEASURES: AreaMeasure[] = [
   { key: "highrise_share", label: "High-rise homes", format: "percent", colorable: true,
     note: "Share of homes in buildings of 20 or more units." },
   { key: "single_family_share", label: "Single-family homes", format: "percent" },
+  { key: "mobile_home_share", label: "Owned homes that are mobile homes", format: "percent" },
+  { key: "group_quarters_share", label: "People in group quarters", format: "percent",
+    note: "Dorms, barracks, prisons and nursing homes. Areas mostly like this aren't shown as results." },
   { key: "owner_share", label: "Owner-occupied", format: "percent" },
   { key: "median_age", label: "Median age", format: "number" },
   { key: "bachelors_share", label: "Bachelor's degree or more", format: "percent" },
@@ -225,6 +228,7 @@ export const AREA_MEASURE = new Map(AREA_MEASURES.map((m) => [m.key, m]));
  */
 export const LOW_CONFIDENCE_HEADLINE = new Set([
   "median_home_value", "per_capita_income", "median_household_income", "median_gross_rent", "sale_price", "crime",
+  "mobile_homes",
 ]);
 
 export const headlineFlags = (a: Area) => a.lowConfidence.filter((c) => LOW_CONFIDENCE_HEADLINE.has(c));
@@ -233,6 +237,7 @@ export const headlineFlags = (a: Area) => a.lowConfidence.filter((c) => LOW_CONF
 export function flagLabel(col: string): string {
   if (col === "crime") return "Crime rate";
   if (col === "sale_price") return "Sale price (few sales)";
+  if (col === "mobile_homes") return "Home value: mostly mobile homes, not houses";
   return AREA_MEASURE.get(col)?.label ?? col.replace(/_/g, " ");
 }
 

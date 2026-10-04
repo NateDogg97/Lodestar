@@ -12,7 +12,9 @@
  *
  * Results audit (2026-10-04) rules, so results never mislead:
  * - A weighted priority with no value counts as average (50 points), never dropped.
- * - Places nobody lives (50 residents or fewer: water, airports, parks) aren't results.
+ * - Places nobody lives (50 residents or fewer: water, airports, parks), or that are
+ *   mostly group quarters (bases, campuses, prisons), aren't results.
+ * - A home value from mostly mobile homes is flagged and never wins "cheapest homes".
  * - An area unknown for a must-have ranks after every verified match.
  * - A value scores as at least as good as the values it ties with (best value = 100).
  * - Zero violent AND zero property crime is no report, not a perfect record.
@@ -138,8 +140,18 @@ export function distinctNames(label: string[], lat: Float64Array, lon: Float64Ar
 /** Fewer people than this and an area isn't a place to move to (water, airports, parks). */
 export const MIN_RESIDENTS = 51;
 
-/** True for an area with 50 or fewer residents: never a result. */
-export const uninhabited = (areas: NationalAreas, i: number) => !(areas.population[i] >= MIN_RESIDENTS);
+/** Mostly this share of people in group quarters (barracks, dorms, prisons, nursing homes). */
+export const MAX_GROUP_QUARTERS = 50;
+
+/**
+ * Not a place to move to, so never a result: 50 or fewer residents (water, airports,
+ * parks), or mostly group quarters — a military base, a campus, a prison (results audit).
+ */
+export const notResidential = (areas: NationalAreas, i: number) =>
+  !(areas.population[i] >= MIN_RESIDENTS) || (areas.values.get("group_quarters_share")?.[i] ?? 0) >= MAX_GROUP_QUARTERS;
+
+/** Most owned homes are mobile homes: the home value is real but isn't a house price. */
+export const mostlyMobileHomes = (areas: NationalAreas, i: number) => areas.lowConfidence[i].includes("mobile_homes");
 
 const pctCache = new WeakMap<NationalAreas, Map<string, Float64Array>>();
 const boundsCache = new WeakMap<NationalAreas, Map<string, PercentileBounds>>();
@@ -222,7 +234,7 @@ export function scoreNational(areas: NationalAreas, s: NationalSearch): National
   const status = new Uint8Array(areas.n);
   for (let i = 0; i < areas.n; i++) {
     const cp = s.counties.get(areas.county[i]);
-    if (!cp || uninhabited(areas, i)) {
+    if (!cp || notResidential(areas, i)) {
       status[i] = OUT;
       continue;
     }
@@ -449,7 +461,9 @@ export function resultBadges(areas: NationalAreas, top: number[], s: NationalSea
     let best = -1;
     let bestPts = -Infinity;
     let tie = false;
+    const homeValue = c.column === "median_home_value";
     for (const i of top) {
+      if (homeValue && mostlyMobileHomes(areas, i)) continue; // not a house price
       const pts = areaPoints(areas, c.column, i, c.direction);
       if (Number.isNaN(pts)) continue;
       if (pts > bestPts) {
@@ -465,6 +479,7 @@ export function resultBadges(areas: NationalAreas, top: number[], s: NationalSea
     }
     if (def?.topBadge && c.direction === def.defaultDirection) {
       for (const i of top) {
+        if (homeValue && mostlyMobileHomes(areas, i)) continue;
         const b = out.get(i)!;
         // Rarer than 99% of US areas, ties counted against it.
         if (b.top1.length === 0 && (beatsAt(areaBounds(areas, c.column), i, c.direction) ?? 0) >= 99) b.top1.push(def.topBadge);

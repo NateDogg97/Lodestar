@@ -871,6 +871,34 @@ def test_tract_crime_and_gate() -> None:
     check(t["population"].iloc[0] == 187756 and t["violent"].iloc[1] == 613, "yearly table: numbers with commas")
 
 
+def test_tract_backfill_audit_columns() -> None:
+    """Group quarters and mobile-home shares, the mobile-home caution, zero crime as no data."""
+    from etl.tracts.backfill import patch_county
+
+    payload = {"columns": ["geoid", "median_home_value", "violent_rate", "property_rate", "low_confidence"], "rows": [
+        ["1", 30000, 120, 900, ""],      # mostly mobile homes
+        ["2", 250000, 0, 0, "crime"],    # zero on both: no report
+        ["3", None, 80, 700, ""],        # a base: mostly group quarters, no home value
+    ]}
+    src = {
+        "1": {"group_quarters_share": 0.0, "group_quarters_share_moe": 1.0, "mobile_home_share": 71.4, "mobile_home_share_moe": 9.0, "flags": set()},
+        "2": {"group_quarters_share": 1.0, "group_quarters_share_moe": 1.0, "mobile_home_share": 2.0, "mobile_home_share_moe": 2.0, "flags": set()},
+        "3": {"group_quarters_share": 99.7, "group_quarters_share_moe": 0.5, "mobile_home_share": None, "mobile_home_share_moe": None, "flags": set()},
+    }
+    counts = patch_county(payload, src)
+    cols = payload["columns"]
+    row = {r[0]: dict(zip(cols, r)) for r in payload["rows"]}
+    check(row["1"]["mobile_home_share"] == 71.4 and "mobile_homes" in row["1"]["low_confidence"], "mostly mobile homes is flagged")
+    check(row["2"]["violent_rate"] is None and row["2"]["property_rate"] is None and "crime" not in row["2"]["low_confidence"],
+          "zero violent and property crime becomes no data")
+    check(row["3"]["group_quarters_share"] == 99.7 and counts["gq"] == 1, "group quarters share carried")
+    n_cols = len(payload["columns"])
+    patch_county(payload, src)
+    again = {r[0]: dict(zip(payload["columns"], r)) for r in payload["rows"]}
+    check(len(payload["columns"]) == n_cols and again["1"]["low_confidence"].split(";").count("mobile_homes") == 1,
+          "backfill is idempotent")
+
+
 def test_tract_today_prices() -> None:
     """Census by area × its ZIP's Zillow / Census ratio; county, then national fallback."""
     from etl.tracts.national import today_prices
@@ -963,6 +991,7 @@ def main() -> int:
         test_app_payload_is_compact_and_lossless_where_it_matters()
         test_tract_acs_confidence()
         test_tract_today_prices()
+        test_tract_backfill_audit_columns()
         test_tract_crime_and_gate()
 
         fixtures = _make_synthetic()

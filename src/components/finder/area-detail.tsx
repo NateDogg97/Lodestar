@@ -712,6 +712,17 @@ export function AreaDetail({
               <MiniStat label="Income per person" value={formatArea("per_capita_income", v("per_capita_income"))} />
               <MiniStat label="Homes built (median)" value={v("median_year_built") === null ? "—" : String(Math.round(v("median_year_built")!))} />
             </div>
+            {v("mobile_home_share") !== null && (
+              <Row label="Owned homes that are mobile homes">
+                <span className="font-medium tabular-nums">{pct(v("mobile_home_share"))}</span>
+                <FlagMark on={flagged.has("mobile_homes")} />
+              </Row>
+            )}
+            {(v("group_quarters_share") ?? 0) >= 1 && (
+              <Row label="People in group quarters (dorms, barracks, care homes)">
+                <span className="font-medium tabular-nums">{pct(v("group_quarters_share"))}</span>
+              </Row>
+            )}
             <Row label="Home value (Census)">
               <span className="font-medium tabular-nums">{formatArea("median_home_value", v("median_home_value"))}</span>
               <FlagMark on={flagged.has("median_home_value")} />
@@ -914,8 +925,11 @@ function PriceStat({
   const i = ranking?.indexByGeoid.get(area.geoid);
   const today = ranking && i !== undefined ? ranking.areas.values.get(census)?.[i] : undefined;
   const z = areaValue(area, zillow);
-  const flagged = area.lowConfidence.includes(census);
+  // Mostly mobile homes: the home value is real but isn't a house price (results audit).
+  const mobile = census === "median_home_value" && area.lowConfidence.includes("mobile_homes");
+  const flagged = area.lowConfidence.includes(census) || mobile;
   const zip = area.zip ? ` · ZIP ${area.zip}` : "";
+  const mobileNote = mobile ? `Mostly mobile homes (${Math.round(areaValue(area, "mobile_home_share") ?? 0)}% of owned homes) · ` : "";
   if (today !== undefined && !Number.isNaN(today)) {
     return (
       <Stat
@@ -923,13 +937,15 @@ function PriceStat({
         label={label}
         note={areaPriority(census)?.note}
         text={formatArea(census, today)}
-        source={z !== null ? `Est. for this area · Zillow ${formatArea(zillow, z)}${zip}` : "Est. for this area"}
+        source={`${mobileNote}${z !== null ? `Est. for this area · Zillow ${formatArea(zillow, z)}${zip}` : "Est. for this area"}`}
         flagged={flagged}
       />
     );
   }
   const k = z !== null ? zillow : census;
-  return <Stat k={k} label={label} text={formatAreaValue(area, k)} source={z !== null ? `Zillow${zip}` : "Census"} flagged={flagged} />;
+  return (
+    <Stat k={k} label={label} text={formatAreaValue(area, k)} source={`${mobileNote}${z !== null ? `Zillow${zip}` : "Census"}`} flagged={flagged} />
+  );
 }
 
 function Stat({

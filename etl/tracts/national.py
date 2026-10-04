@@ -51,6 +51,9 @@ NUMBERS = {  # column -> decimals kept
     "walkability": 1, "violent_rate": 0, "property_rate": 0,
     "dist_downtown_mi": 1, "dist_airport_mi": 1, "dist_coast_mi": 0, "dist_metro_mi": 1,
     "kids_share": 0, "density_per_sq_mi": 0, "commute_minutes": 0,
+    # Results audit (2026-10-04): mostly group quarters → not a result; mostly mobile
+    # homes → the home value gets a caution.
+    "group_quarters_share": 0, "mobile_home_share": 0,
     "hazard_risk": 0, "hazard_hurricane": 0, "hazard_wildfire": 0, "hazard_inland_flood": 0,
     "hazard_coastal_flood": 0, "hazard_earthquake": 0, "hazard_tornado": 0,
 }

@@ -1789,7 +1789,9 @@ worst first — each needs fixing (or an owner call) before more features:
 - [x] **Places nobody lives.** *Fixed: areas with 50 or fewer residents are never results
       (`MIN_RESIDENTS`); they're still in the national percentiles.* 493 areas have 0 residents (water, airports, parks), 605 ≤ 50;
       they reach top results ("Near Destin", SFO, Memphis tracts with 0 people).
-- [ ] **Military bases and campuses** (Fort Hood, Fort Carson, Naval Academy, Kirtland AFB,
+- [x] **Military bases and campuses** *Fixed: `group_quarters_share` (ACS B09019_026 ÷
+      population) in the tract ETL; areas mostly group quarters (≥ 50%: 872 of them — bases,
+      dorms, prisons such as Gatesville TX) are never results (`notResidential`).* (Fort Hood, Fort Carson, Naval Academy, Kirtland AFB,
       Virginia Tech, Berkeley 94720): not places to move to. Needs group-quarters share from
       the Census (ETL) to leave out areas that are mostly barracks, dorms, prisons.
 - [x] **"Unknown" outranks verified.** *Fixed: verified matches first, then unknowns (areas
@@ -1803,14 +1805,21 @@ worst first — each needs fixing (or an owner call) before more features:
       risk" shared by most areas gets 57–88 points and a 0% income tax gets 91 — the best
       possible value should score 100 (engine-wide, counties too).
 - [x] **Zero crime.** *Fixed in the app: zero violent and zero property crime reads as no
-      data (also to do in the crime ETL with the next rebuild).* 108 areas report 0 violent and 0 property crime (106 flagged low
+      data, in the app and now at the source (tract build and `etl.tracts.backfill`).* 108 areas report 0 violent and 0 property crime (106 flagged low
       confidence); "Safety above all" returns 100 areas tied at the top.
 - [x] **Must-haves only, no priorities → no results** *Fixed: matches listed by population,
       no score, and the list says it isn't a ranking.* (1,800 areas match, 0 shown).
-- [ ] **Mobile-home parks as "cheapest homes"** (Oakland County MI tracts at $25–58k beside
+- [x] **Mobile-home parks as "cheapest homes"** *Fixed: `mobile_home_share` (ACS B25032_011 ÷
+      _002, owner-occupied); ≥ 50% (774 areas) adds a "mobile_homes" caution — shown on the
+      home value and in lists — and such areas never get "Cheapest homes" badges. Their values
+      still rank: they're real.* (Oakland County MI tracts at $25–58k beside
       $400k ZIPs). Real values, misleading next to houses: add mobile-home share (ETL) and a
       caution.
 - [x] Small: distance to the coast prints without "mi". *Fixed.*
+
+Applied 2026-10-04 without a full rebuild: `python -m etl.tracts.backfill` (one Census call
+per state, chunked under the API's 50-variable limit), then `etl.tracts.national` and upload.
+The monthly refresh builds the same columns from scratch.
 
 Looked right: county-only rankings, walkable downtowns, typical-density suburbs, affluent
 areas with top high schools, Texas-only, no-income-tax states.

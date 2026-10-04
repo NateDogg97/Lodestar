@@ -30,6 +30,7 @@ import argparse
 import time
 import traceback
 
+import numpy as np
 import pandas as pd
 
 from .. import config
@@ -59,6 +60,17 @@ COVERAGE = {
 def _county_names() -> dict[str, str]:
     spine = read_interim("spine")
     return {f: f"{n}, {st}" for f, n, st in zip(spine["fips"], spine["county_name"], spine["state"])}
+
+
+# Owned homes that are mobile homes, at or above which the home value gets a caution.
+MOBILE_HOME_SHARE = 50.0
+
+
+def mobile_homes(df: pd.DataFrame) -> pd.Series:
+    """True where most owned homes are mobile homes and there is a home value to caution."""
+    if "mobile_home_share" not in df:
+        return pd.Series(False, index=df.index)
+    return (df["mobile_home_share"] >= MOBILE_HOME_SHARE) & df["median_home_value"].notna()
 
 
 def build_county(fips: str, with_crime: bool = True) -> pd.DataFrame:
@@ -102,10 +114,20 @@ def build_county(fips: str, with_crime: bool = True) -> pd.DataFrame:
         df = df.drop(columns=["crime_low_confidence"])
     else:
         crime_flag = pd.Series(False, index=df.index)
+    # Zero violent and zero property crime is an agency that reported nothing, not a
+    # perfect record (results audit, 2026-10-04): no data, and nothing to flag.
+    if with_crime and {"violent_rate", "property_rate"} <= set(df.columns):
+        none = (df["violent_rate"] == 0) & (df["property_rate"] == 0)
+        df.loc[none, ["violent_rate", "property_rate"]] = np.nan
+        crime_flag = crime_flag & ~none
     # A median sale price from a handful of sales is noise.
     thin = df["homes_sold"].fillna(0) < MIN_HOMES_SOLD
-    df["low_confidence"] = [";".join(x for x in (a, "crime" if c else "", "sale_price" if t else "") if x)
-                            for a, c, t in zip(lowc, crime_flag, thin)]
+    # Mostly mobile homes: the home value is real but isn't a house price.
+    mobile = mobile_homes(df)
+    df["low_confidence"] = [
+        ";".join(x for x in (a, "crime" if c else "", "sale_price" if t else "", "mobile_homes" if m else "") if x)
+        for a, c, t, m in zip(lowc, crime_flag, thin, mobile)
+    ]
 
     config.TRACT_OUT_DIR.mkdir(parents=True, exist_ok=True)
     df.to_csv(config.TRACT_OUT_DIR / f"{fips}.csv", index=False)

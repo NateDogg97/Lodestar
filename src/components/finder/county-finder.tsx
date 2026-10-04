@@ -53,7 +53,7 @@ import {
   areaValue,
   countiesOf,
   countyMatches,
-  uninhabited,
+  notResidential,
   MATCH,
   UNKNOWN,
   countyParts,
@@ -459,8 +459,8 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     const inTop = new Set(topIdx);
     const topHere = matches.filter((i) => inTop.has(i));
     const matching = new Set(matches);
-    // Not a match — but places nobody lives aren't listed at all (results audit).
-    const ruledOut = [...indexByGeoid.values()].filter((i) => !matching.has(i) && !uninhabited(national, i));
+    // Not a match — but places that aren't residential aren't listed at all (results audit).
+    const ruledOut = [...indexByGeoid.values()].filter((i) => !matching.has(i) && !notResidential(national, i));
     return {
       areas: national,
       scores: nscores,

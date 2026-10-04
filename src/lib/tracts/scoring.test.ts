@@ -10,6 +10,7 @@ import {
   EXCLUDED,
   explainArea,
   MATCH,
+  notResidential,
   OUT,
   parseNationalAreas,
   resultBadges,
@@ -205,5 +206,37 @@ describe("results audit rules (2026-10-04)", () => {
     const { limits } = areaCriteria({ areaWeights: {}, areaDirections: {}, areaLimits: { walkability: { min: 9 } } });
     const sc = scoreNational(a, s({ limits }));
     expect(topAreas(a, sc, 10, false)).toEqual([1, 3, 0]);
+  });
+});
+
+describe("not residential, and home values that aren't houses (results audit)", () => {
+  const a = parseNationalAreas({
+    format: "areas-v1",
+    n: 3,
+    columns: {
+      geoid: ["48001000100", "48001000200", "48001000300"],
+      label: ["Base", "Park", "Town"],
+      low_confidence: ["", "mobile_homes", ""],
+      population: [5000, 3000, 4000],
+      group_quarters_share: [95, 0, 2],
+      median_home_value: [null, 30_000, 200_000],
+    },
+  });
+  const s = {
+    criteria: areaCriteria({ areaWeights: { median_home_value: 1 }, areaDirections: {}, areaLimits: {} }).criteria,
+    limits: [],
+    counties: countyParts([county("48001", "match", null)]),
+  };
+
+  it("leaves out areas that are mostly group quarters", () => {
+    expect(notResidential(a, 0)).toBe(true);
+    expect(notResidential(a, 2)).toBe(false);
+    expect(scoreNational(a, s).status[0]).toBe(OUT);
+  });
+
+  it("never gives a mobile-home park the 'cheapest homes' badge", () => {
+    const top = topAreas(a, scoreNational(a, s), 10, true);
+    expect(top).toEqual([1, 2]);
+    expect(resultBadges(a, top, s).get(1)?.best).toEqual([]);
   });
 });

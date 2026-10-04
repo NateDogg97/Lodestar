@@ -12,6 +12,11 @@ WHAT THIS PRODUCES (one row per tract)
     kids_share            % of households with someone under 18
     bachelors_share       % of adults 25+ with a bachelor's degree or higher
     work_from_home_share  % of workers who work from home
+    group_quarters_share  % of people living in group quarters (barracks, dorms,
+                          prisons, nursing homes) — mostly that, and an area isn't
+                          a place to move to (results audit, 2026-10-04)
+    mobile_home_share     % of owner-occupied homes that are mobile homes — the
+                          home value then isn't a house price
     commute_minutes       mean one-way commute of those who don't
     low_confidence        ";"-separated list of the columns above whose
                           margin of error is too wide to trust (see below)
@@ -55,18 +60,23 @@ SHARES = {
     "kids_share": (["households_with_kids"], "households"),
     "bachelors_share": (["edu_bachelors", "edu_masters", "edu_professional", "edu_doctorate"], "adults_25_plus"),
     "work_from_home_share": (["workers_from_home"], "workers"),
+    "group_quarters_share": (["group_quarters"], "population"),
+    "mobile_home_share": (["owner_mobile_homes"], "owner_occupied"),
 }
 MEDIANS = ["median_home_value", "median_household_income", "per_capita_income", "median_gross_rent",
            "median_year_built", "median_age"]
 
 
+# The Census API takes at most 50 variables per call (estimate and MOE each count).
+MAX_VARIABLES_PER_CALL = 48
+
+
 @functools.lru_cache(maxsize=4)
 def _state_raw(state: str) -> pd.DataFrame:
-    """Every tract in a state, in one Census API call (cached on disk and per run)."""
+    """Every tract in a state (cached on disk and per run): one Census API call per chunk
+    of variables, joined on the tract."""
     names = [f"{v}{s}" for v in config.ACS_TRACT_VARIABLES for s in ("E", "M")]
-    params = {"get": ",".join(names), "for": "tract:*", "in": f"state:{state} county:*"}
-    if config.CENSUS_API_KEY:
-        params["key"] = config.CENSUS_API_KEY
+    keys = ["state", "county", "tract"]
 
     def _check(payload: object) -> None:
         rows = expect_json(payload)
@@ -74,10 +84,20 @@ def _state_raw(state: str) -> pd.DataFrame:
             raise BadResponse(f"Census API returned no tract rows: {str(rows)[:200]}")
 
     url = f"{config.CENSUS_API_BASE}/{config.ACS_YEAR}/acs/acs5"
-    body = http_get(url, params=params, cache_hint=f"acs5_{config.ACS_YEAR}_tracts_{state}", check=_check)
-    assert isinstance(body, str)
-    header, *rows = json.loads(body)
-    return pd.DataFrame(rows, columns=header)
+    out: pd.DataFrame | None = None
+    for k in range(0, len(names), MAX_VARIABLES_PER_CALL):
+        chunk = names[k : k + MAX_VARIABLES_PER_CALL]
+        params = {"get": ",".join(chunk), "for": "tract:*", "in": f"state:{state} county:*"}
+        if config.CENSUS_API_KEY:
+            params["key"] = config.CENSUS_API_KEY
+        body = http_get(url, params=params, cache_hint=f"acs5_{config.ACS_YEAR}_tracts_{state}_{k // MAX_VARIABLES_PER_CALL}",
+                        check=_check)
+        assert isinstance(body, str)
+        header, *rows = json.loads(body)
+        part = pd.DataFrame(rows, columns=header)
+        out = part if out is None else out.merge(part, on=keys, how="outer")
+    assert out is not None
+    return out
 
 
 def _share_moe(num: pd.Series, num_moe: pd.Series, den: pd.Series, den_moe: pd.Series) -> pd.Series:
