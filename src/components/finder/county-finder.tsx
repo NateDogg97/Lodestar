@@ -636,12 +636,13 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       onClick={() => setFiltersOpen(true)}
       aria-haspopup="dialog"
       data-tour="filters"
-      className="flex items-center gap-2 rounded-full border border-neutral-300 px-3.5 py-1.5 text-label font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+      className="flex shrink-0 items-center gap-2 rounded-full border border-neutral-300 px-3.5 py-1.5 text-label font-medium hover:bg-neutral-100 @max-[8rem]:gap-1.5 @max-[8rem]:px-2.5 dark:border-neutral-700 dark:hover:bg-neutral-900"
     >
       <svg aria-hidden viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5">
         <path d="M2 4h12M4 8h8M6 12h4" strokeLinecap="round" />
       </svg>
-      Filters
+      {/* On a phone whose header can't fit it beside a centered logo: icon and count only. */}
+      <span className="@max-[8rem]:sr-only">Filters</span>
       {activeTotal > 0 && (
         <span className="grid min-w-5 place-items-center rounded-full bg-emerald-600 px-1.5 text-caption font-semibold text-white">
           {activeTotal}
@@ -960,14 +961,13 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   if (!wide) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex shrink-0 items-center gap-3 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
-          {filtersButton}
-          <h1 className="flex min-w-0 flex-1 justify-center">
+        {/* Three columns, so the logo sits in the true middle whatever the sides hold. */}
+        <div className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
+          <div className="@container flex min-w-0 justify-start">{filtersButton}</div>
+          <h1 className="flex justify-center">
             <LodestarLogo size="sm" />
           </h1>
-          <div className="flex shrink-0 items-center">
-            {settingsButton}
-          </div>
+          <div className="flex justify-end">{settingsButton}</div>
         </div>
 
         <div ref={area} className="relative min-h-0 flex-1 overflow-hidden">
