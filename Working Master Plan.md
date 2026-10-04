@@ -1676,6 +1676,16 @@ neighborhood near a specific school), not a county average. Decided with the own
   back link returns straight to Results (its county is a separate link), so there's no
   area → county → results back-tracking. Owner approved: verdicts in words + a smaller
   number; county pages lead with their best areas.
+- **Result summaries compare; the area page explains** (owner, 2026-10-03, mockup round 3).
+  The area page keeps its full "Your search" detail; a result's summary in the list is
+  different: a **fingerprint** (owner's favorite: one bar per priority, no words; collapsed
+  rows show it as tiny columns, one per priority, most important first), a **trade-off
+  sentence** built from at most the **3 priorities that moved the score most**, the rest
+  one tap away; opening a summary outlines the area on the map ("Open <area> →" stays).
+  **Score colors:** deep red at 1, yellow around 75, deep green at 99, **gold at 100** (top
+  1%), on every bar and score. **Badges:** "best of your results" (green: Most walkable,
+  Best schools, Cheapest homes… — the single best returned area on a priority, at most two
+  per area) and **"Top 1% … in the US"** (gold star) for a national top-1% priority.
 - Next, separately: **data overload** — reorganize county and area pages (nothing removed),
   so what matters for *this* search comes first and the rest is a tap away.
 
