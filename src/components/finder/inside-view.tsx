@@ -571,6 +571,9 @@ function standing(p: AreaPart): string {
   return `${ordinal(raw)} percentile of ${of} · ${BETTER.middle}`;
 }
 
+/** Home value and rent are scored on the Census (every area, tract by tract); the tiles prefer Zillow. */
+const SCORED_ON_CENSUS = new Set(["median_home_value", "median_gross_rent"]);
+
 const partValue = (p: AreaPart) =>
   p.level === "county" ? formatValue(p.key as MetricKey, p.value) : formatArea(p.key, p.value);
 
@@ -605,6 +608,7 @@ function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRa
                 <span>
                   {c.label}
                   {c.level === "county" && <span className="text-caption text-neutral-500"> · county-wide</span>}
+                  {SCORED_ON_CENSUS.has(c.key) && <span className="text-caption text-neutral-500"> · Census</span>}
                 </span>
                 <span className="shrink-0 font-medium tabular-nums">{partValue(c)}</span>
               </div>
@@ -651,6 +655,7 @@ function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRa
                   {l.state === "pass" ? "✓" : l.state === "fail" ? "✕" : "?"}{" "}
                 </span>
                 {l.label}
+                {SCORED_ON_CENSUS.has(l.column) && <span className="text-caption text-neutral-500"> · Census</span>}
                 <span className="block text-caption text-neutral-500">Yours: {bound(l)}</span>
               </span>
               <span className={`shrink-0 font-medium tabular-nums ${l.state === "fail" ? "text-rose-700 dark:text-rose-400" : ""}`}>
@@ -685,10 +690,29 @@ function AreaDetail({
   return (
     <div className="space-y-section px-gutter py-4">
       {ranking && <WhyItRanks area={area} ranking={ranking} countyName={countyName} />}
+      {/* The headline numbers (owner audit, 2026-10-04): Zillow first for home value and
+          rent — recent, and it covers more areas for home value — with the Census as the
+          backup; then income, safety, commute and walkability. Schools have their own
+          section right below. */}
       <dl className="grid grid-cols-2 gap-2">
-        {["zhvi", "median_home_value", "median_gross_rent", "per_capita_income", "walkability", "kids_share"].map((k) => (
-          <Stat key={k} k={k} text={formatAreaValue(area, k)} flagged={flagged.has(k)} />
-        ))}
+        <Stat
+          label="Home value"
+          k={v("zhvi") !== null ? "zhvi" : "median_home_value"}
+          text={formatAreaValue(area, v("zhvi") !== null ? "zhvi" : "median_home_value")}
+          source={v("zhvi") !== null ? `Zillow${area.zip ? ` · ZIP ${area.zip}` : ""}` : "Census"}
+          flagged={flagged.has(v("zhvi") !== null ? "zhvi" : "median_home_value")}
+        />
+        <Stat
+          label="Rent"
+          k={v("zori") !== null ? "zori" : "median_gross_rent"}
+          text={formatAreaValue(area, v("zori") !== null ? "zori" : "median_gross_rent")}
+          source={v("zori") !== null ? `Zillow${area.zip ? ` · ZIP ${area.zip}` : ""}` : "Census"}
+          flagged={flagged.has(v("zori") !== null ? "zori" : "median_gross_rent")}
+        />
+        <Stat k="median_household_income" text={formatAreaValue(area, "median_household_income")} flagged={flagged.has("median_household_income")} />
+        <Stat k="violent_rate" text={formatAreaValue(area, "violent_rate")} flagged={flagged.has("crime")} />
+        <Stat k="commute_minutes" text={formatAreaValue(area, "commute_minutes")} flagged={flagged.has("commute_minutes")} />
+        <Stat k="walkability" text={formatAreaValue(area, "walkability")} flagged={flagged.has("walkability")} />
       </dl>
 
       <Section
@@ -732,8 +756,8 @@ function AreaDetail({
       </Section>
 
       <Section title="Homes and people">
-        {["median_household_income", "zori", "highrise_share", "single_family_share", "owner_share", "median_age",
-          "bachelors_share", "density_per_sq_mi"].map((k) => (
+        {["median_home_value", "median_gross_rent", "per_capita_income", "kids_share", "highrise_share",
+          "single_family_share", "owner_share", "median_age", "bachelors_share", "density_per_sq_mi"].map((k) => (
           <MeasureRow key={k} k={k} value={v(k)} flagged={flagged.has(k)} />
         ))}
       </Section>
@@ -844,18 +868,33 @@ function MeasureRow({ k, value, flagged, extra }: { k: string; value: number | n
   );
 }
 
-function Stat({ k, text, flagged }: { k: string; text: string; flagged: boolean }) {
+function Stat({
+  k,
+  label,
+  text,
+  source,
+  flagged,
+}: {
+  k: string;
+  /** Instead of the measure's own label ("Home value", not "Home value (Zillow, by ZIP)"). */
+  label?: string;
+  text: string;
+  /** Where the number comes from, when it can come from more than one place. */
+  source?: string;
+  flagged: boolean;
+}) {
   const m = AREA_MEASURE.get(k);
   return (
     <div className="rounded-lg bg-neutral-100 px-3 py-2 dark:bg-neutral-900">
       <dt className="flex items-center gap-1 text-caption text-neutral-500 dark:text-neutral-400">
-        {m?.label ?? k}
-        {m?.note && <InfoTip label={m.label}>{m.note}</InfoTip>}
+        {label ?? m?.label ?? k}
+        {m?.note && <InfoTip label={label ?? m.label}>{m.note}</InfoTip>}
       </dt>
       <dd className="mt-0.5 text-body font-semibold tabular-nums">
         {text}
         <FlagMark on={flagged} />
       </dd>
+      {source && <dd className="text-caption text-neutral-500">{source}</dd>}
     </div>
   );
 }

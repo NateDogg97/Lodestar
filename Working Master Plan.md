@@ -1735,6 +1735,15 @@ neighborhood near a specific school), not a county average. Decided with the own
   gated, percentiles stay national. Alaska and Hawaii still turn on in Settings. Known edge:
   a state list saved while Alaska/Hawaii were off doesn't include them, so turning them on
   later keeps them ruled out until "All" is pressed.
+- [x] **Area page tiles audited** (owner, 2026-10-04): home value and rent from Zillow (by
+  ZIP; recent, and Zillow covers 82,901 areas for home value vs the Census's 81,264), with
+  the Census as backup; then household income, violent crime, average commute,
+  walkability. Census home value/rent, income per person and households with kids moved
+  to "Homes and people".
+- [ ] **Open: score home value on what?** Scoring and must-haves use the Census (tract by
+  tract, every area, but a 2019–2023 self-reported average running ~23% below Zillow, p10–p90
+  0.87–1.77). The breakdown labels those rows "Census". Option: score on the Census value
+  scaled by its ZIP's Zillow/Census ratio — tract detail at today's prices (ETL change).
 - [ ] Data overload: one-line sections with verdict words and a smaller number on county
   and area pages.
 
