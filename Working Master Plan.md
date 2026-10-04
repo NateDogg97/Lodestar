@@ -1634,6 +1634,41 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
   names; unincorporated tracts take the sheriff. In Texas 99.6% of populated tracts get a
   rate; an agency that didn't report a full year is flagged low confidence (8c).
 
+### Phase 8f — Areas as the results (planned 2026-10-03, owner decisions)
+
+With area data for every county, the unit a person is really choosing is an **area** (a
+neighborhood near a specific school), not a county average. Decided with the owner:
+
+- **One level per filter, automatic** — the most precise level that exists:
+  - County/state only: climate, taxes, laws and policies, cost of living, electricity,
+    unemployment. They gate counties and give every area in the county the same share of
+    its score.
+  - Area: home value, rent, income, **schools**, hazards, distances (airport, coast, metro),
+    plus the area-only ones (crime, walkability, downtown, high schools, families,
+    density, commute). The "Inside a county" section merges back into the topic sections;
+    each card is tagged "county-wide" or "by area".
+  - **Schools stay percentiles of specific schools** (owner): a county's average grade level
+    hides good and bad schools alike, so school priorities and limits apply to an area's
+    nearest schools, never the county average.
+- **An area's match** = one weighted average over all priorities: county measures at the
+  county's national percentile, area measures at the area's **national** percentile (no
+  longer within-county). Needs every area's scoring columns in the browser: measured
+  2026-10-03 at 84,119 areas × ~18 columns = 3.4 MB gzipped, loaded only when a search
+  has an area-level filter.
+- **Results are capped by areas, not counties:** the top N areas nationally (default 100).
+  Counties are the ones holding at least one of them — however many that is.
+- **County ranking: by their best area** (owner: "that's the whole purpose of this app"),
+  each showing "5 of your top 100 areas". Open: a "most options" sort (count of top-N areas,
+  then best) as the alternative.
+- **Default view:** Areas whenever any area-level filter is set; Counties otherwise.
+- **Map by zoom — the results grow as you zoom out** (owner): states with a count of
+  matching areas when zoomed far out; counties with their count in between; the areas
+  themselves when zoomed in (only top-N areas; geometry loaded per county as needed).
+- **Inside a county: only the areas that match**, best 5 first, "Show 5 more" for the next
+  ones; the rest stay off the map, so it's not every area ranked at once.
+- Next, separately: **data overload** — reorganize county and area pages (nothing removed),
+  so what matters for *this* search comes first and the rest is a tap away.
+
 ### Phase 9 — First-run tutorial (added 2026-10-01)
 
 The app has a lot in it (priorities, must-haves, climate cards, saved searches, the map,
