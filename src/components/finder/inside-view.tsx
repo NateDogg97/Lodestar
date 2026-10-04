@@ -29,7 +29,7 @@ import { ordinal } from "@/lib/scoring/format";
 import { formatValue, getMetric, type CountyScore, type MetricKey } from "@/lib/scoring";
 
 import { Fingerprint } from "./area-results";
-import { isGold, scoreColor } from "./score-colors";
+import { barColor, isGold, scoreColor } from "./score-colors";
 import type { CountyAreasState } from "./use-tract-data";
 
 /** A county's areas ranked by the search (plan §9 Phase 8f), as county-finder computes it. */
@@ -272,7 +272,7 @@ function MatchList({
 
 function MatchScore({ score }: { score: number }) {
   return (
-    <span className="pt-0.5 font-bold tabular-nums" style={{ color: isGold(score) ? "#8a6500" : scoreColor(score) }}>
+    <span className="pt-0.5 font-bold tabular-nums" style={{ color: scoreColor(score) }}>
       {Math.round(score)}
     </span>
   );
@@ -554,7 +554,7 @@ function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRa
                         className="h-full rounded-full"
                         style={{
                           width: `${Math.max(2, c.points)}%`,
-                          backgroundColor: scoreColor(c.points),
+                          backgroundColor: barColor(c.points),
                           boxShadow: isGold(c.points) ? "0 0 6px rgba(212,160,23,.7)" : undefined,
                         }}
                       />

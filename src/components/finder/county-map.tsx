@@ -162,6 +162,9 @@ const FILL_COLOR = [
 ] as unknown as ExpressionSpecification;
 const FILL_OPACITY: ExpressionSpecification = [
   "case",
+  // The county you're inside: its areas are drawn instead, and the blank ones stay blank.
+  ["boolean", ["feature-state", "inside"], false],
+  0,
   ["!", ["boolean", ["feature-state", "top"], false]],
   0,
   ["==", ["typeof", ["feature-state", "rel"]], "number"],
@@ -478,6 +481,7 @@ export default function CountyMap({
     const layers = map.getStyle().layers;
     const lastShape = layers.findLastIndex((l) => l.type !== "symbol");
     const firstLabel = layers.slice(lastShape + 1).find((l) => l.type === "symbol")?.id;
+    map.setFeatureState({ source: "counties", id: insideFips }, { inside: true });
     map.addSource("tracts", { type: "geojson", data: fc, promoteId: "GEOID" });
     map.addLayer({ id: "tract-fill", type: "fill", source: "tracts",
       paint: { "fill-color": AREA_FILL, "fill-opacity": 0.8 } }, firstLabel);
@@ -496,6 +500,7 @@ export default function CountyMap({
     }
     return () => {
       for (const id of ["tract-selected", "tract-hover", "tract-line", "tract-fill"]) if (map.getLayer(id)) map.removeLayer(id);
+      if (map.getSource("counties")) map.setFeatureState({ source: "counties", id: insideFips }, { inside: false });
       if (map.getSource("tracts")) map.removeSource("tracts");
       tractFeatures.current = new Map();
     };

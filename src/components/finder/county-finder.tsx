@@ -474,12 +474,16 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       onSelectArea: selectArea,
     };
     if (areaRanking) {
-      // Only the areas listed (best 5, then more) are drawn: focus, not every area ranked.
+      // Drawn: the county's areas in your top results, plus the ones listed (best 5, then
+      // more); the rest stay blank, like counties outside the results (owner, 2026-10-04).
+      // Colored by rank among those drawn, best deep green — as counties are by rank.
+      const inTop = new Set(topIdx);
+      const listed = new Set(areaRanking.matches.slice(0, areaRanking.shown));
+      const drawn = areaRanking.matches.filter((i) => inTop.has(i) || listed.has(i));
       const values = new Map<string, number | null>(areas.areas.map((a) => [a.geoid, null]));
-      for (const i of areaRanking.matches.slice(0, areaRanking.shown)) {
-        const v = areaRanking.scores.score[i];
-        values.set(areaRanking.areas.geoid[i], Number.isNaN(v) ? null : v);
-      }
+      drawn.forEach((i, rank) =>
+        values.set(areaRanking.areas.geoid[i], drawn.length > 1 ? 100 * (1 - rank / (drawn.length - 1)) : 100),
+      );
       return {
         ...common,
         palette: "score" as const,
@@ -503,7 +507,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         high: formatArea(areaMeasure, vals.at(-1)?.[1] ?? null),
       },
     };
-  }, [insideOpen, areasState, areaRanking, selectedArea, areaFocus]);
+  }, [insideOpen, areasState, areaRanking, topIdx, selectedArea, areaFocus]);
   // Hovering the list outlines areas on the map. Kept apart so a hover doesn't
   // rebuild the colors above (the map recolors when `values` changes).
   const insideLayer = useMemo<InsideLayer | null>(

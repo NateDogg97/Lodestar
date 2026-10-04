@@ -5,7 +5,7 @@
 > If something here conflicts with what you actually built, the code is right and this file is
 > stale — fix the file.
 >
-> Last updated: 2026-10-03
+> Last updated: 2026-10-04
 >
 > **Changelog**
 > - 2026-10-02 — **Area data refreshes itself.** A monthly GitHub Action
@@ -1682,8 +1682,9 @@ neighborhood near a specific school), not a county average. Decided with the own
   rows show it as tiny columns, one per priority, most important first), a **trade-off
   sentence** built from at most the **3 priorities that moved the score most**, the rest
   one tap away; opening a summary outlines the area on the map ("Open <area> →" stays).
-  **Score colors:** deep red at 1, yellow around 75, deep green at 99, **gold at 100** (top
-  1%), on every bar and score. **Badges:** "best of your results" (green: Most walkable,
+  **Score colors:** deep red at 1, yellow around 75, deep green at the top. **Gold** (top 1%)
+  only on bars (fingerprints, breakdowns) and badges — the map and score numbers top out
+  at deep green (owner, 2026-10-04). **Badges:** "best of your results" (green: Most walkable,
   Best schools, Cheapest homes… — the single best returned area on a priority, at most two
   per area) and **"Top 1% … in the US"** (gold star) for a national top-1% priority.
 - Next, separately: **data overload** — reorganize county and area pages (nothing removed),
@@ -1707,6 +1708,9 @@ neighborhood near a specific school), not a county average. Decided with the own
 - [x] Inside a county: only matching areas, best 5 + "Show 5 more", fingerprints; the area
   page's breakdown uses national percentiles ("lower than 97% of US areas"); "← Results"
   plus a county link.
+- [x] Inside a county, the map draws only its areas in your results plus the ones listed,
+  colored by rank among them (best deep green); the rest stay blank, and the county's own
+  fill is hidden underneath (it had shown through as one color — fixed 2026-10-04).
 - [x] County page in area mode leads with its best 3 areas and shows its best area's score.
 - [x] Map by zoom: state count bubbles (< z5), county count bubbles (z5–7.5), area dots
   colored by score (≥ z7.5; tap opens the area). Bubbles are HTML markers because the

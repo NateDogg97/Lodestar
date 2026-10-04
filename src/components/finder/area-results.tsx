@@ -16,7 +16,7 @@ import {
 } from "@/lib/tracts";
 import { formatValue, type CountyScore, type MetricKey } from "@/lib/scoring";
 
-import { isGold, scoreColor } from "./score-colors";
+import { barColor, isGold, scoreColor } from "./score-colors";
 
 /**
  * Areas as the results (plan §9 Phase 8f; mockups 2026-10-03): the best areas
@@ -109,7 +109,7 @@ const Chevron = ({ open }: { open: boolean }) => (
 
 export function ScoreNumber({ score }: { score: number }) {
   return (
-    <span className="font-bold tabular-nums" style={{ color: isGold(score) ? "#8a6500" : scoreColor(score) }}>
+    <span className="font-bold tabular-nums" style={{ color: scoreColor(score) }}>
       {Math.round(score)}
     </span>
   );
@@ -122,7 +122,7 @@ function Fill({ points }: { points: number }) {
       className="block h-full rounded-full"
       style={{
         width: `${Math.max(4, points)}%`,
-        backgroundColor: scoreColor(points),
+        backgroundColor: barColor(points),
         boxShadow: isGold(points) ? "0 0 6px rgba(212,160,23,.7)" : undefined,
       }}
     />
@@ -155,7 +155,7 @@ export function Fingerprint({ parts }: { parts: AreaPart[] }) {
           className="block w-2 rounded-t-sm"
           style={{
             height: `${Math.max(3, Math.round(((p.points ?? 0) / 100) * 20))}px`,
-            backgroundColor: p.points === null ? "#d4d4d4" : scoreColor(p.points),
+            backgroundColor: p.points === null ? "#d4d4d4" : barColor(p.points),
           }}
         />
       ))}
