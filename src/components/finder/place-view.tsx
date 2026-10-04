@@ -40,7 +40,7 @@ const TABS: { id: PlaceTab; label: string }[] = [
 const QUICK_FACTS: { metric: MetricKey; label: string }[] = [
   { metric: "rpp_all", label: "Cost of living" },
   { metric: "median_home_value", label: "Home value" },
-  { metric: "school_achievement", label: "Schools" },
+  { metric: "unemployment_rate", label: "Unemployment" },
 ];
 
 export interface PlaceProps {
@@ -64,6 +64,8 @@ export interface PlaceProps {
   bestAreas?: ReactNode;
   /** …and its best area's score, which ranks the county then (shown instead of its own). */
   bestScore?: number;
+  /** When the results are areas: how many of the county's areas are in your top results. */
+  topAreas?: { count: number; cap: number };
 }
 
 /**
@@ -164,6 +166,21 @@ export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
                 <span className="tabular-nums">{formatValue(f.metric, f.value)}</span>
               </Stat>
             ))}
+            {/* Its areas in your results (owner, 2026-10-04: replaced the county-average
+                school score, which no longer drives anything); else how many areas it has. */}
+            {props.topAreas ? (
+              <Stat label={`In your top ${props.topAreas.cap}`}>
+                <span className="tabular-nums">
+                  {props.topAreas.count.toLocaleString()} {props.topAreas.count === 1 ? "area" : "areas"}
+                </span>
+              </Stat>
+            ) : (
+              props.areaCount !== undefined && (
+                <Stat label="Areas">
+                  <span className="tabular-nums">{props.areaCount.toLocaleString()}</span>
+                </Stat>
+              )
+            )}
             {koppen && (
               <Stat label="Climate" wide>
                 <ClimateSummary code={koppen} />

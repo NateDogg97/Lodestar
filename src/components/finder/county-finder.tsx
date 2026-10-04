@@ -596,6 +596,9 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         ...(tractIndex[selected.fips]
           ? { onExploreInside: () => setInsideFips(selected.fips), areaCount: tractIndex[selected.fips].tracts }
           : {}),
+        ...(areaMode
+          ? { topAreas: { count: countyResults.find((c) => c.fips === selected.fips)?.areas.length ?? 0, cap: resultCap } }
+          : {}),
         ...(areaMode && national && nscores && selectedMatches && tractIndex[selected.fips]
           ? {
               bestScore: selectedMatches[0] !== undefined ? nscores.score[selectedMatches[0]] : undefined,

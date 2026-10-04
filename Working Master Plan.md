@@ -1769,7 +1769,9 @@ neighborhood near a specific school), not a county average. Decided with the own
   rest), Location (nearest big metro and airport; coast on tap), Natural hazards (shared
   with the area page). Trade-off sentences now word county priorities by direction ("low
   cost of living", "few days above 90°F", "a major airport nearby", "high risk of
-  tornadoes") instead of "good …".
+  tornadoes") instead of "good …". Its facts grid: cost of living, home value,
+  unemployment, and "In your top 100: N areas" (the area count outside area mode),
+  replacing the county-average school score (owner, 2026-10-04).
 
 ### Phase 9 — First-run tutorial (added 2026-10-01)
 
