@@ -49,6 +49,8 @@ export interface AreaRankingView {
   listed: number[];
   /** How many of the county's areas are in your top results. */
   inTop: number;
+  /** Your top results nationwide, best first (national indices): an area's overall rank. */
+  top: number[];
   cap: number;
   revealed: boolean;
   onReveal: (all: boolean) => void;
@@ -106,7 +108,13 @@ export function InsideView({
           ← {area ? "Results" : countyName}
         </button>
         {area ? (
-          <AreaHeader area={area} side={sideOf(ranking, area.geoid)} countyName={countyName} onCounty={() => onSelect(null)} />
+          <AreaHeader
+            area={area}
+            side={sideOf(ranking, area.geoid)}
+            rank={overallRank(ranking, area.geoid)}
+            countyName={countyName}
+            onCounty={() => onSelect(null)}
+          />
         ) : (
           <>
             <h2 className="mt-1 text-heading font-semibold">Inside {countyName}</h2>
@@ -489,14 +497,24 @@ function sideOf(ranking: AreaRankingView | null, geoid: string): string | null {
   return name[i] === label[i] ? null : name[i].slice(label[i].length + 3);
 }
 
+/** The area's place in your top results nationwide (1-based), colored as the map colors ranks. */
+function overallRank(ranking: AreaRankingView | null, geoid: string): { rank: number | null; of: number } | null {
+  const i = ranking?.indexByGeoid.get(geoid);
+  if (!ranking || i === undefined) return null;
+  const at = ranking.top.indexOf(i);
+  return { rank: at >= 0 ? at + 1 : null, of: ranking.cap };
+}
+
 function AreaHeader({
   area,
   side,
+  rank,
   countyName,
   onCounty,
 }: {
   area: Area;
   side: string | null;
+  rank: { rank: number | null; of: number } | null;
   countyName: string;
   onCounty: () => void;
 }) {
@@ -506,6 +524,11 @@ function AreaHeader({
         <h2 className="text-heading font-semibold">
           {area.neighborhood ?? area.group}
           {side && <span className="font-normal text-neutral-500"> · {side}</span>}
+          {area.lowConfidence.length > 0 && (
+            <span className="ml-1.5 inline-flex align-middle">
+              <Caution flags={area.lowConfidence} />
+            </span>
+          )}
         </h2>
         <p className="mt-0.5 text-label text-neutral-500">
           {[area.neighborhood ? area.group : null, area.zip && `ZIP ${area.zip}`,
@@ -516,7 +539,23 @@ function AreaHeader({
           </button>
         </p>
       </div>
-      <Caution flags={area.lowConfidence} />
+      {rank && (
+        <div className="shrink-0 text-right">
+          {rank.rank !== null ? (
+            <>
+              <span
+                className="block text-heading font-bold tabular-nums"
+                style={{ color: scoreColor(rank.of > 1 ? 100 * (1 - (rank.rank - 1) / (rank.of - 1)) : 100) }}
+              >
+                #{rank.rank}
+              </span>
+              <span className="block text-caption text-neutral-500">of your top {rank.of}</span>
+            </>
+          ) : (
+            <span className="block max-w-24 text-caption text-neutral-500">Not in your top {rank.of}</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

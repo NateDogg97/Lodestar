@@ -463,6 +463,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       indexByGeoid,
       listed: insideAll ? matches : topHere,
       inTop: topHere.length,
+      top: topIdx,
       cap: resultCap,
       revealed: insideAll,
       onReveal: setInsideAll,

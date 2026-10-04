@@ -1715,6 +1715,8 @@ neighborhood near a specific school), not a county average. Decided with the own
 - [x] Inside a county, the map draws only the areas listed,
   colored by rank among them (best deep green); the rest stay blank, and the county's own
   fill is hidden underneath (it had shown through as one color — fixed 2026-10-04).
+- [x] Area page header: its overall rank in your top results ("#1 of your top 100"),
+  colored like the map's ranks; the low-confidence warning sits beside the name.
 - [x] County page in area mode leads with its best 3 areas and shows its best area's score.
 - [x] Map by zoom: state count bubbles (< z5), county count bubbles (z5–7.5), area dots
   colored by score (≥ z7.5; tap opens the area). Bubbles are HTML markers because the
