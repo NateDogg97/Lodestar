@@ -1669,6 +1669,13 @@ neighborhood near a specific school), not a county average. Decided with the own
   ones; the rest stay off the map, so it's not every area ranked at once.
 - Mockup first (owner, 2026-10-03): area page, county page and results list reorganized
   around "Your search" — https://claude.ai/artifact/BM9S29sxGTLmV87V2Lj72X (private).
+- **Results list holds the summaries** (owner, 2026-10-03, after the mockup): each result
+  row has a summary toggle — the name opens the area (or county), the chevron toggles a
+  short "your search" summary; the #1 result is open by default with a "#1 best match"
+  flag; one summary open at a time. Counties expand to their best areas. The area page's
+  back link returns straight to Results (its county is a separate link), so there's no
+  area → county → results back-tracking. Owner approved: verdicts in words + a smaller
+  number; county pages lead with their best areas.
 - Next, separately: **data overload** — reorganize county and area pages (nothing removed),
   so what matters for *this* search comes first and the rest is a tap away.
 
