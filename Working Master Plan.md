@@ -1821,6 +1821,9 @@ Applied 2026-10-04 without a full rebuild: `python -m etl.tracts.backfill` (one 
 per state, chunked under the API's 50-variable limit), then `etl.tracts.national` and upload.
 The monthly refresh builds the same columns from scratch.
 
+**Next: a full audit** by a fresh agent — the brief is `docs/FULL_AUDIT_PROMPT.md` (scoring
+and results first, then UI and ease of use, then everything else).
+
 Looked right: county-only rankings, walkable downtowns, typical-density suburbs, affluent
 areas with top high schools, Texas-only, no-income-tax states.
 
