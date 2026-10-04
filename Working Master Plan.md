@@ -8,6 +8,12 @@
 > Last updated: 2026-10-04
 >
 > **Changelog**
+> - 2026-10-04 — **Full audit** (scoring and results first; see §9 "Full audit"). Crime
+>   rates are now yearly rates with an exposure floor (a 4-month Phoenix read as a third
+>   of its real rate; 168 of the 200 "safest" areas were partial-year or tiny-agency
+>   artifacts); percentiles are over residential areas; top-coded and mobile-home values
+>   take Zillow's ZIP value; capped incomes are "$250,000+", not "low confidence"; the
+>   results audit grew to 83 searches with independent checks that fail the test.
 > - 2026-10-02 — **Area data refreshes itself.** A monthly GitHub Action
 >   (`tracts-refresh.yml`) rebuilds every county's areas from fresh sources on a clean
 >   runner, runs a quality gate, and syncs changed files to R2. The hand-downloaded SEDA
@@ -1821,11 +1827,136 @@ Applied 2026-10-04 without a full rebuild: `python -m etl.tracts.backfill` (one 
 per state, chunked under the API's 50-variable limit), then `etl.tracts.national` and upload.
 The monthly refresh builds the same columns from scratch.
 
-**Next: a full audit** by a fresh agent — the brief is `docs/FULL_AUDIT_PROMPT.md` (scoring
-and results first, then UI and ease of use, then everything else).
-
 Looked right: county-only rankings, walkable downtowns, typical-density suburbs, affluent
 areas with top high schools, Texas-only, no-income-tax states.
+
+The full audit that followed (brief: `docs/FULL_AUDIT_PROMPT.md`) is the next section.
+
+### Full audit (2026-10-04) — can the results be trusted?
+
+Owner's standard: *"it actually works, the data is accurate and the results are genuinely
+helpful, not misleading."* Done by a fresh agent in one session; everything below is
+committed, with tests, and the harness re-run until nothing that matters turned up.
+
+**What was checked, and how**
+
+- The math end to end: every shown point and "beats" re-derived from the raw columns
+  (an independent percentile over residential areas), every score re-derived as the
+  weighted average of its parts, for the top 100 of each of 83 searches
+  (`scripts/audit/checks.ts`). Must-haves and policy filters verified against
+  `laws.json` and `counties.json` directly; "Top 1%" and "best of results" badges
+  verified by count; formatting scanned for NaN/undefined; the trade-off sentence checked
+  against the parts. All pass.
+- The percentile population: non-residential areas (parks, water, bases) held 48% of the
+  bottom 1% of density, 22% of the bottom 1% of walkability, 22% of the bottom 1% of
+  hazard risk. Fixed (left out of the distribution, not just the list).
+- `today_prices` against well-known ZIPs (Palo Alto, Detroit, Zilker, Upper East Side,
+  Boise, Tulsa, Lincoln Park, Scottsdale, Miami Beach, Nashville, Cherry Creek, Capitol
+  Hill): the ZIP medians land on Zillow's value as designed, and tracts spread around it.
+- `US_TYPICAL` recomputed from the 84,119 published areas: matches within rounding;
+  residential-only medians are the same within 1–2%.
+- Units and formatting everywhere a number is shown: the Census income cap ($250,000) was
+  shown as a value; now "$250,000+". Coast distances carry "mi" (fixed earlier).
+- Data at the source: crime months and agency populations per area; top-code detection;
+  coast definition; county-level missing values (only Alaska's climate and one Hawaii
+  unemployment are missing — the laws table is complete for 51 states, with 2 deliberate
+  gaps on marijuana where sources disagree). ETL offline tests (179), law source and
+  verify tests (72 + 33) pass.
+- The UI as a first-time visitor, desktop and 390 px (an iframe; the tab couldn't
+  resize), light and dark: tour, filters, results, summaries, area and county pages.
+
+**Found, worst first — and what was done**
+
+1. **Partial-year crime rates (fixed, data republished locally).** An agency that reported
+   N months got N months of counts over a full year's population: Phoenix (4 months of
+   2025) showed 222 violent per 100k against a real ~670; La Salle County, TX (1 month)
+   showed 0; San Elizario PD (5 months) 10. 168 of the 200 "safest" areas by raw rate
+   were partial-year or tiny-agency artifacts, and they topped "Retire somewhere warm",
+   "Young family" and "Safety above all". Rule now (`etl/tracts/crime.py`, mirrored by
+   `etl.tracts.backfill --offline` for published files): counts are annualized (× 12 /
+   months, as the FBI does); fewer than 3 months, or fewer than 2,500 person-years of
+   coverage (population × months / 12 — ~6 expected violent crimes at the US rate, so a
+   zero there means something), or implausibly little for the agency's size (the "too
+   quiet" rule now starts at 5,000 people; 100 property crimes per 100k is below the
+   2nd percentile there) → **no rate**, with `crime_note` saying why; the agency stays
+   named and the area page says "Too little reported to rate". 2,126 areas annualized,
+   1,469 left without a rate (they score 50 on crime, like any unknown).
+2. **Mobile-home parks as the cheapest homes (fixed; was open).** With "cheapest homes"
+   badges gone they still ranked #1 on "Young family" ($30,600 beside $400k ZIPs). Decided:
+   a Census home value where most owned homes are mobile homes isn't a house price — the
+   area takes Zillow's ZIP value, or is unknown without Zillow, and stays out of its ZIP's
+   Census/Zillow ratio (`etl/tracts/national.py`). Same for top-coded Census values
+   ("$2,000,001 or more" × a ratio printed as $5.8M in Aspen): Zillow's ZIP value as is.
+3. **Capped incomes flagged "low confidence" (fixed).** `ACS_TOPCODE` lacked household
+   income; 483 areas at $250,001 were flagged for the margin the Census can't compute
+   there. Now top-coded and shown as "$250,000+".
+4. **Percentiles included places nobody can live (fixed; see above).**
+5. **A county-wide priority with no value was dropped from an area's score** (fixed:
+   counts as 50, the rule since the first audit). Real impact small (Alaska's climate).
+6. **Explanations said "left out of this area's score" for no data** (fixed: "counted as
+   average (50 points)… neither helps nor hurts"). `standing()` moved to the pure module
+   and is tested across ties (never "lower than 100%" for a shared best value).
+7. **Low-confidence values were invisible in the results list** (fixed): a result's
+   summary marks each flagged value, and a caution beside the name lists which
+   priorities rest on one. Every part of an explanation carries `flagged`.
+8. **Phone: two stacked headers with an area open** (fixed): the sheet header showed the
+   county's identity and the body the area's, each with "← Results".
+9. **"Distance to the coast" counts tidal rivers** (documented, owner decision below):
+   Philadelphia, Washington DC, Nyack and the Sacramento Delta are 0–2 mi "from the
+   coast" (Natural Earth's coastline follows tidal water inland). Note added to the
+   filter and the badge words kept. "Beach life" therefore mixes Puget Sound and San Pedro
+   with the Delta.
+
+**Decisions taken (change one line to reverse):** `CRIME_MIN_MONTHS = 3`,
+`CRIME_MIN_EXPOSURE = 2_500`, `IMPLAUSIBLE_PROPERTY_POP = 5_000` (etl/config.py,
+etl/tracts/crime.py); mobile-home and top-coded home values → Zillow's ZIP value;
+percentiles over residential areas only.
+
+**Still open — recommendations, and what the owner must decide**
+
+- [ ] **Upload the republished data.** `public/data/tracts/` is patched locally (1,210
+      files changed: county files with `crime_note`, areas.json). The upload to R2 was
+      blocked as a production action in the audit session: run
+      `etl/.venv/bin/python -m etl.tracts.upload`, then check
+      https://data.lodestarmap.com/tracts/48033.json shows `crime_note` for Gail. Until
+      then the live site shows the old rates. The monthly refresh builds the same rules
+      from scratch.
+- [ ] **The coast.** Keep "ocean, bays and tidal rivers" (now said in the filter's note),
+      or rebuild `dist_coast_mi` (county and area) from a coastline with estuaries
+      clipped — half a day of geometry work plus a full rebuild. Recommendation: keep,
+      and add a separate "beach" notion only if someone asks.
+- [ ] **Default search clustering.** Three of the four default priorities are county-wide,
+      so the first screen is eleven Abingdon, VA areas in a row (18 counties in the top
+      100). The Counties view fixes it; a first-time visitor doesn't know that.
+      Recommendation (owner's call, a design change): default to the Counties view when
+      county-wide weight is at least half the total, or cap areas per county in the top
+      N (e.g. 5) with "+6 more in this county".
+- [ ] **Ties at the top.** Single-priority searches on a measure with a shared best value
+      (zero hurricane risk, 0 violent crime, $250k+ income, 0.0 mi to the coast) return
+      100 results tied at 100, ordered by population, numbered 1–100. True but the ranks
+      look decided. Recommendation: show "=1" (or "tied") for equal scores.
+- [ ] **Score colors as text.** The yellow-green stops (scores 70–85) as number color on
+      white are ~1.6:1 contrast — below WCAG AA even for large text. Dark mode is fine.
+      Owner chose the ramp; recommendation: darken the mid stops for text only, or draw
+      the number on a tinted pill.
+- [ ] **Ratings from small agencies.** 86 of the 100 "safest" results still rest on a
+      flagged (small or partial-year) agency; they're now marked and rated only with
+      enough exposure. A stricter line (only 12-month, 5,000+ agencies rank) is one
+      constant away.
+- [ ] Hamptons rents: two areas with no Census rent take Zillow's seasonal ZORI
+      ($40,940/mo). Real Zillow data, bottom of any rent ranking; left as is.
+- [ ] Iowa's marijuana status is a deliberate gap (sources disagree); Iowa is unknown
+      for that must-have.
+- [ ] Not done this session: a keyboard-only walkthrough and screen-reader pass beyond
+      labels and focus order spot checks; the service worker's offline behaviour on a
+      real phone; `low_confidence` margins are still only shown as a flag, never as a
+      range.
+
+**Harness:** `npm run audit:results` now runs 83 searches (`scripts/audit/scenarios.ts`),
+each with a written expectation, and fails on any hard finding; warnings (ties, one
+state or county crowding the list, small areas, low-confidence shares) are listed in
+`scripts/audit/report.md` for a person to judge. Re-run it after any scoring or data
+change.
 
 ### Phase 9 — First-run tutorial (added 2026-10-01) ✅ **BUILT 2026-10-04**
 
@@ -1908,6 +2039,8 @@ Not in MVP. Do not build these until the above ships.
       12 laws, each marked filter / info / both.
 - [ ] At tract level, does the RPP recombination need re-weighting, or do BEA's national weights
       hold well enough?
+- [ ] **Coast definition, default-search clustering, tie display, score-color contrast** —
+      see §9 "Full audit (2026-10-04)", *Still open*.
 - [ ] **Rural cost of living.** ~62% of counties carry their state's blended RPP because BEA
       publishes no state non-metro portion. Is that acceptable for ranking, or is it worth
       deriving a state non-metro value (statewide minus its metros, expenditure-weighted)? If
