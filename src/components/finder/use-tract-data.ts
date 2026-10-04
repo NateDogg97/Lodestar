@@ -4,7 +4,10 @@ import { useEffect, useState } from "react";
 import type { Topology } from "topojson-specification";
 
 import {
+  nationalAreasUrl,
   parseCountyAreas,
+  parseNationalAreas,
+  type NationalAreas,
   parseTractIndex,
   tractDataUrl,
   tractIndexUrl,
@@ -91,4 +94,42 @@ export function useCountyAreas(fips: string | null): CountyAreasState {
     };
   }, [fips]);
   return fips ? state : { status: "idle" };
+}
+
+let nationalPending: Promise<NationalAreas> | null = null;
+
+export type NationalAreasState =
+  | { status: "idle" | "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; data: NationalAreas };
+
+/**
+ * Every US area's scoring columns (Phase 8f), fetched once — and only when a search
+ * has an area-level filter (`enabled`). ~3.4 MB compressed; the service worker keeps it.
+ */
+export function useNationalAreas(enabled: boolean): NationalAreasState {
+  const [state, setState] = useState<NationalAreasState>({ status: "idle" });
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    Promise.resolve().then(() => !cancelled && setState((s) => (s.status === "ready" ? s : { status: "loading" })));
+    nationalPending ??= fetch(nationalAreasUrl())
+      .then((res) => {
+        if (!res.ok) throw new Error(`Could not load area rankings (HTTP ${res.status})`);
+        return res.json();
+      })
+      .then(parseNationalAreas)
+      .catch((err: unknown) => {
+        nationalPending = null; // a later search retries
+        throw err;
+      });
+    nationalPending.then(
+      (data) => !cancelled && setState({ status: "ready", data }),
+      (err: unknown) => !cancelled && setState({ status: "error", message: err instanceof Error ? err.message : String(err) }),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
+  return enabled ? state : { status: "idle" };
 }

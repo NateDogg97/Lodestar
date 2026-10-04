@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { applyStateLaws, lawSource, type LawData, type LawSourceSummary } from "@/lib/laws";
 import {
@@ -11,7 +11,6 @@ import {
   STATE_CATEGORY_KEYS,
   STATE_METRIC_KEYS,
   METRIC_KEYS,
-  getMetric,
   prepareDataset,
   rankCounties,
   scoreCounties,
@@ -46,9 +45,24 @@ import { PlaceIdentity, PlaceView, type PlaceProps } from "./place-view";
 import { SettingsModal } from "./settings-modal";
 import { SidePanel } from "./side-panel";
 import { useCountyData, useLawData } from "./use-county-data";
-import { useCountyAreas, useTractIndex } from "./use-tract-data";
-import type { InsideLayer } from "./county-map";
-import { AREA_MEASURE, areaCriteria, areaValue, formatArea, scoreAreas } from "@/lib/tracts";
+import { useCountyAreas, useNationalAreas, useTractIndex } from "./use-tract-data";
+import type { InsideLayer, ResultMarks } from "./county-map";
+import {
+  AREA_MEASURE,
+  areaCriteria,
+  areaValue,
+  countiesOf,
+  countyMatches,
+  MATCH,
+  UNKNOWN,
+  countyParts,
+  formatArea,
+  resultBadges,
+  scoreNational,
+  topAreas,
+  type ResultBadges,
+} from "@/lib/tracts";
+import { AreaResultsList, CountyBestAreas, CountyResultsList, ResultsHeader, type ResultCap } from "./area-results";
 import type { AreaRankingView } from "./inside-view";
 
 // MapLibre needs the browser (WebGL, window), so it never renders on the
@@ -266,6 +280,113 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     return c;
   }, [scores]);
 
+  // Areas as the results (plan §9 Phase 8f): with any area-level filter, the best
+  // areas nationwide are the results and counties rank by their best area.
+  const areaSearch = useMemo(() => areaCriteria(toAreaSearch(deferred)), [deferred]);
+  const hasAreaFilters = areaSearch.criteria.length > 0 || areaSearch.limits.length > 0;
+  const nationalState = useNationalAreas(hasAreaFilters);
+  const national = nationalState.status === "ready" ? nationalState.data : null;
+  const nationalSearch = useMemo(
+    () => ({ criteria: areaSearch.criteria, limits: areaSearch.limits, counties: countyParts(scores) }),
+    [areaSearch, scores],
+  );
+  const nscores = useMemo(
+    () => (national && hasAreaFilters ? scoreNational(national, nationalSearch) : null),
+    [national, hasAreaFilters, nationalSearch],
+  );
+  const areaMode = nscores !== null;
+  const matchingAreas = useMemo(() => {
+    if (!nscores) return 0;
+    let n = 0;
+    for (const st of nscores.status) if (st === MATCH || (st === UNKNOWN && deferred.includeUnknown)) n++;
+    return n;
+  }, [nscores, deferred.includeUnknown]);
+  const [resultCap, setResultCap] = useState<ResultCap>(100);
+  const topIdx = useMemo(
+    () => (national && nscores ? topAreas(national, nscores, resultCap, deferred.includeUnknown) : []),
+    [national, nscores, resultCap, deferred.includeUnknown],
+  );
+  const countyResults = useMemo(
+    () => (national && nscores ? countiesOf(national, topIdx, nscores) : []),
+    [national, nscores, topIdx],
+  );
+  const badges = useMemo(
+    () => (national ? resultBadges(national, topIdx, nationalSearch) : new Map<number, ResultBadges>()),
+    [national, topIdx, nationalSearch],
+  );
+  const [viewChoice, setViewChoice] = useState<"areas" | "counties" | null>(null);
+  const resultsView = viewChoice ?? (hasAreaFilters ? "areas" : "counties");
+  // The map in area mode: the counties holding your top areas, colored by their best area.
+  const mapRelative = useMemo(
+    () => (areaMode ? new Map<string, number | null>(countyResults.map((c) => [c.fips, c.bestScore])) : relative),
+    [areaMode, countyResults, relative],
+  );
+  const mapRank = useMemo(
+    () => (areaMode ? new Map(countyResults.map((c, i) => [c.fips, i + 1])) : rankByFips),
+    [areaMode, countyResults, rankByFips],
+  );
+  const countyIndex = useMemo(() => new Map(data.fips.map((f, i) => [f, i])), [data]);
+  const countyName = (fips: string) => {
+    const i = countyIndex.get(fips);
+    return i === undefined ? fips : `${data.countyName[i]}, ${data.state[i]}`;
+  };
+  // Where your top areas are, for the map by zoom: states, then counties, then areas.
+  const resultMarks = useMemo<ResultMarks | null>(() => {
+    if (!national || !nscores || topIdx.length === 0) return null;
+    const group = (key: (i: number) => string) => {
+      const g = new Map<string, number[]>();
+      for (const i of topIdx) {
+        const k = key(i);
+        const list = g.get(k);
+        if (list) list.push(i);
+        else g.set(k, [i]);
+      }
+      return g;
+    };
+    const mean = (xs: number[], v: Float64Array) => xs.reduce((a, i) => a + v[i], 0) / xs.length;
+    const located = topIdx.filter((i) => Number.isFinite(national.lat[i]) && Number.isFinite(national.lon[i]));
+    const isLocated = new Set(located);
+    const stateOf = (i: number) => data.state[countyIndex.get(national.county[i]) ?? -1] ?? national.county[i].slice(0, 2);
+    return {
+      states: [...group(stateOf)].map(([st, xs]) => {
+        const at = xs.filter((i) => isLocated.has(i));
+        const lats = at.map((i) => national.lat[i]);
+        const lons = at.map((i) => national.lon[i]);
+        return {
+          key: st,
+          label: st,
+          lat: mean(at, national.lat),
+          lon: mean(at, national.lon),
+          count: xs.length,
+          bounds: [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)] as [number, number, number, number],
+        };
+      }).filter((m) => Number.isFinite(m.lat)),
+      counties: [...group((i) => national.county[i])].map(([fips, xs]) => {
+        const at = xs.filter((i) => isLocated.has(i));
+        return { key: fips, label: countyName(fips), lat: mean(at, national.lat), lon: mean(at, national.lon), count: xs.length };
+      }).filter((m) => Number.isFinite(m.lat)),
+      areas: located.map((i) => ({
+        geoid: national.geoid[i],
+        label: national.name[i],
+        lat: national.lat[i],
+        lon: national.lon[i],
+        score: nscores.score[i],
+      })),
+    };
+    // countyName reads data and countyIndex, both listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [national, nscores, topIdx, data, countyIndex]);
+
+  // The area whose summary is open in the results: the map shows where it is.
+  const [previewArea, setPreviewArea] = useState<number | null>(null);
+  const [previewFly, setPreviewFly] = useState(0);
+  const preview = useCallback((i: number | null, fly: boolean) => {
+    setPreviewArea(i);
+    if (fly && i !== null) setPreviewFly((n) => n + 1);
+  }, []);
+  // Inside a county: its matching areas, best 5 first, 5 more at a time (owner).
+  const [insideShown, setInsideShown] = useState(5);
+
   const reset = (to: Preferences) => {
     setPrefs(to);
     setResetKey((k) => k + 1);
@@ -315,29 +436,31 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   };
   const leaveInside = () => {
     setHoverAreas([]);
+    setInsideShown(5);
     setInsideFips(null);
     setSelectedArea(null);
   };
 
-  // The map layer for the explored county: each area's position within the
-  // county for the chosen measure (rank, 0–1), so colors spread evenly.
-  // Areas ranked by the same search (plan §9 Phase 8e, "one search, two levels").
+  // Inside a county, ranked by the same national scores as the results (Phase 8f):
+  // only the areas that pass the search, best first.
   const areaRanking = useMemo<AreaRankingView | null>(() => {
-    if (!insideOpen || areasState.status !== "ready") return null;
-    const { criteria, limits } = areaCriteria(
-      toAreaSearch(prefs),
-      (k) => getMetric(k).label,
-      (k) => getMetric(k).defaultDirection,
-    );
-    const scores = scoreAreas(areasState.data.areas.areas, criteria, limits);
-    const shown = (st: string) => st === "match" || (st === "unknown" && prefs.includeUnknown);
-    // Position among the county's scored areas, 0–100, for color (like counties' `rel`).
-    const scored = [...scores.values()].filter((x) => x.score !== null && shown(x.status));
-    scored.sort((a, b) => a.score! - b.score!);
-    const rel = new Map(scored.map((x, i) => [x.geoid, scored.length > 1 ? (100 * i) / (scored.length - 1) : 50]));
-    const hidden = new Set([...scores.values()].filter((x) => !shown(x.status)).map((x) => x.geoid));
-    return { criteria, limits, scores, rel, hidden };
-  }, [insideOpen, areasState, prefs]);
+    if (!insideOpen || areasState.status !== "ready" || !national || !nscores) return null;
+    const fips = areasState.data.areas.county;
+    const matches = countyMatches(national, nscores, fips, deferred.includeUnknown);
+    const indexByGeoid = new Map<string, number>();
+    for (let i = 0; i < national.n; i++) if (national.county[i] === fips) indexByGeoid.set(national.geoid[i], i);
+    return {
+      areas: national,
+      scores: nscores,
+      search: nationalSearch,
+      county: scoresByFips.get(fips),
+      matches,
+      indexByGeoid,
+      shown: insideShown,
+      onShowMore: () => setInsideShown((n) => n + 5),
+      hiddenCount: areasState.data.areas.areas.length - matches.length,
+    };
+  }, [insideOpen, areasState, national, nscores, nationalSearch, scoresByFips, deferred.includeUnknown, insideShown]);
 
   const baseInsideLayer = useMemo<Omit<InsideLayer, "highlight"> | null>(() => {
     if (!insideOpen || areasState.status !== "ready") return null;
@@ -350,16 +473,21 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       focus: areaFocus,
       onSelectArea: selectArea,
     };
-    if (areaRanking && areaRanking.criteria.length > 0) {
+    if (areaRanking) {
+      // Only the areas listed (best 5, then more) are drawn: focus, not every area ranked.
+      const values = new Map<string, number | null>(areas.areas.map((a) => [a.geoid, null]));
+      for (const i of areaRanking.matches.slice(0, areaRanking.shown)) {
+        const v = areaRanking.scores.score[i];
+        values.set(areaRanking.areas.geoid[i], Number.isNaN(v) ? null : v);
+      }
       return {
         ...common,
         palette: "score" as const,
-        values: new Map(areas.areas.map((a) => [a.geoid, areaRanking.rel.get(a.geoid) ?? null])),
+        values,
         legend: { title: "Your match", low: "Weaker", high: "Stronger" },
       };
     }
     const vals = areas.areas
-      .filter((a) => !areaRanking?.hidden.has(a.geoid))
       .map((a) => [a.geoid, areaValue(a, areaMeasure)] as const)
       .filter((x): x is readonly [string, number] => x[1] !== null)
       .sort((a, b) => a[1] - b[1]);
@@ -421,13 +549,31 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     return () => window.removeEventListener("keydown", onKey);
   });
 
+  // From the results: open an area's page, or a county's.
+  const openArea = (i: number) => {
+    if (!national) return;
+    const fips = national.county[i];
+    selectFromList(fips);
+    setInsideFips(fips);
+    setInsideShown(5);
+    selectArea(national.geoid[i]);
+  };
+  const openCounty = (fips: string) => {
+    selectFromList(fips);
+  };
+
+  // A county's page in area mode leads with its best areas (Phase 8f).
+  const selectedMatches = useMemo(
+    () => (national && nscores && selectedFips ? countyMatches(national, nscores, selectedFips, deferred.includeUnknown) : null),
+    [national, nscores, selectedFips, deferred.includeUnknown],
+  );
   const placeProps: PlaceProps | null = selected
     ? {
         score: selected,
         data: scoped,
-        rank: rankByFips.get(selected.fips) ?? null,
-        total: ranked.length,
-        rel: relative.get(selected.fips),
+        rank: mapRank.get(selected.fips) ?? null,
+        total: areaMode ? countyResults.length : ranked.length,
+        rel: mapRelative.get(selected.fips),
         laws,
         input: scoringInput,
         compareFips,
@@ -435,6 +581,23 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         onBack: backToList,
         ...(tractIndex[selected.fips]
           ? { onExploreInside: () => setInsideFips(selected.fips), areaCount: tractIndex[selected.fips].tracts }
+          : {}),
+        ...(areaMode && national && nscores && selectedMatches && tractIndex[selected.fips]
+          ? {
+              bestScore: selectedMatches[0] !== undefined ? nscores.score[selectedMatches[0]] : undefined,
+              bestAreas: (
+                <CountyBestAreas
+                  areas={national}
+                  scores={nscores}
+                  search={nationalSearch}
+                  county={selected}
+                  matches={selectedMatches}
+                  countyLabel={scoped.countyName[selected.index]}
+                  onOpenArea={openArea}
+                  onSeeAll={() => setInsideFips(selected.fips)}
+                />
+              ),
+            }
           : {}),
       }
     : null;
@@ -474,7 +637,8 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       onDefaults={() => reset(DEFAULT_PREFERENCES)}
       onClearAll={() => reset(EMPTY_PREFERENCES)}
       resetKey={resetKey}
-      matchCount={ranked.length}
+      matchCount={areaMode ? matchingAreas : ranked.length}
+      matchNoun={areaMode ? "area" : "county"}
       ranges={ranges}
       sources={lawSources}
       categoryCounts={categoryCounts}
@@ -482,8 +646,61 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     />
   );
 
-  const resultsBadge = counts.match ? `(${ranked.length.toLocaleString()})` : undefined;
-  const resultsList = (
+  const resultsBadge = areaMode
+    ? `(${topIdx.length.toLocaleString()} areas)`
+    : counts.match
+      ? `(${ranked.length.toLocaleString()})`
+      : undefined;
+  const areaResults = hasAreaFilters ? (
+    <div className="px-3 py-3">
+      {nationalState.status === "error" ? (
+        <p className="rounded-lg bg-amber-50 px-3 py-2.5 text-label text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          {nationalState.message}
+        </p>
+      ) : !national || !nscores ? (
+        <p className="py-8 text-center text-label text-neutral-500" aria-live="polite">Ranking areas nationwide…</p>
+      ) : (
+        <>
+          <ResultsHeader
+            view={resultsView}
+            onView={setViewChoice}
+            cap={resultCap}
+            onCap={setResultCap}
+            areaCount={topIdx.length}
+            countyCount={countyResults.length}
+          />
+          {resultsView === "areas" ? (
+            <AreaResultsList
+              key={`${resetKey}-${topIdx[0] ?? "none"}`}
+              top={topIdx}
+              badges={badges}
+              areas={national}
+              scores={nscores}
+              search={nationalSearch}
+              countyScores={scoresByFips}
+              countyName={countyName}
+              onOpenArea={openArea}
+              onPreview={preview}
+            />
+          ) : (
+            <CountyResultsList
+              key={`${resetKey}-${countyResults[0]?.fips ?? "none"}`}
+              counties={countyResults}
+              onOpenCounty={openCounty}
+              areas={national}
+              scores={nscores}
+              search={nationalSearch}
+              countyScores={scoresByFips}
+              countyName={countyName}
+              onOpenArea={openArea}
+              onPreview={preview}
+            />
+          )}
+        </>
+      )}
+    </div>
+  ) : null;
+  const resultsList = areaResults ?? (
     <div className="px-3 py-3">
       <div className="mb-2 flex items-center gap-1 px-1">
         <p className="text-caption text-neutral-500 dark:text-neutral-400" aria-live="polite">
@@ -546,6 +763,10 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
             onSelect={selectArea}
             onHover={setHoverAreas}
             onBack={leaveInside}
+            onBackToResults={() => {
+              leaveInside();
+              backToList();
+            }}
           />
         </div>
       )}
@@ -556,13 +777,24 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     <CountyMap
       data={data}
       scoresByFips={scoresByFips}
-      rankByFips={rankByFips}
-      relative={relative}
+      rankByFips={mapRank}
+      relative={mapRelative}
       selectedFips={selectedFips}
       focus={focus}
       bottomInset={bottomInset}
       dark={theme === "dark"}
       inside={insideLayer}
+      pin={
+        areaMode && national && previewArea !== null && !showPlace
+          ? { lat: national.lat[previewArea], lon: national.lon[previewArea], fly: previewFly }
+          : null
+      }
+      byBestArea={areaMode}
+      marks={insideOpen ? null : resultMarks}
+      onOpenArea={(geoid) => {
+        const i = national?.geoid.indexOf(geoid) ?? -1;
+        if (i >= 0) openArea(i);
+      }}
       onSelect={select}
     />
   );

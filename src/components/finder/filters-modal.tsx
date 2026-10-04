@@ -13,11 +13,10 @@ import {
   type CategoryDef,
   type CategoryKey,
   type Direction,
-  type MetricGroup,
   type MetricKey,
 } from "@/lib/scoring";
 
-import { AREA_PRIORITIES } from "@/lib/tracts";
+import { AREA_PRIORITIES, COUNTY_METRICS_NOW_AREA, type AreaGroup } from "@/lib/tracts";
 
 import { InfoTip } from "@/components/ui/info-tip";
 import { Modal } from "@/components/ui/modal";
@@ -29,41 +28,44 @@ import { SavedSearches } from "./saved-searches";
 import type { Preferences } from "./preferences";
 
 /**
- * The two halves of a search (plan §9 Phase 7a): Priorities rank counties
- * (importance and direction per metric); Must-haves rule counties out
+ * The two halves of a search (plan §9 Phase 7a): Priorities rank places
+ * (importance and direction per metric); Must-haves rule them out
  * (min/max limits, policies, climate types).
+ *
+ * Each measure has one level (plan §9 Phase 8f): county-wide (climate, taxes,
+ * cost of living…) or by area (home value, schools, safety, walkability…).
+ * Both sit in the same topic sections, tagged.
  */
 export type FiltersMode = "priorities" | "musts";
 
-type SectionId = MetricGroup | "policies" | "inside";
+type SectionId = AreaGroup | "policies";
 
 const SECTIONS: { id: SectionId; label: string; mustsOnly?: boolean }[] = [
   { id: "cost", label: "Cost of living" },
   { id: "housing", label: "Housing" },
   { id: "schools", label: "Schools" },
+  { id: "safety", label: "Safety" },
   { id: "climate", label: "Climate" },
   { id: "hazards", label: "Natural hazards" },
   { id: "location", label: "Location" },
   { id: "people", label: "People & income" },
   { id: "taxes", label: "Taxes" },
   { id: "policies", label: "Policies", mustsOnly: true },
-  { id: "inside", label: "Inside a county" },
 ];
 
 const SECTION_TIPS: Partial<Record<SectionId, string>> = {
   hazards:
-    "FEMA National Risk Index (Dec 2025): where a county ranks nationally on the share of its buildings, people and farms expected to be lost to each hazard in a typical year.",
-  inside:
-    "These rank the areas inside a county (Explore inside) and don't change county results. Your other priorities that vary within a county — home value, rent, household income, schools, natural hazards, distance to an airport — rank areas too, as do must-haves in the same units (a maximum home value).",
+    "FEMA National Risk Index (Dec 2025): where an area ranks nationally on the share of its buildings, people and farms expected to be lost to each hazard in a typical year.",
+  safety: "FBI crime rates for the police agency covering each area.",
   policies:
     "Policies are never weighted — a county whose state isn’t one you allow is ruled out. States with no value (their sources disagree) are kept as unknown.",
 };
 
 const MODE_TIPS: Record<FiltersMode, string> = {
   priorities:
-    "Importance sets how much each measure counts toward a county’s score; Off leaves it out. “Better” sets which end scores well — Average favors the typical county, and both extremes score worst.",
+    "Importance sets how much each measure counts toward a place’s score; Off leaves it out. “Better” sets which end scores well — Average favors the typical place, and both extremes score worst. Measures tagged “by area” compare each area with every US area; county-wide ones count the same for every area in a county. With any “by area” priority set, results are areas.",
   musts:
-    "Limits and policies rule counties out entirely. A county with no data for one of them is kept as unknown (grey) rather than guessed.",
+    "Limits and policies rule places out entirely: county-wide ones whole counties, “by area” ones single areas. A place with no data for one of them is kept as unknown (grey) rather than guessed.",
 };
 
 const DIRECTION_LABELS: Record<Direction, string> = {
@@ -82,18 +84,24 @@ function sectionCategories(id: SectionId): (typeof CATEGORIES)[number][] {
 
 /** How many filters in a section are doing something, in one mode. */
 function sectionCount(prefs: Preferences, mode: FiltersMode, id: SectionId): number {
-  if (id === "inside") {
-    return mode === "priorities"
-      ? AREA_PRIORITIES.filter((d) => (prefs.area.weights[d.key] ?? 0) > 0).length
-      : AREA_PRIORITIES.filter((d) => hasLimit(prefs.area.limits[d.key])).length;
+  const metrics = countyMetrics(id);
+  const areas = areaMeasures(id);
+  if (mode === "priorities") {
+    return (
+      metrics.filter((m) => (prefs.weights[m.key] ?? 0) > 0).length +
+      areas.filter((d) => (prefs.area.weights[d.key] ?? 0) > 0).length
+    );
   }
-  const metrics = METRICS.filter((m) => m.group === id);
-  if (mode === "priorities") return metrics.filter((m) => (prefs.weights[m.key] ?? 0) > 0).length;
   return (
     metrics.filter((m) => hasLimit(prefs.limits[m.key])).length +
+    areas.filter((d) => hasLimit(prefs.area.limits[d.key])).length +
     sectionCategories(id).filter((c) => prefs.categories[c.key] !== undefined).length
   );
 }
+
+/** A section's county-wide measures: not the ones that are by area now. */
+const countyMetrics = (id: SectionId) => METRICS.filter((m) => m.group === id && !COUNTY_METRICS_NOW_AREA.has(m.key));
+const areaMeasures = (id: SectionId) => AREA_PRIORITIES.filter((d) => d.group === id);
 
 /** Active filters per mode — for the Filters button badge and the mode switch. */
 export function countActiveFilters(prefs: Preferences): Record<FiltersMode, number> {
@@ -121,8 +129,9 @@ interface Props {
   onClearAll: () => void;
   /** Bumped on reset so uncontrolled limit inputs remount with the new values. */
   resetKey: number;
-  /** Counties the current search would list (live). */
+  /** Places the current search would list (live): counties, or areas when results are areas. */
   matchCount: number;
+  matchNoun: "county" | "area";
   /** National min/max/median per metric: limit placeholders and the "Average" target. */
   ranges: Partial<Record<MetricKey, MetricRange>>;
   /** Source and dates for each state-level metric and policy, keyed like the law table. */
@@ -142,6 +151,7 @@ export function FiltersModal({
   onClearAll,
   resetKey,
   matchCount,
+  matchNoun,
   ranges,
   sources,
   categoryCounts,
@@ -170,7 +180,8 @@ export function FiltersModal({
     onChange({ ...prefs, categories });
   };
 
-  const metrics = METRICS.filter((m) => m.group === current);
+  const metrics = countyMetrics(current);
+  const areas = areaMeasures(current);
   // Climate type gets its own picker (family cards) above the limits.
   const categories = mode === "musts" ? sectionCategories(current).filter((c) => c.key !== "koppen") : [];
   const showClimatePicker = mode === "musts" && current === "climate";
@@ -194,7 +205,11 @@ export function FiltersModal({
             className="ml-auto rounded-full bg-neutral-900 px-5 py-2.5 text-label font-semibold text-white hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
           >
             <span aria-live="polite">
-              {matchCount === 0 ? "No counties match" : `Show ${matchCount.toLocaleString()} ${matchCount === 1 ? "county" : "counties"}`}
+              {matchCount === 0
+                ? `No ${matchNoun === "area" ? "areas" : "counties"} match`
+                : `Show ${matchCount.toLocaleString()} ${
+                    matchNoun === "area" ? (matchCount === 1 ? "area" : "areas") : matchCount === 1 ? "county" : "counties"
+                  }`}
             </span>
           </button>
         </>
@@ -297,12 +312,47 @@ export function FiltersModal({
           )}
           {showClimatePicker && <h4 className="mt-6 mb-3 text-label font-semibold">Limits</h4>}
           <div className="grid grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] gap-3">
+            {areas.map((d) =>
+              mode === "priorities" ? (
+                <PriorityCard
+                  key={d.key}
+                  id={`area-${d.key}`}
+                  label={d.label}
+                  level="area"
+                  note={d.note}
+                  weight={prefs.area.weights[d.key] ?? 0}
+                  direction={prefs.area.directions[d.key] ?? d.defaultDirection}
+                  typical="Aiming for the typical US area"
+                  onWeight={(w) => onChange({ ...prefs, area: { ...prefs.area, weights: { ...prefs.area.weights, [d.key]: w } } })}
+                  onDirection={(dir) =>
+                    onChange({ ...prefs, area: { ...prefs.area, directions: { ...prefs.area.directions, [d.key]: dir } } })
+                  }
+                />
+              ) : (
+                <LimitCard
+                  key={`area-${d.key}-${resetKey}`}
+                  id={`area-${d.key}`}
+                  label={d.label}
+                  level="area"
+                  note={d.note}
+                  unit={d.unit}
+                  limit={prefs.area.limits[d.key]}
+                  onLimit={(bound, v) =>
+                    onChange({
+                      ...prefs,
+                      area: { ...prefs.area, limits: { ...prefs.area.limits, [d.key]: { ...prefs.area.limits[d.key], [bound]: v } } },
+                    })
+                  }
+                />
+              ),
+            )}
             {metrics.map((m) =>
               mode === "priorities" ? (
                 <PriorityCard
                   key={m.key}
                   id={m.key}
                   label={m.label}
+                  level="county"
                   weight={prefs.weights[m.key] ?? 0}
                   direction={prefs.directions[m.key] ?? m.defaultDirection}
                   typical={ranges[m.key] ? `Aiming for the typical county: ${formatValue(m.key, ranges[m.key]!.median)}` : undefined}
@@ -315,6 +365,7 @@ export function FiltersModal({
                   key={`${m.key}-${resetKey}`}
                   id={m.key}
                   label={m.label}
+                  level="county"
                   unit={m.unit}
                   limit={prefs.limits[m.key]}
                   placeholders={ranges[m.key] ? [plainNumber(ranges[m.key]!.min), plainNumber(ranges[m.key]!.max)] : undefined}
@@ -325,39 +376,6 @@ export function FiltersModal({
                 />
               ),
             )}
-            {current === "inside" &&
-              AREA_PRIORITIES.map((d) =>
-                mode === "priorities" ? (
-                  <PriorityCard
-                    key={d.key}
-                    id={`area-${d.key}`}
-                    label={d.label}
-                    note={d.note}
-                    weight={prefs.area.weights[d.key] ?? 0}
-                    direction={prefs.area.directions[d.key] ?? d.defaultDirection}
-                    typical="Aiming for the county's typical area"
-                    onWeight={(w) => onChange({ ...prefs, area: { ...prefs.area, weights: { ...prefs.area.weights, [d.key]: w } } })}
-                    onDirection={(dir) =>
-                      onChange({ ...prefs, area: { ...prefs.area, directions: { ...prefs.area.directions, [d.key]: dir } } })
-                    }
-                  />
-                ) : (
-                  <LimitCard
-                    key={`area-${d.key}-${resetKey}`}
-                    id={`area-${d.key}`}
-                    label={d.label}
-                    note={d.note}
-                    unit={d.unit}
-                    limit={prefs.area.limits[d.key]}
-                    onLimit={(bound, v) =>
-                      onChange({
-                        ...prefs,
-                        area: { ...prefs.area, limits: { ...prefs.area.limits, [d.key]: { ...prefs.area.limits[d.key], [bound]: v } } },
-                      })
-                    }
-                  />
-                ),
-              )}
             {categories.map((def) => (
               <CategoryCard
                 key={def.key}
@@ -522,7 +540,21 @@ function Card({ active, children }: { active: boolean; children: ReactNode }) {
   );
 }
 
-function CardTitle({ id, label, source, note }: { id?: string; label: string; source?: LawSourceSummary; note?: string }) {
+type Level = "area" | "county";
+
+function CardTitle({
+  id,
+  label,
+  level,
+  source,
+  note,
+}: {
+  id?: string;
+  label: string;
+  level?: Level;
+  source?: LawSourceSummary;
+  note?: string;
+}) {
   return (
     <div className="flex items-center gap-1">
       <span id={id} className="text-label font-semibold">
@@ -533,6 +565,17 @@ function CardTitle({ id, label, source, note }: { id?: string; label: string; so
         <InfoTip label={`${label} source`}>
           <SourceNote source={source} />
         </InfoTip>
+      )}
+      {level && (
+        <span
+          className={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-caption ${
+            level === "area"
+              ? "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"
+              : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
+          }`}
+        >
+          {level === "area" ? "By area" : "County-wide"}
+        </span>
       )}
     </div>
   );
@@ -601,6 +644,7 @@ const IMPORTANCE = Array.from({ length: MAX_WEIGHT + 1 }, (_, w) => ({
 function PriorityCard({
   id,
   label,
+  level,
   note,
   weight,
   direction,
@@ -611,6 +655,7 @@ function PriorityCard({
 }: {
   id: string;
   label: string;
+  level?: Level;
   /** For the "i" beside the title (area-only measures). */
   note?: string;
   weight: number;
@@ -624,7 +669,7 @@ function PriorityCard({
   const titleId = `prio-${id}`;
   return (
     <Card active={weight > 0}>
-      <CardTitle id={titleId} label={label} source={source} note={note} />
+      <CardTitle id={titleId} label={label} level={level} source={source} note={note} />
       <p id={`${titleId}-imp`} className="mt-3 mb-1.5 text-caption text-neutral-500 dark:text-neutral-400">
         Importance
       </p>
@@ -670,6 +715,7 @@ function PriorityCard({
 function LimitCard({
   id,
   label,
+  level,
   note,
   unit,
   limit,
@@ -679,6 +725,7 @@ function LimitCard({
 }: {
   id: string;
   label: string;
+  level?: Level;
   note?: string;
   unit: string;
   limit: { min?: number; max?: number } | undefined;
@@ -689,7 +736,7 @@ function LimitCard({
 }) {
   return (
     <Card active={hasLimit(limit)}>
-      <CardTitle label={label} source={source} note={note} />
+      <CardTitle label={label} level={level} source={source} note={note} />
       <div className="mt-3 grid grid-cols-2 gap-3">
         <LimitField
           label="Min"

@@ -1,71 +1,128 @@
 import { describe, expect, it } from "vitest";
 
-import { getMetric } from "@/lib/scoring";
+import type { CountyScore } from "@/lib/scoring";
 
-import type { Area } from "./index";
-import { areaCriteria, scoreAreas, topReasons, type AreaSearch } from "./scoring";
+import {
+  areaLimitResults,
+  countiesOf,
+  countyParts,
+  distinctNames,
+  EXCLUDED,
+  explainArea,
+  MATCH,
+  OUT,
+  parseNationalAreas,
+  resultBadges,
+  scoreNational,
+  topAreas,
+  tradeOff,
+  UNKNOWN,
+  type NationalSearch,
+} from "./national";
+import { areaCriteria, MOVED_TO_AREAS } from "./scoring";
 
-const area = (geoid: string, row: Record<string, number | null>): Area => ({
-  geoid, label: geoid, group: "G", neighborhood: null, zip: null, population: 1000,
-  row: { geoid, ...row }, lowConfidence: [], topcoded: [], nearbySchools: [], nearbyHighSchools: [],
+// Four areas in two counties (48001: a, b; 48003: c, d).
+const areas = parseNationalAreas({
+  format: "areas-v1",
+  n: 4,
+  columns: {
+    geoid: ["48001000100", "48001000200", "48003000100", "48003000200"],
+    label: ["A · 1", "B · 2", "C · 3", "D · 4"],
+    low_confidence: ["", "crime", "", ""],
+    population: [1000, 2000, 3000, 4000],
+    median_home_value: [300_000, 500_000, 900_000, 200_000],
+    walkability: [15, 8, null, 12],
+    violent_rate: [200, 100, 600, 300],
+  },
 });
 
-const search = (over: Partial<AreaSearch>): AreaSearch => ({
-  weights: {}, directions: {}, limits: {}, areaWeights: {}, areaDirections: {}, areaLimits: {}, ...over,
+const county = (fips: string, status: CountyScore["status"], points: number | null, weight = 0): CountyScore => ({
+  index: 0, fips, score: points, status, failedFilters: [], unknownFilters: [], missingMetrics: [],
+  contributions: weight
+    ? [{ metric: "rpp_all", value: 100, direction: "lower", rawPercentile: 100 - (points ?? 0), percentile: points, weight,
+        impact: points === null ? null : weight * (points - 50) }]
+    : [],
 });
 
-const criteriaOf = (s: AreaSearch) =>
-  areaCriteria(s, (k) => getMetric(k).label, (k) => getMetric(k).defaultDirection);
+const search = (over: Partial<NationalSearch> = {}): NationalSearch => ({
+  criteria: [],
+  limits: [],
+  counties: countyParts([county("48001", "match", null), county("48003", "match", null)]),
+  ...over,
+});
 
-const areas = [
-  area("a", { median_home_value: 300_000, walkability: 15, violent_rate: 200, rpp_all: 100 }),
-  area("b", { median_home_value: 500_000, walkability: 8, violent_rate: 100 }),
-  area("c", { median_home_value: 900_000, walkability: null, violent_rate: 600 }),
-];
-
-describe("ranking areas inside a county", () => {
-  it("carries county priorities that vary by area, not the rest", () => {
-    const { criteria } = criteriaOf(search({ weights: { median_home_value: 3, rpp_all: 5, days_above_90f: 2 } }));
-    expect(criteria.map((c) => c.column)).toEqual(["median_home_value"]);
-    expect(criteria[0]).toMatchObject({ weight: 3, direction: "lower", from: "county" });
+describe("areas as the results (Phase 8f)", () => {
+  it("parses the column-by-column file", () => {
+    expect(areas.county).toEqual(["48001", "48001", "48003", "48003"]);
+    expect(Number.isNaN(areas.values.get("walkability")![2])).toBe(true);
+    expect(areas.lowConfidence[1]).toEqual(["crime"]);
+    expect(() => parseNationalAreas({ format: "areas-v0" })).toThrow(/format/);
   });
 
-  it("adds area-only priorities with their directions", () => {
-    const { criteria } = criteriaOf(search({ areaWeights: { walkability: 4 }, areaDirections: { walkability: "lower" } }));
-    expect(criteria).toEqual([expect.objectContaining({ column: "walkability", weight: 4, direction: "lower", from: "area" })]);
+  it("scores areas nationally, adding the county's share", () => {
+    const { criteria } = areaCriteria({ areaWeights: { median_home_value: 1 }, areaDirections: {}, areaLimits: {} });
+    // Cheapest first: d 100, a 66.7, b 33.3, c 0. A county-level priority at 50 points (weight 1) evens them out.
+    const plain = scoreNational(areas, search({ criteria }));
+    expect([...plain.score].map(Math.round)).toEqual([67, 33, 0, 100]);
+    const withCounty = scoreNational(areas, search({
+      criteria,
+      counties: countyParts([county("48001", "match", 100, 1), county("48003", "match", 0, 1)]),
+    }));
+    expect([...withCounty.score].map(Math.round)).toEqual([83, 67, 0, 50]);
   });
 
-  it("ranks within the county, weighting like counties", () => {
-    const { criteria, limits } = criteriaOf(search({ weights: { median_home_value: 1 }, areaWeights: { violent_rate: 1 } }));
-    const s = scoreAreas(areas, criteria, limits);
-    // a: cheapest (100) + middle crime (50) = 75; b: 50 + safest 100 = 75; c: 0 + 0 = 0.
-    expect(s.get("a")?.score).toBe(75);
-    expect(s.get("b")?.score).toBe(75);
-    expect(s.get("c")?.score).toBe(0);
-    // Why: a is cheapest (+50 × 1) and middling on crime (0); its strongest push is home value.
-    const why = s.get("a")!.contributions;
-    expect(why.map((c) => [c.column, c.points, c.impact])).toEqual([["median_home_value", 100, 50], ["violent_rate", 50, 0]]);
-    expect(topReasons(s.get("c"))).toMatchObject({ up: null, down: { column: "median_home_value" } });
-  });
-
-  it("scores on what an area has; nothing to rank by means no score", () => {
-    const { criteria, limits } = criteriaOf(search({ areaWeights: { walkability: 2 } }));
-    const s = scoreAreas(areas, criteria, limits);
-    expect(s.get("a")?.score).toBe(100);
-    expect(s.get("c")?.score).toBeNull();
-    expect(scoreAreas(areas, [], []).get("a")?.score).toBeNull();
-  });
-
-  it("must-haves: same-unit county limits and area limits rule areas out; no value is unknown", () => {
-    const s = search({ limits: { median_home_value: { max: 600_000 }, school_achievement: { min: 0.5 } },
+  it("gates by county and by area must-haves; no value is unknown, an absent county is out", () => {
+    const { criteria, limits } = areaCriteria({ areaWeights: { median_home_value: 1 }, areaDirections: {},
       areaLimits: { walkability: { min: 10 } } });
-    const { limits } = criteriaOf(s);
-    // School achievement is in grade levels for counties, a percentile for areas: not carried.
-    expect(limits.map((l) => l.column)).toEqual(["median_home_value", "walkability"]);
-    const out = scoreAreas(areas, [], limits);
-    expect(out.get("a")?.status).toBe("match");
-    expect(out.get("b")).toMatchObject({ status: "excluded", failed: ["Walkability"] });
-    expect(out.get("c")).toMatchObject({ status: "excluded", unknown: ["Walkability"] });
-    expect(out.get("b")?.limits.map((l) => l.state)).toEqual(["pass", "fail"]);
+    const sc = scoreNational(areas, search({
+      criteria, limits, counties: countyParts([county("48001", "match", null)]),
+    }));
+    expect([...sc.status]).toEqual([MATCH, EXCLUDED, OUT, OUT]);
+    const sc2 = scoreNational(areas, search({ criteria, limits }));
+    expect(sc2.status[2]).toBe(UNKNOWN);
+    expect(areaLimitResults(areas, 1, limits)[0]).toMatchObject({ state: "fail", value: 8 });
+  });
+
+  it("takes the top N, then counties by their best area", () => {
+    const { criteria } = areaCriteria({ areaWeights: { median_home_value: 1 }, areaDirections: {}, areaLimits: {} });
+    const sc = scoreNational(areas, search({ criteria }));
+    const top = topAreas(areas, sc, 3, true);
+    expect(top).toEqual([3, 0, 1]);
+    expect(countiesOf(areas, top, sc).map((c) => [c.fips, c.areas])).toEqual([["48003", [3]], ["48001", [0, 1]]]);
+  });
+
+  it("explains an area and says its trade-off from the top 3 priorities", () => {
+    const { criteria } = areaCriteria({ areaWeights: { median_home_value: 3, walkability: 1, violent_rate: 2 },
+      areaDirections: {}, areaLimits: {} });
+    const s = search({ criteria });
+    const parts = explainArea(areas, 3, s, undefined);
+    expect(parts.map((p) => p.key)).toEqual(["median_home_value", "violent_rate", "walkability"]);
+    // d: cheapest (+150), more crime than most (2 × (33.3 − 50)), walkability exactly middling (0).
+    expect(tradeOff(parts)).toBe("Helped by cheap homes; held back by more violent crime.");
+  });
+
+  it("badges the one best result per priority, and gold for the US top 1%", () => {
+    const { criteria } = areaCriteria({ areaWeights: { walkability: 1, violent_rate: 1 }, areaDirections: {}, areaLimits: {} });
+    const s = search({ criteria });
+    const top = [0, 1, 3];
+    const b = resultBadges(areas, top, s);
+    expect(b.get(0)?.best).toEqual(["Most walkable"]);
+    expect(b.get(1)?.best).toEqual(["Safest"]);
+    // Area b has the lowest violent crime of all four: the top 1% of these "US" areas.
+    expect(b.get(1)?.top1).toEqual(["Top 1% safest in the US"]);
+  });
+
+  it("moves county stand-ins for area measures to the area level", () => {
+    expect(MOVED_TO_AREAS.school_achievement).toEqual({ to: "nearby_school_pctl", keepLimit: false });
+    expect(MOVED_TO_AREAS.median_home_value?.keepLimit).toBe(true);
+  });
+});
+
+describe("area names", () => {
+  it("tell apart areas that share a label by direction", () => {
+    const lat = Float64Array.from([47.9, 48.0, 47.8, 47.9, 30]);
+    const lon = Float64Array.from([-97.05, -97.05, -97.05, -97.0, -90]);
+    const names = distinctNames(["G · 1", "G · 1", "G · 1", "G · 1", "Solo · 2"], lat, lon);
+    expect(names).toEqual(["G · 1 · central", "G · 1 · north", "G · 1 · south", "G · 1 · east", "Solo · 2"]);
   });
 });

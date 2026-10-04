@@ -9,7 +9,7 @@ import {
   type RangeFilter,
   type ScoringInput,
 } from "@/lib/scoring";
-import { AREA_PRIORITIES, type AreaSearch } from "@/lib/tracts";
+import { AREA_PRIORITIES, MOVED_TO_AREAS, type AreaSearch } from "@/lib/tracts";
 
 /**
  * Places that are opt-in (plan §6): off means cut from the data before
@@ -52,9 +52,6 @@ const EMPTY_AREA: AreaPrefs = { weights: {}, directions: {}, limits: {} };
 /** The search, for ranking areas inside a county (lib/tracts/scoring). */
 export function toAreaSearch(prefs: Preferences): AreaSearch {
   return {
-    weights: prefs.weights,
-    directions: prefs.directions,
-    limits: prefs.limits,
     areaWeights: prefs.area.weights,
     areaDirections: prefs.area.directions,
     areaLimits: prefs.area.limits,
@@ -69,7 +66,6 @@ export function toAreaSearch(prefs: Preferences): AreaSearch {
 export const DEFAULT_PREFERENCES: Preferences = {
   weights: {
     rpp_all: 3,
-    school_achievement: 3,
     days_above_90f: 2,
     nights_below_32f: 2,
   },
@@ -78,7 +74,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   categories: {},
   includeUnknown: true,
   includeStates: { AK: false, HI: false },
-  area: EMPTY_AREA,
+  // Schools are the nearest specific schools, an area measure (Phase 8f).
+  area: { weights: { nearby_school_pctl: 3 }, directions: {}, limits: {} },
 };
 
 export const EMPTY_PREFERENCES: Preferences = {
@@ -187,6 +184,19 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
         if (limit.min !== undefined || limit.max !== undefined) out.area.limits[k] = limit;
       }
     }
+  }
+  // Phase 8f: county stand-ins for area measures (a county's median home value, its
+  // average school grade level…) move to the area level. An area setting already there wins.
+  for (const [from, move] of Object.entries(MOVED_TO_AREAS) as [MetricKey, { to: string; keepLimit: boolean }][]) {
+    const w = out.weights[from];
+    const d = out.directions[from];
+    const l = out.limits[from];
+    delete out.weights[from];
+    delete out.directions[from];
+    delete out.limits[from];
+    if (w !== undefined && out.area.weights[move.to] === undefined) out.area.weights[move.to] = w;
+    if (d !== undefined && out.area.directions[move.to] === undefined) out.area.directions[move.to] = d;
+    if (l && move.keepLimit && out.area.limits[move.to] === undefined) out.area.limits[move.to] = l;
   }
   return out;
 }

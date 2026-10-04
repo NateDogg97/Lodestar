@@ -25,9 +25,22 @@ describe("search URLs", () => {
       "v=1&w=population:1,rpp_all:3,school_achievement:5&dir=population:middle,days_above_90f:higher" +
         "&lim=population:10000~,median_gross_rent:~2000,hottest_month_high_f:70.5~92" +
         "&cat=koppen:Cfa.Dfa,marijuana_status:medical.recreational" +
-        "&aw=walkability:4,violent_rate:2&adir=density_per_sq_mi:higher&alim=violent_rate:~400&unk=0&inc=HI&place=24027",
+        "&aw=violent_rate:2,walkability:4&adir=density_per_sq_mi:higher&alim=violent_rate:~400&unk=0&inc=HI&place=24027",
     );
-    expect(decode(q)).toEqual({ prefs, place: "24027" });
+    // Reading it back moves the county stand-ins for area measures to the area level (Phase 8f).
+    expect(decode(q)).toEqual({
+      prefs: {
+        ...prefs,
+        weights: { rpp_all: 3, population: 1 },
+        limits: { population: { min: 10000 }, hottest_month_high_f: { min: 70.5, max: 92 } },
+        area: {
+          weights: { walkability: 4, violent_rate: 2, nearby_school_pctl: 5 },
+          directions: { density_per_sq_mi: "higher" },
+          limits: { violent_rate: { max: 400 }, median_gross_rent: { max: 2000 } },
+        },
+      },
+      place: "24027",
+    });
   });
 
   it("drop directions that match the default (they change nothing)", () => {
@@ -62,9 +75,10 @@ describe("search URLs", () => {
     expect(
       summarizeSearch({
         ...EMPTY_PREFERENCES,
-        weights: { rpp_all: 2, school_achievement: 5, population: 1 },
+        weights: { rpp_all: 2, population: 1 },
         limits: { rpp_all: { max: 100 } },
+        area: { weights: { nearby_school_pctl: 5 }, directions: {}, limits: { walkability: { min: 10 } } },
       }),
-    ).toBe("School achievement, Cost of living +1 · 1 must-have");
+    ).toBe("Nearby schools, Cost of living +1 · 2 must-haves");
   });
 });

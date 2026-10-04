@@ -36,6 +36,23 @@ describe("sanitizePreferences", () => {
     });
   });
 
+  it("moves county stand-ins for area measures to the area level (Phase 8f)", () => {
+    const out = sanitizePreferences({
+      weights: { rpp_all: 3, median_home_value: 4, school_achievement: 5 },
+      directions: { median_home_value: "higher" },
+      limits: { median_home_value: { max: 850000 }, school_achievement: { min: 0.1 } },
+      area: { weights: { median_home_value: 2 }, directions: {}, limits: {} },
+    });
+    expect(out?.weights).toEqual({ rpp_all: 3 });
+    expect(out?.limits).toEqual({});
+    // An area setting already there wins; a grade-level limit has no area equivalent.
+    expect(out?.area).toEqual({
+      weights: { median_home_value: 2, nearby_school_pctl: 5 },
+      directions: { median_home_value: "higher" },
+      limits: { median_home_value: { max: 850000 } },
+    });
+  });
+
   it("rejects non-objects", () => {
     expect(sanitizePreferences(null)).toBeNull();
     expect(sanitizePreferences([1, 2])).toBeNull();

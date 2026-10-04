@@ -1,18 +1,41 @@
-import { interpolateRdYlGn } from "d3-scale-chromatic";
-
 /**
- * One color scale for scores everywhere — list bars and map (plan §6:
- * `interpolateRdYlGn`, red = weak match, green = strong).
+ * One color scale for scores everywhere — bars, scores and the map (owner,
+ * 2026-10-03): deep red at the bottom, yellow around 75, deep green at 99, and
+ * gold for a perfect 100 (the top 1%).
  */
+
+const STOPS: [number, [number, number, number]][] = [
+  [0, [165, 0, 38]],
+  [25, [224, 69, 43]],
+  [50, [240, 150, 55]],
+  [75, [226, 205, 59]],
+  [90, [118, 184, 64]],
+  [99, [26, 127, 55]],
+];
+
+/** The top 1%: gold rather than the deepest green. */
+export const GOLD = "#d4a017";
+const GOLD_FROM = 99.5;
+
 export function scoreColor(score: number): string {
-  return interpolateRdYlGn(Math.min(100, Math.max(0, score)) / 100);
+  const p = Math.min(100, Math.max(0, score));
+  if (p >= GOLD_FROM) return GOLD;
+  let i = 0;
+  while (i < STOPS.length - 2 && p > STOPS[i + 1][0]) i++;
+  const [p0, c0] = STOPS[i];
+  const [p1, c1] = STOPS[i + 1];
+  const t = Math.max(0, Math.min(1, (p - p0) / (p1 - p0)));
+  return `rgb(${c0.map((v, k) => Math.round(v + (c1[k] - v) * t)).join(",")})`;
 }
 
-/** The same scale as MapLibre `interpolate` stops: [0, c0, 10, c1, …, 100, c10]. */
-export const SCORE_STOPS: (number | string)[] = Array.from({ length: 11 }, (_, i) => [
-  i * 10,
-  scoreColor(i * 10),
-]).flat();
+/** True for a score that shows gold (a glow is added where it's drawn). */
+export const isGold = (score: number) => score >= GOLD_FROM;
+
+/** The same scale as MapLibre `interpolate` stops: [0, c0, 10, c1, …, 99, deep green, 99.5, gold, 100, gold]. */
+export const SCORE_STOPS: (number | string)[] = [
+  ...Array.from({ length: 10 }, (_, i) => [i * 10, scoreColor(i * 10)]).flat(),
+  99, scoreColor(99), GOLD_FROM, GOLD, 100, GOLD,
+];
 
 /** No data for a limit, or nothing to score: grey, never a guessed color (plan §6 item 7). */
 export const UNKNOWN_COLOR = "#9ca3af";

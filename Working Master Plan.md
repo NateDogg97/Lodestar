@@ -1689,6 +1689,35 @@ neighborhood near a specific school), not a county average. Decided with the own
 - Next, separately: **data overload** — reorganize county and area pages (nothing removed),
   so what matters for *this* search comes first and the rest is a tap away.
 
+**Built (2026-10-03):**
+
+- [x] `etl/tracts/national.py` → `tracts/areas.json` (column-major, 3.7 MB brotli from R2);
+  the refresh workflow merges it after publishing (`--merge-live`).
+- [x] National scoring (`src/lib/tracts/national.ts`, tested): `scoreNational`, top N,
+  counties by best area, `explainArea`, trade-off sentence, badges. County stand-ins for
+  area measures (home value, rent, income, school grade level, hazards, distances) move to
+  the area level when a saved search or link is read (`MOVED_TO_AREAS`; a grade-level limit
+  has no area equivalent and is dropped).
+- [x] Results list: Areas/Counties toggle, Top 100/250/500, summaries (fingerprint,
+  trade-off, top 3 bars, must-haves, badges), #1 open; opening a summary moves the map to
+  it (the #1 open on load only drops a pin, so the national view stays).
+- [x] Filters: area measures in their topic sections (new **Safety** section), tagged
+  "By area" / "County-wide"; the "Inside a county" section is gone. "Show N areas" when
+  results are areas.
+- [x] Inside a county: only matching areas, best 5 + "Show 5 more", fingerprints; the area
+  page's breakdown uses national percentiles ("lower than 97% of US areas"); "← Results"
+  plus a county link.
+- [x] County page in area mode leads with its best 3 areas and shows its best area's score.
+- [x] Map by zoom: state count bubbles (< z5), county count bubbles (z5–7.5), area dots
+  colored by score (≥ z7.5; tap opens the area). Bubbles are HTML markers because the
+  offline basemap has no fonts. Dots sit at each area's population center rather than its
+  shape (shapes load per county, as before, once you open one).
+- [x] Many areas share a label (a ZIP covers several tracts: 43,951 labels for 84,119
+  areas), so lists name them by direction from the group's middle — "Grand Forks · 58201 ·
+  west" (`distinctNames`).
+- [ ] Data overload: one-line sections with verdict words and a smaller number on county
+  and area pages.
+
 ### Phase 9 — First-run tutorial (added 2026-10-01)
 
 The app has a lot in it (priorities, must-haves, climate cards, saved searches, the map,

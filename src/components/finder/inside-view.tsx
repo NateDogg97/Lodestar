@@ -12,28 +12,41 @@ import {
   formatAreaValue,
   groupAreas,
   headlineFlags,
+  areaLimitResults,
+  explainArea,
+  tradeOff,
   type Area,
-  type AreaCriterion,
   type AreaLimit,
-  type AreaScore,
-  topReasons,
+  type AreaPart,
   type CountyAreas,
+  type NationalAreas,
+  type NationalScores,
+  type NationalSearch,
   type School,
 } from "@/lib/tracts";
 import { ordinal } from "@/lib/scoring/format";
 
-import { ScoreBadge } from "./results-list";
+import { formatValue, getMetric, type CountyScore, type MetricKey } from "@/lib/scoring";
+
+import { Fingerprint } from "./area-results";
+import { isGold, scoreColor } from "./score-colors";
 import type { CountyAreasState } from "./use-tract-data";
 
-/** Areas ranked by the search (plan §9 Phase 8e), as county-finder computes it. */
+/** A county's areas ranked by the search (plan §9 Phase 8f), as county-finder computes it. */
 export interface AreaRankingView {
-  criteria: AreaCriterion[];
-  limits: AreaLimit[];
-  scores: Map<string, AreaScore>;
-  /** Position among the county's scored areas, 0–100: the color. */
-  rel: Map<string, number>;
-  /** Ruled out by a must-have (or unknown, when unknowns are hidden). */
-  hidden: Set<string>;
+  areas: NationalAreas;
+  scores: NationalScores;
+  search: NationalSearch;
+  /** The county's own score: its county-level part of each area's. */
+  county: CountyScore | undefined;
+  /** National indices of the county's areas that pass the search, best first. */
+  matches: number[];
+  indexByGeoid: Map<string, number>;
+  /** How many matches the list and map show: best 5, then 5 more at a time (owner). */
+  shown: number;
+  onShowMore: () => void;
+  /** The county's areas the search rules out (or unknown, when unknowns are hidden). */
+  hiddenCount: number;
 }
 
 /**
@@ -54,6 +67,8 @@ interface Props {
   /** The areas the pointer (or keyboard focus) is on in the list, for the map to outline. */
   onHover: (geoids: string[]) => void;
   onBack: () => void;
+  /** From an area page, straight back to the results list (owner: no county detour). */
+  onBackToResults: () => void;
 }
 
 export function InsideView({
@@ -66,6 +81,7 @@ export function InsideView({
   onSelect,
   onHover,
   onBack,
+  onBackToResults,
 }: Props) {
   const areas = state.status === "ready" ? state.data.areas : null;
   const area = selected && areas ? (areas.byGeoid.get(selected) ?? null) : null;
@@ -75,19 +91,21 @@ export function InsideView({
       <div className="px-gutter pt-4">
         <button
           type="button"
-          onClick={area ? () => onSelect(null) : onBack}
+          onClick={area ? onBackToResults : onBack}
           className="-ml-1 rounded px-1 text-label font-medium text-emerald-700 hover:underline dark:text-emerald-400"
         >
-          ← {area ? `All areas in ${countyName}` : countyName}
+          ← {area ? "Results" : countyName}
         </button>
         {area ? (
-          <AreaHeader area={area} />
+          <AreaHeader area={area} side={sideOf(ranking, area.geoid)} countyName={countyName} onCounty={() => onSelect(null)} />
         ) : (
           <>
             <h2 className="mt-1 text-heading font-semibold">Inside {countyName}</h2>
             {areas && (
               <p className="mt-0.5 text-label text-neutral-500">
-                {areas.areas.length.toLocaleString()} areas · grouped by city, town or community
+                {ranking
+                  ? `${ranking.matches.length.toLocaleString()} of ${areas.areas.length.toLocaleString()} areas match your search`
+                  : `${areas.areas.length.toLocaleString()} areas · grouped by city, town or community`}
               </p>
             )}
           </>
@@ -152,39 +170,12 @@ function AreaList({
   onSelect: (geoid: string) => void;
   onHover: (geoids: string[]) => void;
 }) {
-  const ranked = ranking !== null && ranking.criteria.length > 0;
-  const hiddenCount = ranking?.hidden.size ?? 0;
-  const score = (a: Area) => (ranked ? (ranking!.scores.get(a.geoid)?.score ?? null) : null);
-  // Higher first: match score when ranked, else the measure.
-  const key = (a: Area) => (ranked ? score(a) : areaValue(a, measure)) ?? -Infinity;
-  const groups = useMemo(() => {
-    const g = groupAreas(areas.areas.filter((a) => !ranking?.hidden.has(a.geoid)));
-    if (!ranked) return g;
-    const best = (x: (typeof g)[number]) => Math.max(...x.areas.map((a) => score(a) ?? -Infinity));
-    return [...g].sort((a, b) => best(b) - best(a));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [areas, ranking]);
-  const [open, setOpen] = useState<Set<string>>(() => new Set(groups.slice(0, 1).map((g) => g.name)));
-  const toggle = (name: string) =>
-    setOpen((s) => {
-      const n = new Set(s);
-      if (n.has(name)) n.delete(name);
-      else n.add(name);
-      return n;
-    });
-  const value = (a: Area) =>
-    ranked ? (
-      <ScoreBadge score={score(a)} rel={ranking!.rel.get(a.geoid)} />
-    ) : (
-      <span className="text-label tabular-nums">{formatAreaValue(a, measure)}</span>
-    );
-
   return (
     <div className="px-gutter py-4">
       <div className="flex items-start justify-between gap-3">
         {/* A div: the "i" holds paragraphs and lists, which can't sit inside a <p>. */}
         <div className="flex items-center gap-1 text-label text-neutral-600 dark:text-neutral-400">
-          {ranked ? "Ranked by your filters" : `${AREA_MEASURE.get(measure)?.label ?? measure} by area`}
+          {ranking ? "Ranked by your filters" : `${AREA_MEASURE.get(measure)?.label ?? measure} by area`}
           <InfoTip label="How areas are ranked">
             <RankingNote ranking={ranking} />
           </InfoTip>
@@ -197,171 +188,241 @@ function AreaList({
           Edit filters
         </button>
       </div>
-      {!ranked && (
-        <p className="mt-1 text-caption text-neutral-500">
-          None of your priorities vary inside a county. Add some under Filters → Inside a county.
-        </p>
+      {ranking ? (
+        <MatchList areas={areas} ranking={ranking} onSelect={onSelect} onHover={onHover} />
+      ) : (
+        <>
+          <p className="mt-1 text-caption text-neutral-500">
+            None of your priorities vary by area. Add some in Filters (they&apos;re tagged &ldquo;by area&rdquo;).
+          </p>
+          <GroupedList areas={areas} measure={measure} onSelect={onSelect} onHover={onHover} />
+        </>
       )}
-      {hiddenCount > 0 && (
-        <p className="mt-1 text-caption text-neutral-500">
-          {hiddenCount} {hiddenCount === 1 ? "area" : "areas"} hidden by your must-haves
-        </p>
-      )}
-      {groups.length === 0 && (
-        <p className="py-8 text-center text-label text-neutral-500">No areas meet your must-haves.</p>
-      )}
-
-      <ul className="mt-3 divide-y divide-neutral-200 dark:divide-neutral-800">
-        {groups.map((g) => {
-          const values = g.areas.map((a) => areaValue(a, measure)).filter((v): v is number => v !== null);
-          const median = values.length ? values.sort((a, b) => a - b)[values.length >> 1] : null;
-          const top = ranked ? [...g.areas].sort((a, b) => key(b) - key(a))[0] : null;
-          const isOpen = open.has(g.name);
-          const all = g.areas.map((a) => a.geoid);
-          // Hover or focus outlines on the map: a town, all its areas; one area, just it.
-          const outline = (geoids: string[]) => ({
-            onMouseEnter: () => onHover(geoids),
-            onFocus: () => onHover(geoids),
-          });
-          // A town with a single area has nothing to expand: the row is the area.
-          if (g.areas.length === 1) {
-            const a = g.areas[0];
-            return (
-              <li key={g.name} onMouseLeave={() => onHover([])} onBlur={() => onHover([])}>
-                <div className="flex items-center gap-1 hover:bg-neutral-100 dark:hover:bg-neutral-900">
-                  <button
-                    type="button"
-                    onClick={() => onSelect(a.geoid)}
-                    {...outline(all)}
-                    className="flex min-w-0 flex-1 items-center justify-between gap-3 py-3 text-left"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate pl-[1.125rem] text-body font-semibold">{g.name}</span>
-                      <span className="block pl-[1.125rem] text-caption text-neutral-500">
-                        {a.zip ? `ZIP ${a.zip} · ` : ""}
-                        {g.population.toLocaleString()} people
-                      </span>
-                      <span className="block pl-[1.125rem]">
-                        <Reason s={ranked ? ranking!.scores.get(a.geoid) : undefined} />
-                      </span>
-                    </span>
-                    <span className="shrink-0">{value(a)}</span>
-                  </button>
-                  <Caution flags={headlineFlags(a)} />
-                </div>
-              </li>
-            );
-          }
-          return (
-            <li key={g.name} onMouseLeave={() => onHover([])} onBlur={() => onHover([])}>
-              <button
-                type="button"
-                onClick={() => toggle(g.name)}
-                {...outline(all)}
-                aria-expanded={isOpen}
-                className="flex w-full items-center justify-between gap-3 py-3 text-left"
-              >
-                <span className="min-w-0">
-                  <span className="block truncate text-body font-semibold">
-                    <span aria-hidden className="mr-1.5 inline-block w-3 text-neutral-400">{isOpen ? "▾" : "▸"}</span>
-                    {g.name}
-                  </span>
-                  <span className="block pl-[1.125rem] text-caption text-neutral-500">
-                    {g.areas.length} areas · {g.population.toLocaleString()} people
-                  </span>
-                </span>
-                {top ? (
-                  <span className="shrink-0 text-right">
-                    {value(top)}
-                    <span className="block text-caption text-neutral-500">best area</span>
-                  </span>
-                ) : (
-                  <span className="shrink-0 text-right text-label tabular-nums">
-                    {formatArea(measure, median)}
-                    <span className="block text-caption text-neutral-500">typical</span>
-                  </span>
-                )}
-              </button>
-              {isOpen && (
-                <ul
-                  className="mb-2 ml-[1.125rem] border-l border-neutral-200 dark:border-neutral-800"
-                  onMouseLeave={() => onHover(all)}
-                >
-                  {[...g.areas]
-                    .sort((a, b) => key(b) - key(a))
-                    .map((a) => (
-                      <li key={a.geoid}>
-                        <div className="flex items-center gap-1 pl-3 hover:bg-neutral-100 dark:hover:bg-neutral-900">
-                          <button
-                            type="button"
-                            onClick={() => onSelect(a.geoid)}
-                            {...outline([a.geoid])}
-                            className="flex min-w-0 flex-1 items-center justify-between gap-3 py-2 text-left"
-                          >
-                            <span className="min-w-0">
-                              <span className="block truncate text-label">{areaName(a)}</span>
-                              <Reason s={ranked ? ranking!.scores.get(a.geoid) : undefined} />
-                            </span>
-                            <span className="shrink-0">{value(a)}</span>
-                          </button>
-                          <Caution flags={headlineFlags(a)} />
-                        </div>
-                      </li>
-                    ))}
-                </ul>
-              )}
-            </li>
-          );
-        })}
-      </ul>
     </div>
   );
 }
 
-/** One line of why, under an area in the list: its strongest push up and down. */
-function Reason({ s }: { s: AreaScore | undefined }) {
-  const { up, down } = topReasons(s);
-  if (!up && !down) return null;
+/**
+ * The county's matching areas, best first (plan §9 Phase 8f): 5 at a time, so the
+ * list and the map stay on a few areas that fit (owner, 2026-10-03).
+ */
+function MatchList({
+  areas,
+  ranking,
+  onSelect,
+  onHover,
+}: {
+  areas: CountyAreas;
+  ranking: AreaRankingView;
+  onSelect: (geoid: string) => void;
+  onHover: (geoids: string[]) => void;
+}) {
+  const { matches, shown } = ranking;
+  if (matches.length === 0) {
+    return <p className="py-8 text-center text-label text-neutral-500">No area here meets your must-haves.</p>;
+  }
   return (
-    <span className="block truncate text-caption">
-      {up && <span className="text-emerald-700 dark:text-emerald-400">↑ {up.label}</span>}
-      {up && down && <span className="text-neutral-400"> · </span>}
-      {down && <span className="text-rose-700 dark:text-rose-400">↓ {down.label}</span>}
+    <>
+      {ranking.hiddenCount > 0 && (
+        <p className="mt-1 text-caption text-neutral-500">
+          {ranking.hiddenCount.toLocaleString()} {ranking.hiddenCount === 1 ? "area doesn't" : "areas don't"} pass your
+          must-haves.
+        </p>
+      )}
+      <ol className="mt-3 divide-y divide-neutral-200 dark:divide-neutral-800" onMouseLeave={() => onHover([])}>
+        {matches.slice(0, shown).map((i, rank) => {
+          const geoid = ranking.areas.geoid[i];
+          const a = areas.byGeoid.get(geoid);
+          const parts = explainArea(ranking.areas, i, ranking.search, ranking.county);
+          const score = ranking.scores.score[i];
+          return (
+            <li key={geoid} className="flex items-center gap-1 hover:bg-neutral-100 dark:hover:bg-neutral-900">
+              <button
+                type="button"
+                onClick={() => onSelect(geoid)}
+                onMouseEnter={() => onHover([geoid])}
+                onFocus={() => onHover([geoid])}
+                className="flex min-w-0 flex-1 items-start gap-2 py-3 text-left"
+              >
+                <span className="w-6 pt-0.5 text-label tabular-nums text-neutral-500">{rank + 1}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-body font-semibold">{ranking.areas.name[i]}</span>
+                  <span className="block truncate text-caption text-neutral-600 dark:text-neutral-400">{tradeOff(parts)}</span>
+                  <Fingerprint parts={parts} />
+                </span>
+                {!Number.isNaN(score) && <MatchScore score={score} />}
+              </button>
+              {a && <Caution flags={headlineFlags(a)} />}
+            </li>
+          );
+        })}
+      </ol>
+      {shown < matches.length && (
+        <button
+          type="button"
+          onClick={ranking.onShowMore}
+          className="mt-3 w-full rounded-lg border border-neutral-300 py-2 text-label font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+        >
+          Show {Math.min(5, matches.length - shown)} more areas
+        </button>
+      )}
+    </>
+  );
+}
+
+function MatchScore({ score }: { score: number }) {
+  return (
+    <span className="pt-0.5 font-bold tabular-nums" style={{ color: isGold(score) ? "#8a6500" : scoreColor(score) }}>
+      {Math.round(score)}
     </span>
+  );
+}
+
+/** No area-level filter: the county's areas by town, with a measure (Census home value). */
+function GroupedList({
+  areas,
+  measure,
+  onSelect,
+  onHover,
+}: {
+  areas: CountyAreas;
+  measure: string;
+  onSelect: (geoid: string) => void;
+  onHover: (geoids: string[]) => void;
+}) {
+  const groups = useMemo(() => groupAreas(areas.areas), [areas]);
+  const [open, setOpen] = useState<Set<string>>(() => new Set(groups.slice(0, 1).map((g) => g.name)));
+  const toggle = (name: string) =>
+    setOpen((s) => {
+      const n = new Set(s);
+      if (n.has(name)) n.delete(name);
+      else n.add(name);
+      return n;
+    });
+  const key = (a: Area) => areaValue(a, measure) ?? -Infinity;
+  return (
+    <ul className="mt-3 divide-y divide-neutral-200 dark:divide-neutral-800">
+      {groups.map((g) => {
+        const values = g.areas.map((a) => areaValue(a, measure)).filter((v): v is number => v !== null);
+        const median = values.length ? values.sort((a, b) => a - b)[values.length >> 1] : null;
+        const isOpen = open.has(g.name);
+        const all = g.areas.map((a) => a.geoid);
+        // Hover or focus outlines on the map: a town, all its areas; one area, just it.
+        const outline = (geoids: string[]) => ({
+          onMouseEnter: () => onHover(geoids),
+          onFocus: () => onHover(geoids),
+        });
+        // A town with a single area has nothing to expand: the row is the area.
+        if (g.areas.length === 1) {
+          const a = g.areas[0];
+          return (
+            <li key={g.name} onMouseLeave={() => onHover([])} onBlur={() => onHover([])}>
+              <div className="flex items-center gap-1 hover:bg-neutral-100 dark:hover:bg-neutral-900">
+                <button
+                  type="button"
+                  onClick={() => onSelect(a.geoid)}
+                  {...outline(all)}
+                  className="flex min-w-0 flex-1 items-center justify-between gap-3 py-3 text-left"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate pl-[1.125rem] text-body font-semibold">{g.name}</span>
+                    <span className="block pl-[1.125rem] text-caption text-neutral-500">
+                      {a.zip ? `ZIP ${a.zip} · ` : ""}
+                      {g.population.toLocaleString()} people
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-label tabular-nums">{formatAreaValue(a, measure)}</span>
+                </button>
+                <Caution flags={headlineFlags(a)} />
+              </div>
+            </li>
+          );
+        }
+        return (
+          <li key={g.name} onMouseLeave={() => onHover([])} onBlur={() => onHover([])}>
+            <button
+              type="button"
+              onClick={() => toggle(g.name)}
+              {...outline(all)}
+              aria-expanded={isOpen}
+              className="flex w-full items-center justify-between gap-3 py-3 text-left"
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-body font-semibold">
+                  <span aria-hidden className="mr-1.5 inline-block w-3 text-neutral-400">{isOpen ? "▾" : "▸"}</span>
+                  {g.name}
+                </span>
+                <span className="block pl-[1.125rem] text-caption text-neutral-500">
+                  {g.areas.length} areas · {g.population.toLocaleString()} people
+                </span>
+              </span>
+              <span className="shrink-0 text-right text-label tabular-nums">
+                {formatArea(measure, median)}
+                <span className="block text-caption text-neutral-500">typical</span>
+              </span>
+            </button>
+            {isOpen && (
+              <ul className="mb-2 ml-[1.125rem] border-l border-neutral-200 dark:border-neutral-800" onMouseLeave={() => onHover(all)}>
+                {[...g.areas]
+                  .sort((a, b) => key(b) - key(a))
+                  .map((a) => (
+                    <li key={a.geoid}>
+                      <div className="flex items-center gap-1 pl-3 hover:bg-neutral-100 dark:hover:bg-neutral-900">
+                        <button
+                          type="button"
+                          onClick={() => onSelect(a.geoid)}
+                          {...outline([a.geoid])}
+                          className="flex min-w-0 flex-1 items-center justify-between gap-3 py-2 text-left"
+                        >
+                          <span className="truncate text-label">{areaName(a)}</span>
+                          <span className="shrink-0 text-label tabular-nums">{formatAreaValue(a, measure)}</span>
+                        </button>
+                        <Caution flags={headlineFlags(a)} />
+                      </div>
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
 /** What ranks the areas and what rules them out, for the "i". */
 function RankingNote({ ranking }: { ranking: AreaRankingView | null }) {
-  const criteria = ranking?.criteria ?? [];
-  const limits = ranking?.limits ?? [];
+  const criteria = ranking?.search.criteria ?? [];
+  const limits = ranking?.search.limits ?? [];
+  const countyParts = ranking?.county?.contributions ?? [];
   const dir = { lower: "lower is better", higher: "higher is better", middle: "typical is best" } as const;
-  const bound = (l: AreaLimit) =>
-    [l.min !== undefined && `at least ${formatArea(l.column, l.min)}`, l.max !== undefined && `at most ${formatArea(l.column, l.max)}`]
-      .filter(Boolean)
-      .join(", ");
+  if (!ranking) {
+    return (
+      <p>
+        None of your priorities vary by area, so areas show Census home value. Priorities tagged &ldquo;by area&rdquo; in
+        Filters — home value, schools, safety, walkability, distances… — rank areas.
+      </p>
+    );
+  }
   return (
     <>
-      {criteria.length > 0 ? (
-        <>
-          <p className="font-semibold">Ranked by</p>
-          <ul className="mt-1 list-disc pl-4">
-            {criteria.map((c) => (
-              <li key={c.column}>
-                {c.label} — importance {c.weight}, {dir[c.direction]}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2">
-            Each is ranked among this county&apos;s areas, then combined by importance, as for counties.
-          </p>
-        </>
-      ) : (
-        <p>
-          None of your priorities vary inside a county, so areas show Census home value. Add priorities under Filters → Inside
-          a county, or ones that vary by area: home value, rent, income, schools, hazards, airport distance.
-        </p>
-      )}
+      <p className="font-semibold">Ranked by</p>
+      <ul className="mt-1 list-disc pl-4">
+        {criteria.map((c) => (
+          <li key={c.column}>
+            {c.label} — importance {c.weight}, {dir[c.direction]}
+          </li>
+        ))}
+        {countyParts.map((c) => (
+          <li key={c.metric}>
+            {formatMetricLabel(c.metric)} (county-wide) — importance {c.weight}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2">
+        Each area is compared with every US area on its own measures; county-wide ones count the same for every area
+        here. Combined by importance, as for counties.
+      </p>
       {limits.length > 0 && (
         <>
           <p className="mt-2 font-semibold">Must-haves</p>
@@ -374,13 +435,16 @@ function RankingNote({ ranking }: { ranking: AreaRankingView | null }) {
           </ul>
         </>
       )}
-      <p className="mt-2 text-caption text-neutral-500 dark:text-neutral-400">
-        Climate, taxes, cost of living and other county-wide measures are the same across the county, so they
-        don&apos;t rank areas.
-      </p>
     </>
   );
 }
+
+const bound = (l: AreaLimit) =>
+  [l.min !== undefined && `at least ${formatArea(l.column, l.min)}`, l.max !== undefined && `at most ${formatArea(l.column, l.max)}`]
+    .filter(Boolean)
+    .join(", ");
+
+const formatMetricLabel = (m: MetricKey) => getMetric(m).label;
 
 /** In a group's list: the neighborhood, else the ZIP (the group already names the town). */
 function areaName(a: Area): string {
@@ -388,14 +452,39 @@ function areaName(a: Area): string {
   return a.zip ? `ZIP ${a.zip}` : a.label;
 }
 
-function AreaHeader({ area }: { area: Area }) {
+/** "north", when areas share this one's label (the results call it "… · north"). */
+function sideOf(ranking: AreaRankingView | null, geoid: string): string | null {
+  const i = ranking?.indexByGeoid.get(geoid);
+  if (!ranking || i === undefined) return null;
+  const { name, label } = ranking.areas;
+  return name[i] === label[i] ? null : name[i].slice(label[i].length + 3);
+}
+
+function AreaHeader({
+  area,
+  side,
+  countyName,
+  onCounty,
+}: {
+  area: Area;
+  side: string | null;
+  countyName: string;
+  onCounty: () => void;
+}) {
   return (
     <div className="mt-1 flex items-start justify-between gap-3">
       <div className="min-w-0">
-        <h2 className="text-heading font-semibold">{area.neighborhood ?? area.group}</h2>
+        <h2 className="text-heading font-semibold">
+          {area.neighborhood ?? area.group}
+          {side && <span className="font-normal text-neutral-500"> · {side}</span>}
+        </h2>
         <p className="mt-0.5 text-label text-neutral-500">
           {[area.neighborhood ? area.group : null, area.zip && `ZIP ${area.zip}`,
             area.population !== null && `${area.population.toLocaleString()} people`].filter(Boolean).join(" · ")}
+          {" · in "}
+          <button type="button" onClick={onCounty} className="font-medium text-emerald-700 hover:underline dark:text-emerald-400">
+            {countyName}
+          </button>
         </p>
       </div>
       <Caution flags={area.lowConfidence} />
@@ -405,44 +494,51 @@ function AreaHeader({ area }: { area: Area }) {
 
 const BETTER = { lower: "lower is better", higher: "higher is better", middle: "typical is best" } as const;
 
-/** The area's score, broken down like a county's (plan §9 Phase 8e). */
+/** Where the value stands, said the way the score reads: "lower than 98% of US areas". */
+function standing(p: AreaPart): string {
+  const of = p.level === "county" ? "US counties" : "US areas";
+  const raw = Math.round(p.rawPercentile ?? 0);
+  if (p.direction === "lower") return `lower than ${Math.max(0, 100 - raw)}% of ${of}`;
+  if (p.direction === "higher") return `higher than ${raw}% of ${of}`;
+  return `${ordinal(raw)} percentile of ${of} · ${BETTER.middle}`;
+}
+
+const partValue = (p: AreaPart) =>
+  p.level === "county" ? formatValue(p.key as MetricKey, p.value) : formatArea(p.key, p.value);
+
+/** The area's score, broken down like a county's (plan §9 Phase 8f): the detail the results summary leaves out. */
 function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRankingView; countyName: string }) {
-  const s = ranking.scores.get(area.geoid);
-  if (!s) return null;
-  const ranked = [...ranking.scores.values()]
-    .filter((x) => x.score !== null && !ranking.hidden.has(x.geoid))
-    .sort((a, b) => b.score! - a.score!);
-  const place = ranked.findIndex((x) => x.geoid === area.geoid);
-  const { up, down } = topReasons(s);
-  const rows = [...s.contributions].sort((a, b) => (b.impact ?? -Infinity) - (a.impact ?? -Infinity));
+  const i = ranking.indexByGeoid.get(area.geoid);
+  if (i === undefined) return null;
+  const score = ranking.scores.score[i];
+  const place = ranking.matches.indexOf(i);
+  const parts = explainArea(ranking.areas, i, ranking.search, ranking.county);
+  const limits = areaLimitResults(ranking.areas, i, ranking.search.limits);
+  const rows = [...parts].sort((a, b) => (b.impact ?? -Infinity) - (a.impact ?? -Infinity));
   return (
     <section className="space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-label font-semibold uppercase tracking-wide text-neutral-500">Why it ranks here</h3>
           <p className="mt-0.5 text-label">
-            {s.status === "excluded"
-              ? `Ruled out by your must-haves (${s.failed.join(", ") || s.unknown.join(", ")})`
-              : place >= 0
-                ? `${ordinal(place + 1)} of ${ranked.length} areas in ${countyName}`
-                : "Not ranked: no data for your priorities"}
+            {place >= 0
+              ? `${ordinal(place + 1)} of ${ranking.matches.length} matching areas in ${countyName}`
+              : "Doesn't pass your must-haves"}
           </p>
         </div>
-        {s.score !== null && <ScoreBadge score={s.score} rel={ranking.rel.get(area.geoid)} />}
+        {!Number.isNaN(score) && <MatchScore score={score} />}
       </div>
-      {(up || down) && (
-        <p className="text-label text-neutral-700 dark:text-neutral-300">
-          {up && <>Stronger than most of the county on <strong>{up.label.toLowerCase()}</strong>. </>}
-          {down && <>Weaker on <strong>{down.label.toLowerCase()}</strong>.</>}
-        </p>
-      )}
+      <p className="text-label text-neutral-700 dark:text-neutral-300">{tradeOff(parts)}</p>
       {rows.length > 0 && (
         <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
           {rows.map((c) => (
-            <li key={c.column} className="py-2 text-label">
+            <li key={c.key} className="py-2 text-label">
               <div className="flex items-baseline justify-between gap-3">
-                <span>{c.label}</span>
-                <span className="shrink-0 font-medium tabular-nums">{formatArea(c.column, c.value)}</span>
+                <span>
+                  {c.label}
+                  {c.level === "county" && <span className="text-caption text-neutral-500"> · county-wide</span>}
+                </span>
+                <span className="shrink-0 font-medium tabular-nums">{partValue(c)}</span>
               </div>
               {c.points === null ? (
                 <p className="text-caption text-neutral-500">No data — left out of this area&rsquo;s score (weight {c.weight}).</p>
@@ -455,14 +551,18 @@ function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRa
                       aria-label={`${Math.round(c.points)} of 100 points`}
                     >
                       <div
-                        className={`h-full rounded-full ${c.points >= 50 ? "bg-emerald-500" : "bg-rose-500"}`}
-                        style={{ width: `${Math.max(2, c.points)}%` }}
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${Math.max(2, c.points)}%`,
+                          backgroundColor: scoreColor(c.points),
+                          boxShadow: isGold(c.points) ? "0 0 6px rgba(212,160,23,.7)" : undefined,
+                        }}
                       />
                     </div>
                     <span className="w-14 text-right text-caption tabular-nums text-neutral-500">{Math.round(c.points)} pts</span>
                   </div>
                   <p className="mt-0.5 text-caption text-neutral-500">
-                    {ordinal(Math.round(c.rawPercentile ?? 0))} percentile in the county · {BETTER[c.direction]} · weight {c.weight} ·{" "}
+                    {standing(c)} · weight {c.weight} ·{" "}
                     <span className={(c.impact ?? 0) >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}>
                       effect {(c.impact ?? 0) >= 0 ? "+" : "−"}
                       {Math.abs(Math.round(c.impact ?? 0))}
@@ -474,18 +574,16 @@ function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRa
           ))}
         </ul>
       )}
-      {s.limits.length > 0 && (
+      {limits.length > 0 && (
         <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
-          {s.limits.map((l) => (
+          {limits.map((l) => (
             <li key={l.column} className="flex items-baseline justify-between gap-3 py-2 text-label">
               <span>
                 <span aria-hidden className={l.state === "pass" ? "text-emerald-600" : l.state === "fail" ? "text-rose-600" : "text-neutral-400"}>
                   {l.state === "pass" ? "✓" : l.state === "fail" ? "✕" : "?"}{" "}
                 </span>
                 {l.label}
-                <span className="block text-caption text-neutral-500">
-                  Yours: {[l.min !== undefined && `at least ${formatArea(l.column, l.min)}`, l.max !== undefined && `at most ${formatArea(l.column, l.max)}`].filter(Boolean).join(", ")}
-                </span>
+                <span className="block text-caption text-neutral-500">Yours: {bound(l)}</span>
               </span>
               <span className={`shrink-0 font-medium tabular-nums ${l.state === "fail" ? "text-rose-700 dark:text-rose-400" : ""}`}>
                 {l.value === null ? "No data" : formatArea(l.column, l.value)}
@@ -518,9 +616,7 @@ function AreaDetail({
 
   return (
     <div className="space-y-section px-gutter py-4">
-      {ranking && (ranking.criteria.length > 0 || ranking.limits.length > 0) && (
-        <WhyItRanks area={area} ranking={ranking} countyName={countyName} />
-      )}
+      {ranking && <WhyItRanks area={area} ranking={ranking} countyName={countyName} />}
       <dl className="grid grid-cols-2 gap-2">
         {["zhvi", "median_home_value", "median_gross_rent", "per_capita_income", "walkability", "kids_share"].map((k) => (
           <Stat key={k} k={k} text={formatAreaValue(area, k)} flagged={flagged.has(k)} />

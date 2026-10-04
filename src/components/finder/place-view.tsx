@@ -63,10 +63,14 @@ export interface PlaceProps {
   onExploreInside?: () => void;
   /** How many areas the county has, for the button. */
   areaCount?: number;
+  /** When the results are areas (Phase 8f): the county's best areas, first on the page. */
+  bestAreas?: ReactNode;
+  /** …and its best area's score, which ranks the county then (shown instead of its own). */
+  bestScore?: number;
 }
 
 /** Back link, name, rank and score. On phones this is the sheet's drag header. */
-export function PlaceIdentity({ score: s, data, rank, total, rel, onBack }: PlaceProps) {
+export function PlaceIdentity({ score: s, data, rank, total, rel, onBack, bestScore }: PlaceProps) {
   const where =
     s.status === "excluded"
       ? "Ruled out by a filter"
@@ -92,7 +96,14 @@ export function PlaceIdentity({ score: s, data, rank, total, rel, onBack }: Plac
             <StatusBadges score={s} />
           </p>
         </div>
-        <ScoreBadge score={s.score} rel={rel} />
+        {bestScore !== undefined ? (
+          <span title="Its best area's match score" className="text-right">
+            <ScoreBadge score={bestScore} rel={bestScore} />
+            <span className="block text-caption text-neutral-500">best area</span>
+          </span>
+        ) : (
+          <ScoreBadge score={s.score} rel={rel} />
+        )}
       </div>
     </div>
   );
@@ -117,7 +128,8 @@ export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
         {withIdentity && <PlaceIdentity {...props} />}
         {/* First under the name: on phones the sheet opens half-way, and below the facts
             this was out of sight until you scrolled. */}
-        {props.onExploreInside && (
+        {props.bestAreas && <div className={withIdentity ? "mt-4" : ""}>{props.bestAreas}</div>}
+        {props.onExploreInside && !props.bestAreas && (
           <button
             type="button"
             onClick={props.onExploreInside}
@@ -136,7 +148,7 @@ export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
           </button>
         )}
         {(facts.length > 0 || koppen) && (
-          <dl className={`grid grid-cols-2 gap-2 ${withIdentity || props.onExploreInside ? "mt-4" : ""}`}>
+          <dl className={`grid grid-cols-2 gap-2 ${withIdentity || props.onExploreInside || props.bestAreas ? "mt-4" : ""}`}>
             {facts.map((f) => (
               <Stat
                 key={f.metric}

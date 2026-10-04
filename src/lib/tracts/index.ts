@@ -17,6 +17,8 @@ export const DATA_URL = (process.env.NEXT_PUBLIC_DATA_URL ?? "/data").replace(/\
 export const tractIndexUrl = () => `${DATA_URL}/tracts/index.json`;
 export const tractDataUrl = (fips: string) => `${DATA_URL}/tracts/${fips}.json`;
 export const tractShapesUrl = (fips: string) => `${DATA_URL}/tracts/${fips}.topo.json`;
+/** Every area's scoring columns, for ranking areas nationwide (Phase 8f). */
+export const nationalAreasUrl = () => `${DATA_URL}/tracts/areas.json`;
 
 export type Cell = string | number | boolean | null;
 export type Row = Record<string, Cell>;
@@ -272,3 +274,4 @@ export function groupAreas(areas: Area[]): { name: string; areas: Area[]; popula
     .sort((x, y) => y.population - x.population);
 }
 export * from "./scoring";
+export * from "./national";

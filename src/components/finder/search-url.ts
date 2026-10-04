@@ -1,5 +1,5 @@
 import { getMetric, METRICS, type MetricKey } from "@/lib/scoring";
-import { AREA_PRIORITIES } from "@/lib/tracts";
+import { AREA_PRIORITIES, areaPriority } from "@/lib/tracts";
 
 import { OPTIONAL_STATES, sanitizePreferences, type Preferences } from "./preferences";
 
@@ -148,13 +148,19 @@ export function decodeSearch(params: URLSearchParams): SharedSearch | null {
  * priorities, then how many must-haves. "Cost of living, Schools +2 · 1 must-have"
  */
 export function summarizeSearch(prefs: Preferences): string {
-  const weighted = (Object.entries(prefs.weights) as [MetricKey, number][])
+  // County-wide and by-area priorities together, most important first (Phase 8f).
+  const weighted: [string, number][] = [
+    ...(Object.entries(prefs.weights) as [MetricKey, number][]).map(([k, w]): [string, number] => [getMetric(k).label, w]),
+    ...Object.entries(prefs.area.weights).map(([k, w]): [string, number] => [areaPriority(k)?.label ?? k, w ?? 0]),
+  ]
     .filter(([, w]) => w > 0)
     .sort((a, b) => b[1] - a[1]);
-  const names = weighted.slice(0, 2).map(([k]) => getMetric(k).label);
+  const names = weighted.slice(0, 2).map(([label]) => label);
   const more = weighted.length - names.length;
+  const isLimit = (l: { min?: number; max?: number } | undefined) => l && (l.min !== undefined || l.max !== undefined);
   const musts =
-    Object.values(prefs.limits).filter((l) => l && (l.min !== undefined || l.max !== undefined)).length +
+    Object.values(prefs.limits).filter(isLimit).length +
+    Object.values(prefs.area.limits).filter(isLimit).length +
     Object.values(prefs.categories).filter((a) => a !== undefined).length;
 
   const head = names.length ? `${names.join(", ")}${more > 0 ? ` +${more}` : ""}` : "No priorities";

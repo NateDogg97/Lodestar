@@ -4,10 +4,12 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 import {
   Map as MapLibreMap,
+  Marker,
   NavigationControl,
   Popup,
   setWorkerUrl,
   type ExpressionSpecification,
+  type GeoJSONSource,
   type LngLatBoundsLike,
   type StyleSpecification,
 } from "maplibre-gl";
@@ -196,11 +198,12 @@ const AREA_FILL = [
   ["interpolate", ["linear"], ["feature-state", "v"], ...AREA_STOPS],
   UNKNOWN_COLOR,
 ] as unknown as ExpressionSpecification;
+// Areas not listed (not a match, or beyond the shown ones) aren't filled: focus (owner).
 const AREA_SCORE_FILL = [
   "case",
   ["==", ["typeof", ["feature-state", "v"]], "number"],
   ["interpolate", ["linear"], ["feature-state", "v"], ...SCORE_STOPS],
-  UNKNOWN_COLOR,
+  "rgba(0,0,0,0)",
 ] as unknown as ExpressionSpecification;
 
 function bboxOf(geometry: Geometry): [number, number, number, number] {
@@ -233,7 +236,45 @@ interface Props {
   dark: boolean;
   /** Areas inside the open county, when exploring inside (Phase 8b). */
   inside?: InsideLayer | null;
+  /**
+   * The area whose summary is open in the results (Phase 8f): a pin. The map goes
+   * there when `fly` changes — a summary the person opened, not the #1 open on load.
+   */
+  pin?: { lat: number; lon: number; fly: number } | null;
+  /** Area mode: where your top areas are, by zoom. */
+  marks?: ResultMarks | null;
+  /** A tap on an area dot opens that area. */
+  onOpenArea?: (geoid: string) => void;
+  /** Area mode: counties are colored by their best area's match, not relative to each other. */
+  byBestArea?: boolean;
   onSelect: (fips: string | null) => void;
+}
+
+/**
+ * Areas as the results, by zoom (plan §9 Phase 8f): far out, each state's count of
+ * your top areas; closer, each county's; closest, the areas themselves as dots.
+ */
+export interface ResultMarks {
+  states: { key: string; label: string; lat: number; lon: number; count: number; bounds: [number, number, number, number] }[];
+  counties: { key: string; label: string; lat: number; lon: number; count: number }[];
+  areas: { geoid: string; label: string; lat: number; lon: number; score: number }[];
+}
+
+/** Below this zoom, state counts; from it to AREAS_FROM, county counts; then area dots. */
+const COUNTIES_FROM = 5;
+const AREAS_FROM = 7.5;
+
+function bubble(count: number, title: string, kind: "state" | "county"): HTMLButtonElement {
+  const el = document.createElement("button");
+  el.type = "button";
+  el.title = title;
+  el.setAttribute("aria-label", title);
+  el.textContent = count.toLocaleString();
+  el.className =
+    "grid place-items-center rounded-full border-2 border-white bg-neutral-900 font-semibold text-white shadow-md " +
+    "hover:bg-emerald-700 dark:border-neutral-900 dark:bg-neutral-100 dark:text-neutral-900 " +
+    (kind === "state" ? "min-w-8 h-8 px-1.5 text-label" : "min-w-6 h-6 px-1 text-caption");
+  return el;
 }
 
 export default function CountyMap({
@@ -246,6 +287,10 @@ export default function CountyMap({
   bottomInset,
   dark,
   inside = null,
+  pin = null,
+  byBestArea = false,
+  marks = null,
+  onOpenArea,
   onSelect,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
@@ -256,9 +301,9 @@ export default function CountyMap({
   const [error, setError] = useState<string | null>(null);
 
   // Latest props for map event handlers, which are registered once.
-  const latest = useRef({ data, scoresByFips, rankByFips, onSelect, bottomInset, inside });
+  const latest = useRef({ data, scoresByFips, rankByFips, onSelect, bottomInset, inside, onOpenArea });
   useEffect(() => {
-    latest.current = { data, scoresByFips, rankByFips, onSelect, bottomInset, inside };
+    latest.current = { data, scoresByFips, rankByFips, onSelect, bottomInset, inside, onOpenArea };
   });
 
   // Where the camera was when the map was last torn down (a theme switch), so
@@ -341,9 +386,16 @@ export default function CountyMap({
 
         const popup = new Popup({ closeButton: false, closeOnClick: false, offset: 8 });
         // Over an area inside the explored county, the area layer handles it.
-        const onArea = (e: { point: { x: number; y: number } }) =>
-          !!map!.getLayer("tract-fill") &&
-          map!.queryRenderedFeatures([e.point.x, e.point.y], { layers: ["tract-fill"] }).length > 0;
+        const onArea = (e: { point: { x: number; y: number } }) => {
+          const layers = ["tract-fill", "result-areas"].filter((l) => map!.getLayer(l));
+          return layers.length > 0 && map!.queryRenderedFeatures([e.point.x, e.point.y], { layers }).length > 0;
+        };
+        map.on("click", "result-areas", (e) => {
+          const geoid = e.features?.[0]?.properties?.geoid as string | undefined;
+          if (geoid) latest.current.onOpenArea?.(geoid);
+        });
+        map.on("mouseenter", "result-areas", () => (map!.getCanvas().style.cursor = "pointer"));
+        map.on("mouseleave", "result-areas", () => (map!.getCanvas().style.cursor = ""));
         map.on("mousemove", "tract-fill", (e) => {
           const geoid = e.features?.[0]?.properties?.GEOID as string | undefined;
           const label = geoid && latest.current.inside?.labels.get(geoid);
@@ -481,6 +533,103 @@ export default function CountyMap({
     for (const id of prevHighlight.current) map.setFeatureState({ source: "tracts", id }, { hover: true });
   }, [ready, insideHighlight, insideFips, insideShapes, dark]);
 
+  // The open result's area: a pin, and the map moves there (keeping a regional view).
+  const pinLat = pin?.lat ?? null;
+  const pinLon = pin?.lon ?? null;
+  const pinFly = pin?.fly ?? 0;
+  const flown = useRef(0);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    const data = {
+      type: "FeatureCollection" as const,
+      features: pinLat === null || pinLon === null ? [] : [
+        { type: "Feature" as const, properties: {}, geometry: { type: "Point" as const, coordinates: [pinLon, pinLat] } },
+      ],
+    };
+    const src = map.getSource("result-pin") as GeoJSONSource | undefined;
+    if (src) src.setData(data);
+    else {
+      map.addSource("result-pin", { type: "geojson", data });
+      map.addLayer({ id: "result-pin", type: "circle", source: "result-pin",
+        paint: { "circle-radius": 7, "circle-color": "#111", "circle-stroke-width": 3, "circle-stroke-color": "#fff" } });
+    }
+    if (pinLat !== null && pinLon !== null && pinFly !== flown.current) {
+      flown.current = pinFly;
+      const inset = Math.min(latest.current.bottomInset, map.getContainer().clientHeight * 0.6);
+      map.easeTo({ center: [pinLon, pinLat], zoom: Math.max(map.getZoom(), 8), padding: { top: 0, left: 0, right: 0, bottom: inset }, duration: 600 });
+    }
+  }, [ready, pinLat, pinLon, pinFly, dark]);
+
+  // Your top areas by zoom: count bubbles (HTML, so they need no map fonts — the
+  // offline basemap has none) for states and counties, and dots for the areas.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    const dots = {
+      type: "FeatureCollection" as const,
+      features: (marks?.areas ?? []).map((a) => ({
+        type: "Feature" as const,
+        properties: { geoid: a.geoid, score: a.score, label: a.label },
+        geometry: { type: "Point" as const, coordinates: [a.lon, a.lat] },
+      })),
+    };
+    const src = map.getSource("result-areas") as GeoJSONSource | undefined;
+    if (src) src.setData(dots);
+    else {
+      map.addSource("result-areas", { type: "geojson", data: dots });
+      map.addLayer(
+        {
+          id: "result-areas",
+          type: "circle",
+          source: "result-areas",
+          minzoom: AREAS_FROM,
+          paint: {
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], AREAS_FROM, 5, 12, 9],
+            "circle-color": ["interpolate", ["linear"], ["get", "score"], ...SCORE_STOPS] as unknown as ExpressionSpecification,
+            "circle-stroke-width": 1.5,
+            "circle-stroke-color": dark ? "#111" : "#fff",
+          },
+        },
+        map.getLayer("result-pin") ? "result-pin" : undefined,
+      );
+    }
+    const made: { marker: Marker; kind: "state" | "county" }[] = [];
+    for (const st of marks?.states ?? []) {
+      const el = bubble(st.count, `${st.label}: ${st.count} of your top areas`, "state");
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        map.fitBounds(st.bounds, { padding: 60, maxZoom: AREAS_FROM - 0.5, duration: 600 });
+      });
+      made.push({ marker: new Marker({ element: el }).setLngLat([st.lon, st.lat]), kind: "state" });
+    }
+    for (const c of marks?.counties ?? []) {
+      const el = bubble(c.count, `${c.label}: ${c.count} of your top areas`, "county");
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        latest.current.onSelect(c.key);
+      });
+      made.push({ marker: new Marker({ element: el }).setLngLat([c.lon, c.lat]), kind: "county" });
+    }
+    let shown: "state" | "county" | null | undefined;
+    const update = () => {
+      const z = map.getZoom();
+      const level = z < COUNTIES_FROM ? "state" : z < AREAS_FROM ? "county" : null;
+      if (level === shown) return;
+      shown = level;
+      for (const m of made) {
+        if (m.kind === level) m.marker.addTo(map);
+        else m.marker.remove();
+      }
+    };
+    update();
+    map.on("zoom", update);
+    return () => {
+      map.off("zoom", update);
+      for (const m of made) m.marker.remove();
+    };
+  }, [ready, marks, dark]);
+
   // A pick from the area list zooms to it.
   const insideFocus = inside?.focus ?? null;
   const zoomedArea = useRef<typeof insideFocus>(null);
@@ -559,7 +708,7 @@ export default function CountyMap({
           {error}
         </p>
       )}
-      {ready && inside ? <AreaLegend {...inside.legend} palette={inside.palette} /> : ready && relative.size > 0 && <Legend count={relative.size} />}
+      {ready && inside ? <AreaLegend {...inside.legend} palette={inside.palette} /> : ready && relative.size > 0 && <Legend count={relative.size} byBestArea={byBestArea} />}
       {basemapOnline === false && (
         <p className="pointer-events-none absolute bottom-[calc(var(--map-inset)+0.5rem)] left-2 rounded bg-white/85 px-2 py-1 text-caption text-neutral-700 dark:bg-neutral-900/85 dark:text-neutral-300">
           Offline — showing county lines only
@@ -586,17 +735,17 @@ function AreaLegend({ title, low, high, palette }: { title: string; low: string;
   );
 }
 
-function Legend({ count }: { count: number }) {
+function Legend({ count, byBestArea }: { count: number; byBestArea: boolean }) {
   return (
     <div className="pointer-events-none absolute right-2 bottom-[calc(var(--map-inset)+2rem)] w-48 rounded-md bg-white/90 px-2.5 py-2 text-caption text-neutral-700 shadow-sm dark:bg-neutral-900/90 dark:text-neutral-300">
-      <p className="font-medium">Top {count} results</p>
+      <p className="font-medium">{byBestArea ? `${count} counties, by their best area` : `Top ${count} results`}</p>
       <div
         className="mt-1 h-2 rounded-sm"
         style={{ background: `linear-gradient(to right, ${SCORE_STOPS.filter((_, i) => i % 2 === 1).join(", ")})` }}
       />
       <div className="mt-0.5 flex justify-between text-neutral-500">
-        <span>weakest of these</span>
-        <span>best</span>
+        <span>{byBestArea ? "weaker match" : "weakest of these"}</span>
+        <span>{byBestArea ? "stronger" : "best"}</span>
       </div>
     </div>
   );
