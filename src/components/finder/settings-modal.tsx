@@ -18,6 +18,8 @@ interface Props {
   /** Counties kept as unknown under the current search. */
   unknownCount: number;
   laws: LawData | null;
+  /** Replay the first-run tour (plan Phase 9). */
+  onShowTour: () => void;
 }
 
 const THEMES: { value: ThemePref; label: string }[] = [
@@ -30,7 +32,7 @@ const THEMES: { value: ThemePref; label: string }[] = [
  * Everything that isn't the search itself (plan §9 Phase 7a): appearance,
  * which counties the results include, and where the data comes from.
  */
-export function SettingsModal({ open, onClose, prefs, onChange, unknownCount, laws }: Props) {
+export function SettingsModal({ open, onClose, prefs, onChange, unknownCount, laws, onShowTour }: Props) {
   const theme = useThemePref();
   const themeLabel = useId();
 
@@ -77,6 +79,17 @@ export function SettingsModal({ open, onClose, prefs, onChange, unknownCount, la
               onChange={(on) => onChange({ ...prefs, includeStates: { ...prefs.includeStates, [state]: on } })}
             />
           ))}
+        </Section>
+
+        <Section title="Help">
+          <button
+            type="button"
+            onClick={onShowTour}
+            className="rounded-full border border-neutral-300 px-4 py-2 text-label font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+          >
+            Show the tour again
+          </button>
+          <p className="mt-2 text-caption text-neutral-500 dark:text-neutral-400">A one-minute look at how Lodestar works.</p>
         </Section>
 
         <Section title="About the data">

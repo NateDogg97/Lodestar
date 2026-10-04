@@ -1637,7 +1637,7 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
   names; unincorporated tracts take the sheriff. In Texas 99.6% of populated tracts get a
   rate; an agency that didn't report a full year is flagged low confidence (8c).
 
-### Phase 8f — Areas as the results (planned 2026-10-03, owner decisions)
+### Phase 8f — Areas as the results (planned 2026-10-03, owner decisions) ✅ **DONE 2026-10-04**
 
 With area data for every county, the unit a person is really choosing is an **area** (a
 neighborhood near a specific school), not a county average. Decided with the owner:
@@ -1773,18 +1773,25 @@ neighborhood near a specific school), not a county average. Decided with the own
   unemployment, and "In your top 100: N areas" (the area count outside area mode),
   replacing the county-average school score (owner, 2026-10-04).
 
-### Phase 9 — First-run tutorial (added 2026-10-01)
+### Phase 9 — First-run tutorial (added 2026-10-01) ✅ **BUILT 2026-10-04**
 
 The app has a lot in it (priorities, must-haves, climate cards, saved searches, the map,
 Explore inside). A first-time visitor should learn the main loop in under a minute.
 
-- [ ] A short guided tour the **first time** someone opens the app: set what matters → read
-      the ranked list → open a county on the map → Explore inside. A few steps, each pointing
-      at the real control; **Skip** on every step.
-- [ ] Shown once: remember "seen" in localStorage (a per-device convenience). A link that
-      opens a shared search still shows it to a first-time visitor, after the search loads.
-- [ ] Re-open it from Settings ("Show the tour again").
-- [ ] Works on phone widths and with the keyboard (Escape skips).
+- [x] A short guided tour the **first time** someone opens the app (`src/components/finder/tour.tsx`):
+      a welcome card, then 6 steps that spotlight the real control (`data-tour="…"`): Filters
+      (priorities vs must-haves) → the #1 result (bars, colors, gold) → a result's name (open
+      it) → the map (counts by zoom) → Areas/Counties → Save, share, replay. Passive (Next,
+      not "do it"); **Skip** on every step. Steps whose control isn't on screen are skipped.
+- [x] Shown once: "seen" in browser storage (`lodestar.tour`, versioned — bump to show it
+      again after a redesign), opening once the first results are ready, so a shared link
+      gets it after its search loads.
+- [x] Re-open it from Settings → Help ("Show the tour again"); it returns to the results first.
+- [x] Keyboard: Escape skips, ← → step, focus moves to the card. Phones: the card docks to
+      the top or bottom edge away from the spotlight, and the results sheet is raised or
+      lowered per step. *Not yet checked on a real phone.*
+- [ ] Maybe later: quick-start chips on the welcome card ("What matters most?") that set
+      the first priorities.
 
 ---
 

@@ -58,7 +58,7 @@ export function ResultsHeader({
   return (
     <div className="mb-3 space-y-2">
       <div className="flex items-center justify-between gap-3">
-        <div role="group" aria-label="Show results as" className="grid grid-cols-2 rounded-full bg-neutral-100 p-1 dark:bg-neutral-900">
+        <div role="group" aria-label="Show results as" data-tour="view-toggle" className="grid grid-cols-2 rounded-full bg-neutral-100 p-1 dark:bg-neutral-900">
           {(["areas", "counties"] as const).map((v) => (
             <button
               key={v}
@@ -273,7 +273,11 @@ export function AreaResultsList({
         const parts = explainArea(common.areas, i, common.search, common.countyScores.get(common.areas.county[i]));
         const isOpen = open === i;
         return (
-          <li key={common.areas.geoid[i]} className={isOpen ? "bg-neutral-50 dark:bg-neutral-900/50" : ""}>
+          <li
+            key={common.areas.geoid[i]}
+            data-tour={rank === 0 ? "first-result" : undefined}
+            className={isOpen ? "bg-neutral-50 dark:bg-neutral-900/50" : ""}
+          >
             <div className="flex items-start gap-2 py-3 pl-1">
               <span className="w-7 pt-0.5 text-label tabular-nums text-neutral-500">{rank + 1}</span>
               <div className="min-w-0 flex-1">
@@ -281,6 +285,7 @@ export function AreaResultsList({
                   <button
                     type="button"
                     onClick={() => common.onOpenArea(i)}
+                    data-tour={rank === 0 ? "result-name" : undefined}
                     className="text-left text-body font-semibold underline decoration-neutral-300 underline-offset-[3px] hover:decoration-neutral-600 dark:decoration-neutral-700"
                   >
                     {common.areas.name[i]}
@@ -338,7 +343,7 @@ export function CountyResultsList({
       {counties.map((c, rank) => {
         const isOpen = open === c.fips;
         return (
-          <li key={c.fips} className={isOpen ? "bg-neutral-50 dark:bg-neutral-900/50" : ""}>
+          <li key={c.fips} data-tour={rank === 0 ? "first-result" : undefined} className={isOpen ? "bg-neutral-50 dark:bg-neutral-900/50" : ""}>
             <div className="flex items-start gap-2 py-3 pl-1">
               <span className="w-7 pt-0.5 text-label tabular-nums text-neutral-500">{rank + 1}</span>
               <div className="min-w-0 flex-1">
@@ -346,6 +351,7 @@ export function CountyResultsList({
                   <button
                     type="button"
                     onClick={() => onOpenCounty(c.fips)}
+                    data-tour={rank === 0 ? "result-name" : undefined}
                     className="text-left text-body font-semibold underline decoration-neutral-300 underline-offset-[3px] hover:decoration-neutral-600 dark:decoration-neutral-700"
                   >
                     {common.countyName(c.fips)}

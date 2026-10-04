@@ -26,6 +26,7 @@ import { LodestarLogo } from "@/components/ui/lodestar-logo";
 import { useTheme } from "@/components/ui/theme";
 
 import { BottomSheet, SHEET_SNAPS } from "./bottom-sheet";
+import { markTourSeen, Tour, tourSeen, type TourStep } from "./tour";
 import { countActiveFilters, FiltersModal, type MetricRange } from "./filters-modal";
 import {
   DEFAULT_PREFERENCES,
@@ -632,6 +633,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       type="button"
       onClick={() => setFiltersOpen(true)}
       aria-haspopup="dialog"
+      data-tour="filters"
       className="flex items-center gap-2 rounded-full border border-neutral-300 px-3.5 py-1.5 text-label font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
     >
       <svg aria-hidden viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -724,7 +726,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     </div>
   ) : null;
   const resultsList = areaResults ?? (
-    <div className="px-3 py-3">
+    <div className="px-3 py-3" data-tour="first-result">
       <div className="mb-2 flex items-center gap-1 px-1">
         <p className="text-caption text-neutral-500 dark:text-neutral-400" aria-live="polite">
           {ranked.length.toLocaleString()} {ranked.length === 1 ? "county" : "counties"}
@@ -827,6 +829,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       type="button"
       onClick={() => setSettingsOpen(true)}
       aria-haspopup="dialog"
+      data-tour="settings"
       aria-label="Settings"
       title="Settings"
       className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-900 dark:hover:text-neutral-100"
@@ -838,6 +841,83 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     </button>
   );
 
+  // The first-run tour (plan Phase 9): once per device, after the first results are in.
+  // "auto": opens by itself on a first visit, once results are ready.
+  const [tour, setTour] = useState<"auto" | "open" | "closed">(() =>
+    typeof window === "undefined" || tourSeen() ? "closed" : "auto",
+  );
+  const resultsReady = !hasAreaFilters || nscores !== null || nationalState.status === "error";
+  const tourOpen = tour === "open" || (tour === "auto" && resultsReady);
+  const closeTour = () => {
+    markTourSeen();
+    setTour("closed");
+    if (!wide) setSheetSnap(SHEET_START);
+  };
+  const startTour = () => {
+    setSettingsOpen(false);
+    if (showPlace) {
+      leaveInside();
+      backToList();
+    }
+    setTour("open");
+  };
+  // Phones: raise the results sheet to the step's height; wide: keep the panel open.
+  const showSheet = (snap: number) => () => {
+    if (wide) setResultsOpen(true);
+    else setSheetSnap(snap);
+  };
+  const tourSteps: TourStep[] = [
+    {
+      title: "Welcome to Lodestar",
+      body: "Find the US neighborhoods that fit what matters to you. Here’s a one-minute look around.",
+    },
+    {
+      target: "filters",
+      title: "Tell it what matters",
+      body: (
+        <>
+          <b>Priorities</b> rank places: give each an importance from 1 to 5. <b>Must-haves</b> rule places out — a price
+          cap, certain states, a climate.
+        </>
+      ),
+      prepare: showSheet(1),
+    },
+    {
+      target: "first-result",
+      title: "Your best matches",
+      body: areaMode
+        ? "The best areas nationwide for your search, best first. #1 is open: each bar is one of your priorities, red to deep green — gold means top 1% in the US."
+        : "Counties ranked by your search, best first. Add a priority tagged “by area” (schools, safety, walkability…) to rank neighborhoods instead.",
+      prepare: showSheet(2),
+    },
+    {
+      target: "result-name",
+      optional: true,
+      title: "Open one for the full story",
+      body: "Tap a name to see why it ranks where it does, then its schools, safety, prices and hazards.",
+      prepare: showSheet(2),
+    },
+    {
+      target: "map",
+      title: "See where they are",
+      body: "Zoomed out, bubbles count your results by state, then by county; zoom in to see the areas themselves. Tap one to open it.",
+      prepare: showSheet(0),
+    },
+    {
+      target: "view-toggle",
+      optional: true,
+      title: "Areas or counties",
+      body: "Prefer to think in counties? Switch here — counties rank by their best area.",
+      prepare: showSheet(2),
+    },
+    {
+      target: "filters",
+      title: "Save, share, replay",
+      body: "Save a search, or share it by email, text or link, from Filters → Saved. You can replay this tour any time from Settings.",
+      prepare: showSheet(1),
+    },
+  ];
+
   const modals = (
     <>
       {filtersModal}
@@ -848,7 +928,9 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         onChange={setPrefs}
         unknownCount={counts.unknown}
         laws={laws}
+        onShowTour={startTour}
       />
+      {tourOpen && <Tour steps={tourSteps} onClose={closeTour} />}
     </>
   );
 
@@ -866,7 +948,9 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         </div>
 
         <div ref={area} className="relative min-h-0 flex-1 overflow-hidden">
-          <div className="absolute inset-0">{map}</div>
+          <div className="absolute inset-0" data-tour="map">
+            {map}
+          </div>
 
           <BottomSheet
             id="results-panel"
@@ -918,7 +1002,9 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         >
           {resultsBody(true)}
         </SidePanel>
-        <div className="relative min-w-0 flex-1">{map}</div>
+        <div className="relative min-w-0 flex-1" data-tour="map">
+          {map}
+        </div>
       </div>
       {modals}
     </div>
