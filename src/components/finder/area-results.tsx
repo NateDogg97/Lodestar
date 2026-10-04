@@ -416,6 +416,8 @@ export function CountyBestAreas({
   search,
   county,
   matches,
+  inTop,
+  cap,
   countyLabel,
   onOpenArea,
   onSeeAll,
@@ -425,6 +427,9 @@ export function CountyBestAreas({
   search: NationalSearch;
   county: CountyScore | undefined;
   matches: number[];
+  /** How many of its areas are in your top results (of `cap`). */
+  inTop: number;
+  cap: number;
   countyLabel: string;
   onOpenArea: (i: number) => void;
   onSeeAll: () => void;
@@ -434,7 +439,7 @@ export function CountyBestAreas({
       <h3 className="text-label font-semibold text-emerald-800 dark:text-emerald-300">
         {matches.length === 0
           ? `No area in ${countyLabel} meets your must-haves`
-          : `Its best areas for you · ${matches.length.toLocaleString()} match`}
+          : `Its best areas for you · ${inTop > 0 ? `${inTop.toLocaleString()} in your top ${cap}` : `none in your top ${cap}`}`}
       </h3>
       {matches.length > 0 && (
         <ul className="mt-1">
@@ -464,7 +469,9 @@ export function CountyBestAreas({
         onClick={onSeeAll}
         className="mt-1 px-1 text-label font-semibold text-emerald-700 hover:underline dark:text-emerald-400"
       >
-        {matches.length > 3 ? `See all ${matches.length.toLocaleString()} matching areas →` : `Explore inside ${countyLabel} →`}
+        {inTop > 0
+          ? `See ${inTop === 1 ? "its 1 area" : `all ${inTop.toLocaleString()} areas`} in your top ${cap} →`
+          : `Explore inside ${countyLabel} →`}
       </button>
     </section>
   );

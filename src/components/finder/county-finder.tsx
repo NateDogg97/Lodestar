@@ -384,8 +384,9 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     setPreviewArea(i);
     if (fly && i !== null) setPreviewFly((n) => n + 1);
   }, []);
-  // Inside a county: its matching areas, best 5 first, 5 more at a time (owner).
-  const [insideShown, setInsideShown] = useState(5);
+  // Inside a county: its areas in your top results; "Reveal full county" shows every
+  // area (owner, 2026-10-04).
+  const [insideAll, setInsideAll] = useState(false);
 
   const reset = (to: Preferences) => {
     setPrefs(to);
@@ -436,19 +437,23 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   };
   const leaveInside = () => {
     setHoverAreas([]);
-    setInsideShown(5);
+    setInsideAll(false);
     setInsideFips(null);
     setSelectedArea(null);
   };
 
   // Inside a county, ranked by the same national scores as the results (Phase 8f):
-  // only the areas that pass the search, best first.
+  // its areas among your top results, best first — or, revealed, all of them.
   const areaRanking = useMemo<AreaRankingView | null>(() => {
     if (!insideOpen || areasState.status !== "ready" || !national || !nscores) return null;
     const fips = areasState.data.areas.county;
     const matches = countyMatches(national, nscores, fips, deferred.includeUnknown);
     const indexByGeoid = new Map<string, number>();
     for (let i = 0; i < national.n; i++) if (national.county[i] === fips) indexByGeoid.set(national.geoid[i], i);
+    const inTop = new Set(topIdx);
+    const topHere = matches.filter((i) => inTop.has(i));
+    const matching = new Set(matches);
+    const ruledOut = [...indexByGeoid.values()].filter((i) => !matching.has(i));
     return {
       areas: national,
       scores: nscores,
@@ -456,11 +461,15 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       county: scoresByFips.get(fips),
       matches,
       indexByGeoid,
-      shown: insideShown,
-      onShowMore: () => setInsideShown((n) => n + 5),
+      listed: insideAll ? matches : topHere,
+      inTop: topHere.length,
+      cap: resultCap,
+      revealed: insideAll,
+      onReveal: setInsideAll,
+      ruledOut,
       hiddenCount: areasState.data.areas.areas.length - matches.length,
     };
-  }, [insideOpen, areasState, national, nscores, nationalSearch, scoresByFips, deferred.includeUnknown, insideShown]);
+  }, [insideOpen, areasState, national, nscores, nationalSearch, scoresByFips, deferred.includeUnknown, topIdx, resultCap, insideAll]);
 
   const baseInsideLayer = useMemo<Omit<InsideLayer, "highlight"> | null>(() => {
     if (!insideOpen || areasState.status !== "ready") return null;
@@ -474,16 +483,16 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       onSelectArea: selectArea,
     };
     if (areaRanking) {
-      // Drawn: the county's areas in your top results, plus the ones listed (best 5, then
-      // more); the rest stay blank, like counties outside the results (owner, 2026-10-04).
-      // Colored by rank among those drawn, best deep green — as counties are by rank.
-      const inTop = new Set(topIdx);
-      const listed = new Set(areaRanking.matches.slice(0, areaRanking.shown));
-      const drawn = areaRanking.matches.filter((i) => inTop.has(i) || listed.has(i));
+      // Drawn: the areas listed — your top results here, or all when revealed; the rest
+      // stay blank, like counties outside the results (owner, 2026-10-04). Colored by rank
+      // among those drawn, best deep green, as counties are. Revealed, the areas that
+      // fail a must-have are grey (-1).
+      const drawn = areaRanking.listed;
       const values = new Map<string, number | null>(areas.areas.map((a) => [a.geoid, null]));
       drawn.forEach((i, rank) =>
         values.set(areaRanking.areas.geoid[i], drawn.length > 1 ? 100 * (1 - rank / (drawn.length - 1)) : 100),
       );
+      if (areaRanking.revealed) for (const i of areaRanking.ruledOut) values.set(areaRanking.areas.geoid[i], -1);
       return {
         ...common,
         palette: "score" as const,
@@ -507,7 +516,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         high: formatArea(areaMeasure, vals.at(-1)?.[1] ?? null),
       },
     };
-  }, [insideOpen, areasState, areaRanking, topIdx, selectedArea, areaFocus]);
+  }, [insideOpen, areasState, areaRanking, selectedArea, areaFocus]);
   // Hovering the list outlines areas on the map. Kept apart so a hover doesn't
   // rebuild the colors above (the map recolors when `values` changes).
   const insideLayer = useMemo<InsideLayer | null>(
@@ -557,9 +566,11 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   const openArea = (i: number) => {
     if (!national) return;
     const fips = national.county[i];
-    selectFromList(fips);
+    // Not selectFromList: that zooms to the county, and this zooms to the area.
+    select(fips);
     setInsideFips(fips);
-    setInsideShown(5);
+    // An area outside your top results (a county's best, say) shows the full county.
+    setInsideAll(!topIdx.includes(i));
     selectArea(national.geoid[i]);
   };
   const openCounty = (fips: string) => {
@@ -596,9 +607,14 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
                   search={nationalSearch}
                   county={selected}
                   matches={selectedMatches}
+                  inTop={countyResults.find((c) => c.fips === selected.fips)?.areas.length ?? 0}
+                  cap={resultCap}
                   countyLabel={scoped.countyName[selected.index]}
                   onOpenArea={openArea}
-                  onSeeAll={() => setInsideFips(selected.fips)}
+                  onSeeAll={() => {
+                    setInsideAll(false);
+                    setInsideFips(selected.fips);
+                  }}
                 />
               ),
             }

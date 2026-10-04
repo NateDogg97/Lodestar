@@ -1665,8 +1665,10 @@ neighborhood near a specific school), not a county average. Decided with the own
 - **Map by zoom — the results grow as you zoom out** (owner): states with a count of
   matching areas when zoomed far out; counties with their count in between; the areas
   themselves when zoomed in (only top-N areas; geometry loaded per county as needed).
-- **Inside a county: only the areas that match**, best 5 first, "Show 5 more" for the next
-  ones; the rest stay off the map, so it's not every area ranked at once.
+- **Inside a county: only its areas in your top results** (top 100/250/500, whichever is
+  chosen) — one if one is, fifteen if fifteen are; the rest stay off the map. "Reveal full
+  county" lists and draws every area (failing ones grey); "Hide weaker results" goes back
+  (owner, 2026-10-04; replaced "best 5, Show 5 more").
 - Mockup first (owner, 2026-10-03): area page, county page and results list reorganized
   around "Your search" — https://claude.ai/artifact/BM9S29sxGTLmV87V2Lj72X (private).
 - **Results list holds the summaries** (owner, 2026-10-03, after the mockup): each result
@@ -1705,10 +1707,12 @@ neighborhood near a specific school), not a county average. Decided with the own
 - [x] Filters: area measures in their topic sections (new **Safety** section), tagged
   "By area" / "County-wide"; the "Inside a county" section is gone. "Show N areas" when
   results are areas.
-- [x] Inside a county: only matching areas, best 5 + "Show 5 more", fingerprints; the area
+- [x] Inside a county: its areas in your top results, "Reveal full county" / "Hide weaker
+  results", fingerprints; the county page says "See all N areas in your top 100". Opening an
+  area from the results zooms to the area, not the county (2026-10-04). The area
   page's breakdown uses national percentiles ("lower than 97% of US areas"); "← Results"
   plus a county link.
-- [x] Inside a county, the map draws only its areas in your results plus the ones listed,
+- [x] Inside a county, the map draws only the areas listed,
   colored by rank among them (best deep green); the rest stay blank, and the county's own
   fill is hidden underneath (it had shown through as one color — fixed 2026-10-04).
 - [x] County page in area mode leads with its best 3 areas and shows its best area's score.

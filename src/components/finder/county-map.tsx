@@ -201,12 +201,15 @@ const AREA_FILL = [
   ["interpolate", ["linear"], ["feature-state", "v"], ...AREA_STOPS],
   UNKNOWN_COLOR,
 ] as unknown as ExpressionSpecification;
-// Areas not listed (not a match, or beyond the shown ones) aren't filled: focus (owner).
+// Areas not listed aren't filled: focus (owner). Revealed, those failing a must-have
+// are grey (-1).
 const AREA_SCORE_FILL = [
   "case",
-  ["==", ["typeof", ["feature-state", "v"]], "number"],
-  ["interpolate", ["linear"], ["feature-state", "v"], ...SCORE_STOPS],
+  ["!=", ["typeof", ["feature-state", "v"]], "number"],
   "rgba(0,0,0,0)",
+  ["<", ["feature-state", "v"], 0],
+  UNKNOWN_COLOR,
+  ["interpolate", ["linear"], ["feature-state", "v"], ...SCORE_STOPS],
 ] as unknown as ExpressionSpecification;
 
 function bboxOf(geometry: Geometry): [number, number, number, number] {
@@ -472,6 +475,8 @@ export default function CountyMap({
   const insideFips = inside?.fips ?? null;
   const insideShapes = inside?.shapes ?? null;
   const tractFeatures = useRef<Map<string, Geometry>>(new Map());
+  const insideFocus = inside?.focus ?? null;
+  const zoomedArea = useRef<typeof insideFocus>(null);
   useEffect(() => {
     const map = mapRef.current;
     if (!ready || !map || !insideFips || !insideShapes) return;
@@ -493,8 +498,11 @@ export default function CountyMap({
     map.addLayer({ id: "tract-selected", type: "line", source: "tracts",
       paint: { "line-color": dark ? "#fff" : "#111",
         "line-width": ["case", ["boolean", ["feature-state", "selected"], false], 3, 0] } });
+    // An area picked from the results zooms to that area (the effect below), not the county.
+    const pending = latest.current.inside?.focus;
+    const toArea = !!pending && pending !== zoomedArea.current && tractFeatures.current.has(pending.geoid);
     const b = shapesRef.current?.bounds.get(insideFips);
-    if (b) {
+    if (b && !toArea) {
       const inset = latest.current.bottomInset;
       map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: { top: 30, left: 30, right: 30, bottom: inset + 30 }, duration: 600 });
     }
@@ -635,9 +643,7 @@ export default function CountyMap({
     };
   }, [ready, marks, dark]);
 
-  // A pick from the area list zooms to it.
-  const insideFocus = inside?.focus ?? null;
-  const zoomedArea = useRef<typeof insideFocus>(null);
+  // A pick from the area list or the results zooms to it — once its county's shapes are in.
   useEffect(() => {
     const map = mapRef.current;
     const g = insideFocus && tractFeatures.current.get(insideFocus.geoid);
@@ -646,7 +652,7 @@ export default function CountyMap({
     const [x0, y0, x1, y1] = bboxOf(g);
     const inset = Math.min(latest.current.bottomInset, map.getContainer().clientHeight * 0.6);
     map.fitBounds([[x0, y0], [x1, y1]], { padding: { top: 60, left: 60, right: 60, bottom: inset + 60 }, maxZoom: 13, duration: 600 });
-  }, [ready, insideFocus]);
+  }, [ready, insideFocus, insideFips, insideShapes]);
 
   // Recolor on every re-score: feature state only, geometry is never re-uploaded.
   // Every county is written so a county that drops out of the top is cleared.

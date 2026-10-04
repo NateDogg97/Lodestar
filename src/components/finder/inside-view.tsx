@@ -42,9 +42,18 @@ export interface AreaRankingView {
   /** National indices of the county's areas that pass the search, best first. */
   matches: number[];
   indexByGeoid: Map<string, number>;
-  /** How many matches the list and map show: best 5, then 5 more at a time (owner). */
-  shown: number;
-  onShowMore: () => void;
+  /**
+   * What the list and map show (owner, 2026-10-04): the county's areas among your top
+   * results (`cap`: 100, 250 or 500) — or every match, once revealed.
+   */
+  listed: number[];
+  /** How many of the county's areas are in your top results. */
+  inTop: number;
+  cap: number;
+  revealed: boolean;
+  onReveal: (all: boolean) => void;
+  /** National indices of the county's areas that fail the search (shown grey when revealed). */
+  ruledOut: number[];
   /** The county's areas the search rules out (or unknown, when unknowns are hidden). */
   hiddenCount: number;
 }
@@ -104,7 +113,7 @@ export function InsideView({
             {areas && (
               <p className="mt-0.5 text-label text-neutral-500">
                 {ranking
-                  ? `${ranking.matches.length.toLocaleString()} of ${areas.areas.length.toLocaleString()} areas match your search`
+                  ? `${ranking.inTop.toLocaleString()} in your top ${ranking.cap} · ${ranking.matches.length.toLocaleString()} of ${areas.areas.length.toLocaleString()} areas match your search`
                   : `${areas.areas.length.toLocaleString()} areas · grouped by city, town or community`}
               </p>
             )}
@@ -217,55 +226,75 @@ function MatchList({
   onSelect: (geoid: string) => void;
   onHover: (geoids: string[]) => void;
 }) {
-  const { matches, shown } = ranking;
-  if (matches.length === 0) {
-    return <p className="py-8 text-center text-label text-neutral-500">No area here meets your must-haves.</p>;
-  }
-  return (
-    <>
-      {ranking.hiddenCount > 0 && (
-        <p className="mt-1 text-caption text-neutral-500">
-          {ranking.hiddenCount.toLocaleString()} {ranking.hiddenCount === 1 ? "area doesn't" : "areas don't"} pass your
-          must-haves.
-        </p>
-      )}
-      <ol className="mt-3 divide-y divide-neutral-200 dark:divide-neutral-800" onMouseLeave={() => onHover([])}>
-        {matches.slice(0, shown).map((i, rank) => {
-          const geoid = ranking.areas.geoid[i];
-          const a = areas.byGeoid.get(geoid);
-          const parts = explainArea(ranking.areas, i, ranking.search, ranking.county);
-          const score = ranking.scores.score[i];
-          return (
-            <li key={geoid} className="flex items-center gap-1 hover:bg-neutral-100 dark:hover:bg-neutral-900">
-              <button
-                type="button"
-                onClick={() => onSelect(geoid)}
-                onMouseEnter={() => onHover([geoid])}
-                onFocus={() => onHover([geoid])}
-                className="flex min-w-0 flex-1 items-start gap-2 py-3 text-left"
-              >
-                <span className="w-6 pt-0.5 text-label tabular-nums text-neutral-500">{rank + 1}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-body font-semibold">{ranking.areas.name[i]}</span>
-                  <span className="block truncate text-caption text-neutral-600 dark:text-neutral-400">{tradeOff(parts)}</span>
-                  <Fingerprint parts={parts} />
-                </span>
-                {!Number.isNaN(score) && <MatchScore score={score} />}
-              </button>
-              {a && <Caution flags={headlineFlags(a)} />}
-            </li>
-          );
-        })}
-      </ol>
-      {shown < matches.length && (
+  const { listed, revealed } = ranking;
+  const toggle = (
+    <button
+      type="button"
+      onClick={() => ranking.onReveal(!revealed)}
+      className="mt-3 w-full rounded-lg border border-neutral-300 py-2 text-label font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+    >
+      {revealed ? `Hide weaker results — only your top ${ranking.cap}` : "Reveal full county"}
+    </button>
+  );
+  const row = (i: number, rank: number | null) => {
+    const geoid = ranking.areas.geoid[i];
+    const a = areas.byGeoid.get(geoid);
+    const scored = rank !== null;
+    const parts = scored ? explainArea(ranking.areas, i, ranking.search, ranking.county) : [];
+    const score = ranking.scores.score[i];
+    return (
+      <li key={geoid} className="flex items-center gap-1 hover:bg-neutral-100 dark:hover:bg-neutral-900">
         <button
           type="button"
-          onClick={ranking.onShowMore}
-          className="mt-3 w-full rounded-lg border border-neutral-300 py-2 text-label font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+          onClick={() => onSelect(geoid)}
+          onMouseEnter={() => onHover([geoid])}
+          onFocus={() => onHover([geoid])}
+          className="flex min-w-0 flex-1 items-start gap-2 py-3 text-left"
         >
-          Show {Math.min(5, matches.length - shown)} more areas
+          <span className="w-6 pt-0.5 text-label tabular-nums text-neutral-500">{scored ? rank + 1 : ""}</span>
+          <span className="min-w-0 flex-1">
+            <span className={`block truncate ${scored ? "text-body font-semibold" : "text-label"}`}>{ranking.areas.name[i]}</span>
+            {scored && (
+              <>
+                <span className="block truncate text-caption text-neutral-600 dark:text-neutral-400">{tradeOff(parts)}</span>
+                <Fingerprint parts={parts} />
+              </>
+            )}
+          </span>
+          {scored && !Number.isNaN(score) && <MatchScore score={score} />}
         </button>
+        {a && <Caution flags={headlineFlags(a)} />}
+      </li>
+    );
+  };
+  return (
+    <>
+      {listed.length === 0 && (
+        <p className="py-6 text-center text-label text-neutral-500">
+          {ranking.matches.length === 0
+            ? "No area here meets your must-haves."
+            : `None of its areas are in your top ${ranking.cap}. Reveal the county to see its ${ranking.matches.length.toLocaleString()} matching ${ranking.matches.length === 1 ? "area" : "areas"}.`}
+        </p>
       )}
+      {listed.length > 0 && (
+        <ol className="mt-3 divide-y divide-neutral-200 dark:divide-neutral-800" onMouseLeave={() => onHover([])}>
+          {listed.map((i, rank) => row(i, rank))}
+        </ol>
+      )}
+      {revealed && ranking.ruledOut.length > 0 && (
+        <>
+          <h3 className="mt-5 text-label font-semibold text-neutral-500">
+            {ranking.ruledOut.length.toLocaleString()} {ranking.ruledOut.length === 1 ? "area doesn't" : "areas don't"} pass
+            your must-haves
+          </h3>
+          <ul className="divide-y divide-neutral-200 dark:divide-neutral-800" onMouseLeave={() => onHover([])}>
+            {[...ranking.ruledOut]
+              .sort((x, y) => ranking.areas.name[x].localeCompare(ranking.areas.name[y]))
+              .map((i) => row(i, null))}
+          </ul>
+        </>
+      )}
+      {(revealed || ranking.matches.length > listed.length || ranking.hiddenCount > 0) && toggle}
     </>
   );
 }
