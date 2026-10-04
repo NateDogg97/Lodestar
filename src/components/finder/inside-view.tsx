@@ -78,52 +78,59 @@ interface Props {
   onBackToResults: () => void;
 }
 
-export function InsideView({
-  countyName,
-  state,
-  ranking,
-  fallbackMeasure,
-  onEditFilters,
-  selected,
-  onSelect,
-  onHover,
-  onBack,
-  onBackToResults,
-}: Props) {
+/**
+ * The back link and identity of what's open inside a county: the area's name and rank,
+ * or "Inside <county>". On phones this is the sheet's drag header (like `PlaceIdentity`
+ * for a county), so it isn't repeated in the body (full audit, 2026-10-04).
+ */
+export function InsideIdentity({ countyName, state, ranking, selected, onSelect, onBack, onBackToResults }: Props) {
+  const areas = state.status === "ready" ? state.data.areas : null;
+  const area = selected && areas ? (areas.byGeoid.get(selected) ?? null) : null;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={area ? onBackToResults : onBack}
+        className="-ml-1 rounded px-1 text-label font-medium text-emerald-700 hover:underline dark:text-emerald-400"
+      >
+        ← {area ? "Results" : countyName}
+      </button>
+      {area ? (
+        <AreaHeader
+          area={area}
+          side={sideOf(ranking, area.geoid)}
+          rank={overallRank(ranking, area.geoid)}
+          countyName={countyName}
+          onCounty={() => onSelect(null)}
+        />
+      ) : (
+        <>
+          <h2 className="mt-1 text-heading font-semibold">Inside {countyName}</h2>
+          {areas && (
+            <p className="mt-0.5 text-label text-neutral-500">
+              {ranking
+                ? `${ranking.inTop.toLocaleString()} in your top ${ranking.cap} · ${ranking.matches.length.toLocaleString()} of ${areas.areas.length.toLocaleString()} areas match your search`
+                : `${areas.areas.length.toLocaleString()} areas · grouped by city, town or community`}
+            </p>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+export function InsideView(props: Props & { withIdentity?: boolean }) {
+  const { countyName, state, ranking, fallbackMeasure, onEditFilters, selected, onSelect, onHover, withIdentity = true } = props;
   const areas = state.status === "ready" ? state.data.areas : null;
   const area = selected && areas ? (areas.byGeoid.get(selected) ?? null) : null;
 
   return (
     <div>
-      <div className="px-gutter pt-4">
-        <button
-          type="button"
-          onClick={area ? onBackToResults : onBack}
-          className="-ml-1 rounded px-1 text-label font-medium text-emerald-700 hover:underline dark:text-emerald-400"
-        >
-          ← {area ? "Results" : countyName}
-        </button>
-        {area ? (
-          <AreaHeader
-            area={area}
-            side={sideOf(ranking, area.geoid)}
-            rank={overallRank(ranking, area.geoid)}
-            countyName={countyName}
-            onCounty={() => onSelect(null)}
-          />
-        ) : (
-          <>
-            <h2 className="mt-1 text-heading font-semibold">Inside {countyName}</h2>
-            {areas && (
-              <p className="mt-0.5 text-label text-neutral-500">
-                {ranking
-                  ? `${ranking.inTop.toLocaleString()} in your top ${ranking.cap} · ${ranking.matches.length.toLocaleString()} of ${areas.areas.length.toLocaleString()} areas match your search`
-                  : `${areas.areas.length.toLocaleString()} areas · grouped by city, town or community`}
-              </p>
-            )}
-          </>
-        )}
-      </div>
+      {withIdentity && (
+        <div className="px-gutter pt-4">
+          <InsideIdentity {...props} />
+        </div>
+      )}
 
       {state.status === "loading" && <Note>Loading areas…</Note>}
       {state.status === "error" && <Note>{state.message}</Note>}
@@ -545,7 +552,7 @@ function AreaHeader({
               <span className="block text-caption text-neutral-500">of your top {rank.of}</span>
             </>
           ) : (
-            <span className="block max-w-24 text-caption text-neutral-500">Not in your top {rank.of}</span>
+            <span className="block text-caption whitespace-nowrap text-neutral-500">Not in your top {rank.of}</span>
           )}
         </div>
       )}

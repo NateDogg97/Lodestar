@@ -37,7 +37,7 @@ import {
   toScoringInput,
   type Preferences,
 } from "./preferences";
-import { InsideView } from "./inside-view";
+import { InsideIdentity, InsideView } from "./inside-view";
 import { ResultsList } from "./results-list";
 import { addRecent, initialSearch } from "./searches-store";
 import { encodeSearch } from "./search-url";
@@ -789,25 +789,29 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       )}
       {insideOpen && placeProps && (
         <div key={`inside-${placeProps.score.fips}-${selectedArea ?? ""}`} className="absolute inset-0 overflow-y-auto overscroll-contain">
-          <InsideView
-            countyName={`${scoped.countyName[placeProps.score.index]}, ${scoped.state[placeProps.score.index]}`}
-            state={areasState}
-            ranking={areaRanking}
-            fallbackMeasure={areaMeasure}
-            onEditFilters={() => setFiltersOpen(true)}
-            selected={selectedArea}
-            onSelect={selectArea}
-            onHover={setHoverAreas}
-            onBack={leaveInside}
-            onBackToResults={() => {
-              leaveInside();
-              backToList();
-            }}
-          />
+          <InsideView {...insideProps!} withIdentity={withIdentity} />
         </div>
       )}
     </div>
   );
+  // Inside a county (its areas, or one area): on phones the identity is the sheet's header.
+  const insideProps = insideOpen && placeProps
+    ? {
+        countyName: `${scoped.countyName[placeProps.score.index]}, ${scoped.state[placeProps.score.index]}`,
+        state: areasState,
+        ranking: areaRanking,
+        fallbackMeasure: areaMeasure,
+        onEditFilters: () => setFiltersOpen(true),
+        selected: selectedArea,
+        onSelect: selectArea,
+        onHover: setHoverAreas,
+        onBack: leaveInside,
+        onBackToResults: () => {
+          leaveInside();
+          backToList();
+        },
+      }
+    : null;
 
   const map = (
     <CountyMap
@@ -989,9 +993,10 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
             areaHeight={areaHeight}
             header={
               showPlace && placeProps ? (
-                // At 25% the sheet still says which county this is.
+                // At 25% the sheet still says which place this is: the county, or the area
+                // (or "Inside …") when exploring inside it.
                 <div className="px-4 pb-2">
-                  <PlaceIdentity {...placeProps} />
+                  {insideProps ? <InsideIdentity {...insideProps} /> : <PlaceIdentity {...placeProps} />}
                 </div>
               ) : (
                 <div className="flex items-baseline gap-1.5 px-4 pb-2">
