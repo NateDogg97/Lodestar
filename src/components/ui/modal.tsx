@@ -10,13 +10,14 @@ interface Props {
   headerExtra?: ReactNode;
   /** Pinned under the scrolling body, e.g. Reset / Show N. */
   footer?: ReactNode;
-  /** large: the Filters workspace; medium: a narrower sheet sized to its content. */
-  size?: "large" | "medium";
+  /** large: the Filters workspace; panel: Settings (pages beside a smaller page); medium: a narrower sheet sized to its content. */
+  size?: "large" | "panel" | "medium";
   children: ReactNode;
 }
 
 const SIZES = {
   large: "md:h-[min(85dvh,52rem)] md:w-[min(92vw,60rem)]",
+  panel: "md:h-[min(85dvh,40rem)] md:w-[min(92vw,48rem)]",
   // fit, not auto: a modal <dialog> is fixed with inset 0, so an auto height
   // stretches to the viewport (the UA default is fit-content for that reason).
   medium: "md:h-fit md:max-h-[min(85dvh,52rem)] md:w-[min(92vw,36rem)]",

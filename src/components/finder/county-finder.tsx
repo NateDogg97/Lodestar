@@ -143,6 +143,8 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   const [resetKey, setResetKey] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Filters' Saved page (here so the tour can open it).
+  const [filtersSaved, setFiltersSaved] = useState(false);
   const theme = useTheme();
 
   // Law sources and per-value state counts for the Filters modal.
@@ -668,6 +670,8 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       categoryCounts={categoryCounts}
       onOpenSearch={openSearch}
       getShareUrl={shareUrl}
+      savedOpen={filtersSaved}
+      onSavedOpen={setFiltersSaved}
     />
   );
 
@@ -851,6 +855,8 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   const closeTour = () => {
     markTourSeen();
     setTour("closed");
+    setFiltersOpen(false);
+    setFiltersSaved(false);
     if (!wide) setSheetSnap(SHEET_START);
   };
   const startTour = () => {
@@ -863,16 +869,26 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   };
   // Phones: raise the results sheet to the step's height; wide: keep the panel open.
   const showSheet = (snap: number) => () => {
+    setFiltersOpen(false);
+    setFiltersSaved(false);
     if (wide) setResultsOpen(true);
     else setSheetSnap(snap);
+  };
+  const showFilters = (saved: boolean) => () => {
+    setFiltersSaved(saved);
+    setFiltersOpen(true);
   };
   const tourSteps: TourStep[] = [
     {
       title: "Welcome to Lodestar",
       body: "Find the US neighborhoods that fit what matters to you. Here’s a one-minute look around.",
+      prepare: () => {
+        setFiltersOpen(false);
+        setFiltersSaved(false);
+      },
     },
     {
-      target: "filters",
+      target: "filter-modes",
       title: "Tell it what matters",
       body: (
         <>
@@ -880,7 +896,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
           cap, certain states, a climate.
         </>
       ),
-      prepare: showSheet(1),
+      prepare: showFilters(false),
     },
     {
       target: "first-result",
@@ -911,9 +927,16 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       prepare: showSheet(2),
     },
     {
-      target: "filters",
-      title: "Save, share, replay",
-      body: "Save a search, or share it by email, text or link, from Filters → Saved. You can replay this tour any time from Settings.",
+      target: "save-share",
+      title: "Save and share",
+      body: "Name and save a search to come back to it, or share it by email, text or link.",
+      prepare: showFilters(true),
+    },
+    {
+      target: "settings",
+      title: "That’s all!",
+      body: "You can replay this tour any time from Settings.",
+      final: "Point the way",
       prepare: showSheet(1),
     },
   ];

@@ -146,6 +146,9 @@ interface Props {
   onOpenSearch: (prefs: Preferences) => void;
   /** This search's link, for Share on the Saved tab. */
   getShareUrl: () => string;
+  /** The Saved page instead of the filters (held by the parent, so the tour can open it). */
+  savedOpen: boolean;
+  onSavedOpen: (open: boolean) => void;
 }
 
 export function FiltersModal({
@@ -163,11 +166,12 @@ export function FiltersModal({
   categoryCounts,
   onOpenSearch,
   getShareUrl,
+  savedOpen,
+  onSavedOpen: setSavedOpen,
 }: Props) {
   const [mode, setMode] = useState<FiltersMode>("priorities");
   // The Saved button swaps the body for saved and recent searches; the tabs,
   // or the button again, bring the filters back.
-  const [savedOpen, setSavedOpen] = useState(false);
   const [section, setSection] = useState<SectionId>("cost");
   const pane = useRef<HTMLDivElement>(null);
   const active = countActiveFilters(prefs);
@@ -224,7 +228,7 @@ export function FiltersModal({
         </>
       }
     >
-      <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-gutter py-3 md:px-6 dark:border-neutral-800">
+      <div data-tour="filter-modes" className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-gutter py-3 md:px-6 dark:border-neutral-800">
         <div role="tablist" aria-label="Filter type" className="grid flex-1 grid-cols-2 rounded-full bg-neutral-100 p-1 md:max-w-sm md:flex-none dark:bg-neutral-900">
           {(["priorities", "musts"] as const).map((m) => (
             <button
@@ -251,7 +255,7 @@ export function FiltersModal({
         <InfoTip label={mode === "priorities" ? "priorities" : "must-haves"}>{MODE_TIPS[mode]}</InfoTip>
         <button
           type="button"
-          onClick={() => setSavedOpen((o) => !o)}
+          onClick={() => setSavedOpen(!savedOpen)}
           aria-pressed={savedOpen}
           title="Saved and recent searches"
           className={`ml-auto flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1.5 text-label font-medium sm:px-3 ${

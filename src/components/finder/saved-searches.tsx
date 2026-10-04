@@ -55,7 +55,7 @@ export function SavedSearches({
 
   return (
     <div className="space-y-section px-gutter py-5 md:px-6">
-      <section>
+      <section data-tour="save-share">
         <div className="mb-1 flex items-center justify-between gap-3">
           <h3 className="text-title font-semibold">Save this search</h3>
           <ShareButton getUrl={getShareUrl} />

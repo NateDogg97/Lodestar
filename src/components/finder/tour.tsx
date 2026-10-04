@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 /**
@@ -8,6 +8,11 @@ import { createPortal } from "react-dom";
  * spotlight a real control (`data-tour="…"`) with a short card. Passive — Next moves
  * on; nothing has to be done. Escape skips, ← and → step. On phones the card docks to
  * the top or bottom edge, whichever doesn't cover the spotlight.
+ *
+ * It renders inside an open modal <dialog> when there is one (a step can open Filters):
+ * a modal makes the rest of the page inert and sits above it, so the tour has to be in it.
+ * The card stays hidden until its spotlight and its own size are known, so it appears
+ * in place rather than jumping there.
  */
 
 export interface TourStep {
@@ -19,6 +24,8 @@ export interface TourStep {
   optional?: boolean;
   /** Run when the step opens: raise the phone sheet, open the panel… */
   prepare?: () => void;
+  /** The closing card: no step count, and its button (this label) ends the tour. */
+  final?: string;
 }
 
 /** Shown once per device; bump to show it again after a big redesign. */
@@ -64,7 +71,7 @@ export function Tour({ steps, onClose }: { steps: TourStep[]; onClose: () => voi
   const [dir, setDir] = useState<1 | -1>(1);
   const [rect, setRect] = useState<Rect | null>(null);
   const [cardSize, setCardSize] = useState({ w: 0, h: 0 });
-  const card = useRef<HTMLDivElement>(null);
+  const [host, setHost] = useState<HTMLElement | null>(null);
   const primary = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   const step = steps[index];
@@ -79,27 +86,31 @@ export function Tour({ steps, onClose }: { steps: TourStep[]; onClose: () => voi
   };
 
   // Each step: prepare the page, then follow its control (it can move: the sheet
-  // animates, the panel opens). An optional step whose control never shows is skipped.
+  // animates, the panel opens) and the modal it may be in. An optional step whose
+  // control never shows is skipped.
   useEffect(() => {
     step.prepare?.();
-    if (!step.target) return;
     const started = performance.now();
     let scrolled = false;
     let frame = 0;
     const tick = () => {
-      const el = findTarget(step.target!);
-      if (el) {
-        if (!scrolled) {
-          el.scrollIntoView({ block: "nearest" });
-          scrolled = true;
+      const dialog = document.querySelector<HTMLElement>("dialog[open]") ?? document.body;
+      setHost((h) => (h === dialog ? h : dialog));
+      if (step.target) {
+        const el = findTarget(step.target);
+        if (el) {
+          if (!scrolled) {
+            el.scrollIntoView({ block: "nearest" });
+            scrolled = true;
+          }
+          const r = el.getBoundingClientRect();
+          const next = { top: r.top, left: r.left, width: r.width, height: r.height };
+          setRect((prev) => (sameRect(prev, next) ? prev : next));
+        } else if (step.optional && performance.now() - started > 900) {
+          setRect(null);
+          setIndex((i) => Math.min(steps.length - 1, Math.max(0, i + dir)));
+          return;
         }
-        const r = el.getBoundingClientRect();
-        const next = { top: r.top, left: r.left, width: r.width, height: r.height };
-        setRect((prev) => (sameRect(prev, next) ? prev : next));
-      } else if (step.optional && performance.now() - started > 900) {
-        setRect(null);
-        setIndex((i) => Math.min(steps.length - 1, Math.max(0, i + dir)));
-        return;
       }
       frame = requestAnimationFrame(tick);
     };
@@ -109,21 +120,23 @@ export function Tour({ steps, onClose }: { steps: TourStep[]; onClose: () => voi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index]);
 
-  // The card's size, to place it beside the spotlight.
-  useEffect(() => {
-    const el = card.current;
+  // The card's size, to place it beside the spotlight. A callback ref: the card moves
+  // into a modal and back, so it isn't always the same element.
+  const observer = useRef<ResizeObserver | null>(null);
+  const card = useCallback((el: HTMLDivElement | null) => {
+    observer.current?.disconnect();
     if (!el) return;
     const ro = new ResizeObserver(() => {
       const { width, height } = el.getBoundingClientRect();
       setCardSize((s) => (s.w === width && s.h === height ? s : { w: width, h: height }));
     });
     ro.observe(el);
-    return () => ro.disconnect();
+    observer.current = ro;
   }, []);
 
   useEffect(() => {
     primary.current?.focus();
-  }, [index]);
+  }, [index, host]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -155,7 +168,10 @@ export function Tour({ steps, onClose }: { steps: TourStep[]; onClose: () => voi
     cardStyle = { top, left };
   }
 
-  const progress = steps.length - 1; // the welcome card isn't counted
+  // Not counted: the welcome card and the closing one.
+  const progress = steps.filter((s) => !s.final).length - 1;
+  const placed = (!step.target || rect !== null) && cardSize.h > 0;
+  if (!host) return null;
   return createPortal(
     <div className="fixed inset-0 z-[1000]" aria-hidden={false}>
       {rect && step.target ? (
@@ -181,9 +197,9 @@ export function Tour({ steps, onClose }: { steps: TourStep[]; onClose: () => voi
         aria-modal="true"
         aria-labelledby={titleId}
         className="fixed w-[min(22rem,calc(100vw-2rem))] rounded-2xl bg-white p-4 text-neutral-900 shadow-2xl max-md:w-auto dark:bg-neutral-900 dark:text-neutral-100"
-        style={cardStyle}
+        style={{ ...cardStyle, visibility: placed ? "visible" : "hidden" }}
       >
-        {index > 0 && (
+        {index > 0 && !step.final && (
           <p className="text-caption font-medium text-neutral-500 dark:text-neutral-400">
             {index} of {progress}
           </p>
@@ -199,9 +215,11 @@ export function Tour({ steps, onClose }: { steps: TourStep[]; onClose: () => voi
             </button>
           ) : (
             <>
-              <button type="button" onClick={onClose} className="rounded-full px-2 py-2 text-label text-neutral-600 hover:underline dark:text-neutral-400">
-                Skip tour
-              </button>
+              {!step.final && (
+                <button type="button" onClick={onClose} className="rounded-full px-2 py-2 text-label text-neutral-600 hover:underline dark:text-neutral-400">
+                  Skip tour
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => go(index - 1)}
@@ -217,11 +235,11 @@ export function Tour({ steps, onClose }: { steps: TourStep[]; onClose: () => voi
             onClick={() => go(index + 1)}
             className={`${index === 0 ? "ml-auto" : ""} rounded-full bg-neutral-900 px-4 py-2 text-label font-semibold text-white hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300`}
           >
-            {index === 0 ? "Show me around" : last ? "Done" : "Next"}
+            {index === 0 ? "Show me around" : (step.final ?? (last ? "Done" : "Next"))}
           </button>
         </div>
       </div>
     </div>,
-    document.body,
+    host,
   );
 }

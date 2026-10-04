@@ -1779,14 +1779,21 @@ The app has a lot in it (priorities, must-haves, climate cards, saved searches, 
 Explore inside). A first-time visitor should learn the main loop in under a minute.
 
 - [x] A short guided tour the **first time** someone opens the app (`src/components/finder/tour.tsx`):
-      a welcome card, then 6 steps that spotlight the real control (`data-tour="…"`): Filters
-      (priorities vs must-haves) → the #1 result (bars, colors, gold) → a result's name (open
-      it) → the map (counts by zoom) → Areas/Counties → Save, share, replay. Passive (Next,
-      not "do it"); **Skip** on every step. Steps whose control isn't on screen are skipped.
+      a welcome card, then 6 steps that spotlight the real control (`data-tour="…"`): Filters,
+      opened (priorities vs must-haves) → the #1 result (bars, colors, gold) → a result's name
+      (open it) → the map (counts by zoom) → Areas/Counties → Save and share (Filters opened on
+      Saved) — then a closing card on the Settings gear: "That's all! You can replay this tour
+      any time from Settings", button **Point the way** (owner, 2026-10-04). Passive (Next, not
+      "do it"); **Skip** on every step. Steps whose control isn't on screen are skipped. It
+      renders inside an open modal (a modal makes the rest of the page inert), and a card stays
+      hidden until it's placed, so it never flashes in the middle first.
 - [x] Shown once: "seen" in browser storage (`lodestar.tour`, versioned — bump to show it
       again after a redesign), opening once the first results are ready, so a shared link
       gets it after its search loads.
 - [x] Re-open it from Settings → Help ("Show the tour again"); it returns to the results first.
+      Settings is laid out like Filters (owner, 2026-10-04): pages on the left — Appearance,
+      Results, Data sources, Help (last; the tour, "Questions or found a bug?" with the
+      owner's email, and the copyright).
 - [x] Keyboard: Escape skips, ← → step, focus moves to the card. Phones: the card docks to
       the top or bottom edge away from the spotlight, and the results sheet is raised or
       lowered per step. *Not yet checked on a real phone.*
