@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { getMetric } from "@/lib/scoring";
 
 import type { Area } from "./index";
-import { areaCriteria, scoreAreas, type AreaSearch } from "./scoring";
+import { areaCriteria, scoreAreas, topReasons, type AreaSearch } from "./scoring";
 
 const area = (geoid: string, row: Record<string, number | null>): Area => ({
   geoid, label: geoid, group: "G", neighborhood: null, zip: null, population: 1000,
@@ -42,6 +42,10 @@ describe("ranking areas inside a county", () => {
     expect(s.get("a")?.score).toBe(75);
     expect(s.get("b")?.score).toBe(75);
     expect(s.get("c")?.score).toBe(0);
+    // Why: a is cheapest (+50 × 1) and middling on crime (0); its strongest push is home value.
+    const why = s.get("a")!.contributions;
+    expect(why.map((c) => [c.column, c.points, c.impact])).toEqual([["median_home_value", 100, 50], ["violent_rate", 50, 0]]);
+    expect(topReasons(s.get("c"))).toMatchObject({ up: null, down: { column: "median_home_value" } });
   });
 
   it("scores on what an area has; nothing to rank by means no score", () => {
@@ -62,5 +66,6 @@ describe("ranking areas inside a county", () => {
     expect(out.get("a")?.status).toBe("match");
     expect(out.get("b")).toMatchObject({ status: "excluded", failed: ["Walkability"] });
     expect(out.get("c")).toMatchObject({ status: "excluded", unknown: ["Walkability"] });
+    expect(out.get("b")?.limits.map((l) => l.state)).toEqual(["pass", "fail"]);
   });
 });

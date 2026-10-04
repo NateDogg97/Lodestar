@@ -16,6 +16,7 @@ import {
   type AreaCriterion,
   type AreaLimit,
   type AreaScore,
+  topReasons,
   type CountyAreas,
   type School,
 } from "@/lib/tracts";
@@ -105,7 +106,7 @@ export function InsideView({
           onHover={onHover}
         />
       )}
-      {areas && area && <AreaDetail area={area} county={areas} countyName={countyName} />}
+      {areas && area && <AreaDetail area={area} county={areas} countyName={countyName} ranking={ranking} />}
     </div>
   );
 }
@@ -240,6 +241,9 @@ function AreaList({
                         {a.zip ? `ZIP ${a.zip} · ` : ""}
                         {g.population.toLocaleString()} people
                       </span>
+                      <span className="block pl-[1.125rem]">
+                        <Reason s={ranked ? ranking!.scores.get(a.geoid) : undefined} />
+                      </span>
                     </span>
                     <span className="shrink-0">{value(a)}</span>
                   </button>
@@ -294,7 +298,10 @@ function AreaList({
                             {...outline([a.geoid])}
                             className="flex min-w-0 flex-1 items-center justify-between gap-3 py-2 text-left"
                           >
-                            <span className="truncate text-label">{areaName(a)}</span>
+                            <span className="min-w-0">
+                              <span className="block truncate text-label">{areaName(a)}</span>
+                              <Reason s={ranked ? ranking!.scores.get(a.geoid) : undefined} />
+                            </span>
                             <span className="shrink-0">{value(a)}</span>
                           </button>
                           <Caution flags={headlineFlags(a)} />
@@ -308,6 +315,19 @@ function AreaList({
         })}
       </ul>
     </div>
+  );
+}
+
+/** One line of why, under an area in the list: its strongest push up and down. */
+function Reason({ s }: { s: AreaScore | undefined }) {
+  const { up, down } = topReasons(s);
+  if (!up && !down) return null;
+  return (
+    <span className="block truncate text-caption">
+      {up && <span className="text-emerald-700 dark:text-emerald-400">↑ {up.label}</span>}
+      {up && down && <span className="text-neutral-400"> · </span>}
+      {down && <span className="text-rose-700 dark:text-rose-400">↓ {down.label}</span>}
+    </span>
   );
 }
 
@@ -383,7 +403,112 @@ function AreaHeader({ area }: { area: Area }) {
   );
 }
 
-function AreaDetail({ area, county, countyName }: { area: Area; county: CountyAreas; countyName: string }) {
+const BETTER = { lower: "lower is better", higher: "higher is better", middle: "typical is best" } as const;
+
+/** The area's score, broken down like a county's (plan §9 Phase 8e). */
+function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRankingView; countyName: string }) {
+  const s = ranking.scores.get(area.geoid);
+  if (!s) return null;
+  const ranked = [...ranking.scores.values()]
+    .filter((x) => x.score !== null && !ranking.hidden.has(x.geoid))
+    .sort((a, b) => b.score! - a.score!);
+  const place = ranked.findIndex((x) => x.geoid === area.geoid);
+  const { up, down } = topReasons(s);
+  const rows = [...s.contributions].sort((a, b) => (b.impact ?? -Infinity) - (a.impact ?? -Infinity));
+  return (
+    <section className="space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-label font-semibold uppercase tracking-wide text-neutral-500">Why it ranks here</h3>
+          <p className="mt-0.5 text-label">
+            {s.status === "excluded"
+              ? `Ruled out by your must-haves (${s.failed.join(", ") || s.unknown.join(", ")})`
+              : place >= 0
+                ? `${ordinal(place + 1)} of ${ranked.length} areas in ${countyName}`
+                : "Not ranked: no data for your priorities"}
+          </p>
+        </div>
+        {s.score !== null && <ScoreBadge score={s.score} rel={ranking.rel.get(area.geoid)} />}
+      </div>
+      {(up || down) && (
+        <p className="text-label text-neutral-700 dark:text-neutral-300">
+          {up && <>Stronger than most of the county on <strong>{up.label.toLowerCase()}</strong>. </>}
+          {down && <>Weaker on <strong>{down.label.toLowerCase()}</strong>.</>}
+        </p>
+      )}
+      {rows.length > 0 && (
+        <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
+          {rows.map((c) => (
+            <li key={c.column} className="py-2 text-label">
+              <div className="flex items-baseline justify-between gap-3">
+                <span>{c.label}</span>
+                <span className="shrink-0 font-medium tabular-nums">{formatArea(c.column, c.value)}</span>
+              </div>
+              {c.points === null ? (
+                <p className="text-caption text-neutral-500">No data — left out of this area&rsquo;s score (weight {c.weight}).</p>
+              ) : (
+                <>
+                  <div className="mt-1 flex items-center gap-2">
+                    <div
+                      className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800"
+                      role="img"
+                      aria-label={`${Math.round(c.points)} of 100 points`}
+                    >
+                      <div
+                        className={`h-full rounded-full ${c.points >= 50 ? "bg-emerald-500" : "bg-rose-500"}`}
+                        style={{ width: `${Math.max(2, c.points)}%` }}
+                      />
+                    </div>
+                    <span className="w-14 text-right text-caption tabular-nums text-neutral-500">{Math.round(c.points)} pts</span>
+                  </div>
+                  <p className="mt-0.5 text-caption text-neutral-500">
+                    {ordinal(Math.round(c.rawPercentile ?? 0))} percentile in the county · {BETTER[c.direction]} · weight {c.weight} ·{" "}
+                    <span className={(c.impact ?? 0) >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}>
+                      effect {(c.impact ?? 0) >= 0 ? "+" : "−"}
+                      {Math.abs(Math.round(c.impact ?? 0))}
+                    </span>
+                  </p>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {s.limits.length > 0 && (
+        <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
+          {s.limits.map((l) => (
+            <li key={l.column} className="flex items-baseline justify-between gap-3 py-2 text-label">
+              <span>
+                <span aria-hidden className={l.state === "pass" ? "text-emerald-600" : l.state === "fail" ? "text-rose-600" : "text-neutral-400"}>
+                  {l.state === "pass" ? "✓" : l.state === "fail" ? "✕" : "?"}{" "}
+                </span>
+                {l.label}
+                <span className="block text-caption text-neutral-500">
+                  Yours: {[l.min !== undefined && `at least ${formatArea(l.column, l.min)}`, l.max !== undefined && `at most ${formatArea(l.column, l.max)}`].filter(Boolean).join(", ")}
+                </span>
+              </span>
+              <span className={`shrink-0 font-medium tabular-nums ${l.state === "fail" ? "text-rose-700 dark:text-rose-400" : ""}`}>
+                {l.value === null ? "No data" : formatArea(l.column, l.value)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function AreaDetail({
+  area,
+  county,
+  countyName,
+  ranking,
+}: {
+  area: Area;
+  county: CountyAreas;
+  countyName: string;
+  ranking: AreaRankingView | null;
+}) {
   const v = (key: string) => areaValue(area, key);
   const flagged = new Set(area.lowConfidence);
   const r = area.row;
@@ -393,6 +518,9 @@ function AreaDetail({ area, county, countyName }: { area: Area; county: CountyAr
 
   return (
     <div className="space-y-section px-gutter py-4">
+      {ranking && (ranking.criteria.length > 0 || ranking.limits.length > 0) && (
+        <WhyItRanks area={area} ranking={ranking} countyName={countyName} />
+      )}
       <dl className="grid grid-cols-2 gap-2">
         {["zhvi", "median_home_value", "median_gross_rent", "per_capita_income", "walkability", "kids_share"].map((k) => (
           <Stat key={k} k={k} text={formatAreaValue(area, k)} flagged={flagged.has(k)} />

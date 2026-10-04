@@ -59,11 +59,12 @@ export type AreaPriorityKey = string;
  * County priorities that also rank areas, and the area column each reads.
  * `sameUnits`: a county limit (a maximum home value) also applies to areas.
  */
-export const CARRIED_OVER: Partial<Record<MetricKey, { column: string; sameUnits: boolean }>> = {
+export const CARRIED_OVER: Partial<Record<MetricKey, { column: string; sameUnits: boolean; label?: string }>> = {
   median_home_value: { column: "median_home_value", sameUnits: true },
   median_gross_rent: { column: "median_gross_rent", sameUnits: true },
   median_household_income: { column: "median_household_income", sameUnits: true },
-  school_achievement: { column: "nearby_school_pctl", sameUnits: false },
+  // Counties: grade levels; areas: the nearest schools' national percentile.
+  school_achievement: { column: "nearby_school_pctl", sameUnits: false, label: "Nearby schools" },
   hazard_risk: { column: "hazard_risk", sameUnits: false },
   hazard_hurricane: { column: "hazard_hurricane", sameUnits: false },
   hazard_wildfire: { column: "hazard_wildfire", sameUnits: false },
@@ -104,6 +105,26 @@ export interface AreaLimit {
 
 export type AreaStatus = "match" | "unknown" | "excluded";
 
+/** How one measure moved an area's score (the area view's "Why it ranks here"). */
+export interface AreaContribution {
+  column: string;
+  label: string;
+  value: number | null;
+  direction: Direction;
+  weight: number;
+  /** Where the value sits among the county's areas, 0–100 (higher value → higher). */
+  rawPercentile: number | null;
+  /** Points after the direction: higher is always better. */
+  points: number | null;
+  /** weight × (points − 50): how far it pushed the score up or down. */
+  impact: number | null;
+}
+
+export interface AreaLimitResult extends AreaLimit {
+  value: number | null;
+  state: "pass" | "fail" | "unknown";
+}
+
 export interface AreaScore {
   geoid: string;
   /** 0–100 among the county's areas, or null (excluded, or nothing to rank by). */
@@ -111,6 +132,8 @@ export interface AreaScore {
   status: AreaStatus;
   failed: string[];
   unknown: string[];
+  contributions: AreaContribution[];
+  limits: AreaLimitResult[];
 }
 
 export interface AreaRanking {
@@ -132,10 +155,10 @@ export function areaCriteria(
 ): { criteria: AreaCriterion[]; limits: AreaLimit[] } {
   const criteria: AreaCriterion[] = [];
   const limits: AreaLimit[] = [];
-  for (const [key, carry] of Object.entries(CARRIED_OVER) as [MetricKey, { column: string; sameUnits: boolean }][]) {
+  for (const [key, carry] of Object.entries(CARRIED_OVER) as [MetricKey, { column: string; sameUnits: boolean; label?: string }][]) {
     const weight = clampWeight(search.weights[key]);
     if (weight > 0) {
-      criteria.push({ column: carry.column, label: countyLabel(key), weight, from: "county",
+      criteria.push({ column: carry.column, label: carry.label ?? countyLabel(key), weight, from: "county",
         direction: search.directions[key] ?? defaultDirection(key) });
     }
     const l = search.limits[key];
@@ -166,24 +189,47 @@ export function scoreAreas(areas: Area[], criteria: AreaCriterion[], limits: Are
   areas.forEach((a, i) => {
     const failed: string[] = [];
     const unknown: string[] = [];
+    const limitResults: AreaLimitResult[] = [];
     for (const l of limits) {
       const v = value(a, l.column);
-      if (Number.isNaN(v)) unknown.push(l.label);
-      else if ((l.min !== undefined && v < l.min) || (l.max !== undefined && v > l.max)) failed.push(l.label);
+      let state: AreaLimitResult["state"] = "pass";
+      if (Number.isNaN(v)) {
+        unknown.push(l.label);
+        state = "unknown";
+      } else if ((l.min !== undefined && v < l.min) || (l.max !== undefined && v > l.max)) {
+        failed.push(l.label);
+        state = "fail";
+      }
+      limitResults.push({ ...l, value: Number.isNaN(v) ? null : v, state });
     }
     const status: AreaStatus = failed.length ? "excluded" : unknown.length ? "unknown" : "match";
     let sum = 0;
     let weights = 0;
-    criteria.forEach((c, k) => {
+    const contributions: AreaContribution[] = criteria.map((c, k) => {
       const p = pct[k][i];
-      if (Number.isNaN(p)) return;
-      sum += c.weight * directionalScore(p, c.direction);
+      const raw = value(a, c.column);
+      if (Number.isNaN(p)) {
+        return { column: c.column, label: c.label, value: null, direction: c.direction, weight: c.weight,
+          rawPercentile: null, points: null, impact: null };
+      }
+      const points = directionalScore(p, c.direction);
+      sum += c.weight * points;
       weights += c.weight;
+      return { column: c.column, label: c.label, value: raw, direction: c.direction, weight: c.weight,
+        rawPercentile: p, points, impact: c.weight * (points - 50) };
     });
-    out.set(a.geoid, { geoid: a.geoid, status, failed, unknown,
+    out.set(a.geoid, { geoid: a.geoid, status, failed, unknown, contributions, limits: limitResults,
       score: status === "excluded" || weights === 0 ? null : sum / weights });
   });
   return out;
+}
+
+/** The strongest push up and down, for a one-line reason in the list. */
+export function topReasons(s: AreaScore | undefined): { up: AreaContribution | null; down: AreaContribution | null } {
+  const known = (s?.contributions ?? []).filter((c) => c.impact !== null && c.impact !== 0);
+  const up = known.filter((c) => c.impact! > 0).sort((a, b) => b.impact! - a.impact!)[0] ?? null;
+  const down = known.filter((c) => c.impact! < 0).sort((a, b) => a.impact! - b.impact!)[0] ?? null;
+  return { up, down };
 }
 
 export function areaPriority(key: string): AreaPriorityDef | undefined {
