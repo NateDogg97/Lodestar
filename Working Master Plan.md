@@ -1740,10 +1740,15 @@ neighborhood near a specific school), not a county average. Decided with the own
   the Census as backup; then household income, violent crime, average commute,
   walkability. Census home value/rent, income per person and households with kids moved
   to "Homes and people".
-- [ ] **Open: score home value on what?** Scoring and must-haves use the Census (tract by
-  tract, every area, but a 2019–2023 self-reported average running ~23% below Zillow, p10–p90
-  0.87–1.77). The breakdown labels those rows "Census". Option: score on the Census value
-  scaled by its ZIP's Zillow/Census ratio — tract detail at today's prices (ETL change).
+- [x] **Home value and rent at today's prices** (owner, 2026-10-04): scoring, must-haves and
+  summaries use each area's Census value × its ZIP's Zillow / Census ratio (ZHVI for homes,
+  ZORI for rent; `etl/tracts/national.py` `today_prices`). Neighbours keep their differences
+  and the level is current (national median ratio 1.27 homes, 1.28 rent). No Zillow for the
+  ZIP: the county's median ratio, else the national one; ratios outside 0.5–3 are ignored;
+  no Census value: Zillow's ZIP value (coverage 81,264 → 83,771 areas). The area page's
+  tiles show that estimate with Zillow's ZIP value under it. In CI (`--merge-live`) the
+  national fallback ratio comes from the refreshed counties only — close enough, since it
+  only applies where a county has no Zillow at all.
 - [ ] Data overload: one-line sections with verdict words and a smaller number on county
   and area pages.
 

@@ -41,10 +41,10 @@ const PCTL_NOTE = "National percentile among US areas (census tracts) of the sam
 
 export const AREA_PRIORITIES: readonly AreaPriorityDef[] = [
   { key: "median_home_value", label: "Home value", unit: "$", defaultDirection: "lower", group: "housing",
-    note: "Census median value of owner-occupied homes in the area (ACS 5-year).",
+    note: "This area's Census home value at today's prices: the Census median (tract by tract, 2019–2023) times its ZIP's Zillow / Census ratio, so neighbours keep their differences and the level is current.",
     badge: "Cheapest homes", topBadge: "Top 1% cheapest in the US", good: "cheap homes", bad: "pricey homes" },
   { key: "median_gross_rent", label: "Rent", unit: "$/mo", defaultDirection: "lower", group: "housing",
-    note: "Census median gross rent in the area (ACS 5-year).",
+    note: "This area's Census gross rent at today's prices: the Census median times its ZIP's Zillow rent index / Census ratio.",
     badge: "Lowest rent", topBadge: "Top 1% lowest rent in the US", good: "low rent", bad: "high rent" },
   { key: "nearby_school_pctl", label: "Nearby schools", unit: "pctl", defaultDirection: "higher", group: "schools",
     note: "The nearest elementary and middle schools' test scores (Stanford SEDA), national percentile — specific schools, not a county average.",

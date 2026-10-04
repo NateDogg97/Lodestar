@@ -871,6 +871,27 @@ def test_tract_crime_and_gate() -> None:
     check(t["population"].iloc[0] == 187756 and t["violent"].iloc[1] == 613, "yearly table: numbers with commas")
 
 
+def test_tract_today_prices() -> None:
+    """Census by area × its ZIP's Zillow / Census ratio; county, then national fallback."""
+    from etl.tracts.national import today_prices
+
+    cols = ["geoid", "zip", "median_home_value", "zhvi", "median_gross_rent", "zori"]
+    payload = {"columns": cols, "rows": [
+        ["1", "10001", 100_000, 150_000, 1000, None],   # ZIP median census 150k -> ratio 1.0
+        ["2", "10001", 200_000, 150_000, 1000, None],
+        ["3", "10002", 100_000, 300_000, None, None],   # ratio 3.0 (edge of the allowed range)
+        ["4", "10003", 100_000, None, 1000, None],      # no Zillow: county median ratio
+        ["5", "10004", None, 250_000, None, None],      # no Census: Zillow as is
+    ]}
+    out = today_prices(payload, {"median_home_value": 1.27, "median_gross_rent": 1.28})
+    hv = out["median_home_value"]
+    check(round(hv[0]) == 100_000 and round(hv[1]) == 200_000, "a ZIP's areas keep their spread around Zillow's level")
+    check(round(hv[2]) == 300_000, "ratio applied per ZIP")
+    check(round(hv[3]) == 200_000, "no Zillow for the ZIP: county median ratio (1.0 and 3.0 -> 2.0)")
+    check(hv[4] == 250_000, "no Census value: Zillow's ZIP value")
+    check(round(out["median_gross_rent"][0]) == 1280, "no Zillow rent in the county: national ratio")
+
+
 def test_tract_acs_confidence() -> None:
     """Phase 8: tract ACS parsing — MOE codes, derived shares, low-confidence flags."""
     print("\ntract ACS: margins of error and low confidence")
@@ -941,6 +962,7 @@ def main() -> int:
         test_gazetteer_encoding_guard()
         test_app_payload_is_compact_and_lossless_where_it_matters()
         test_tract_acs_confidence()
+        test_tract_today_prices()
         test_tract_crime_and_gate()
 
         fixtures = _make_synthetic()

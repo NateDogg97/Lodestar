@@ -6,6 +6,7 @@ import { Icon } from "@/components/ui/icons";
 import { InfoTip } from "@/components/ui/info-tip";
 import {
   AREA_MEASURE,
+  areaPriority,
   areaValue,
   flagLabel,
   formatArea,
@@ -571,8 +572,9 @@ function standing(p: AreaPart): string {
   return `${ordinal(raw)} percentile of ${of} · ${BETTER.middle}`;
 }
 
-/** Home value and rent are scored on the Census (every area, tract by tract); the tiles prefer Zillow. */
+/** Home value and rent are scored at today's prices: Census by area × its ZIP's Zillow ratio. */
 const SCORED_ON_CENSUS = new Set(["median_home_value", "median_gross_rent"]);
+const TODAY_TAG = <span className="text-caption text-neutral-500"> · today&rsquo;s prices</span>;
 
 const partValue = (p: AreaPart) =>
   p.level === "county" ? formatValue(p.key as MetricKey, p.value) : formatArea(p.key, p.value);
@@ -608,7 +610,7 @@ function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRa
                 <span>
                   {c.label}
                   {c.level === "county" && <span className="text-caption text-neutral-500"> · county-wide</span>}
-                  {SCORED_ON_CENSUS.has(c.key) && <span className="text-caption text-neutral-500"> · Census</span>}
+                  {SCORED_ON_CENSUS.has(c.key) && TODAY_TAG}
                 </span>
                 <span className="shrink-0 font-medium tabular-nums">{partValue(c)}</span>
               </div>
@@ -655,7 +657,7 @@ function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRa
                   {l.state === "pass" ? "✓" : l.state === "fail" ? "✕" : "?"}{" "}
                 </span>
                 {l.label}
-                {SCORED_ON_CENSUS.has(l.column) && <span className="text-caption text-neutral-500"> · Census</span>}
+                {SCORED_ON_CENSUS.has(l.column) && TODAY_TAG}
                 <span className="block text-caption text-neutral-500">Yours: {bound(l)}</span>
               </span>
               <span className={`shrink-0 font-medium tabular-nums ${l.state === "fail" ? "text-rose-700 dark:text-rose-400" : ""}`}>
@@ -695,20 +697,8 @@ function AreaDetail({
           backup; then income, safety, commute and walkability. Schools have their own
           section right below. */}
       <dl className="grid grid-cols-2 gap-2">
-        <Stat
-          label="Home value"
-          k={v("zhvi") !== null ? "zhvi" : "median_home_value"}
-          text={formatAreaValue(area, v("zhvi") !== null ? "zhvi" : "median_home_value")}
-          source={v("zhvi") !== null ? `Zillow${area.zip ? ` · ZIP ${area.zip}` : ""}` : "Census"}
-          flagged={flagged.has(v("zhvi") !== null ? "zhvi" : "median_home_value")}
-        />
-        <Stat
-          label="Rent"
-          k={v("zori") !== null ? "zori" : "median_gross_rent"}
-          text={formatAreaValue(area, v("zori") !== null ? "zori" : "median_gross_rent")}
-          source={v("zori") !== null ? `Zillow${area.zip ? ` · ZIP ${area.zip}` : ""}` : "Census"}
-          flagged={flagged.has(v("zori") !== null ? "zori" : "median_gross_rent")}
-        />
+        <PriceStat area={area} ranking={ranking} label="Home value" census="median_home_value" zillow="zhvi" />
+        <PriceStat area={area} ranking={ranking} label="Rent" census="median_gross_rent" zillow="zori" />
         <Stat k="median_household_income" text={formatAreaValue(area, "median_household_income")} flagged={flagged.has("median_household_income")} />
         <Stat k="violent_rate" text={formatAreaValue(area, "violent_rate")} flagged={flagged.has("crime")} />
         <Stat k="commute_minutes" text={formatAreaValue(area, "commute_minutes")} flagged={flagged.has("commute_minutes")} />
@@ -868,16 +858,66 @@ function MeasureRow({ k, value, flagged, extra }: { k: string; value: number | n
   );
 }
 
+/**
+ * Home value or rent. With your search loaded, this area's value at today's prices — the
+ * one it's scored on (Census by area × its ZIP's Zillow ratio) — with Zillow's ZIP value
+ * under it; otherwise Zillow's ZIP value, or the Census when there's none.
+ */
+function PriceStat({
+  area,
+  ranking,
+  label,
+  census,
+  zillow,
+}: {
+  area: Area;
+  ranking: AreaRankingView | null;
+  label: string;
+  census: "median_home_value" | "median_gross_rent";
+  zillow: "zhvi" | "zori";
+}) {
+  const i = ranking?.indexByGeoid.get(area.geoid);
+  const today = ranking && i !== undefined ? ranking.areas.values.get(census)?.[i] : undefined;
+  const z = areaValue(area, zillow);
+  const flagged = area.lowConfidence.includes(census);
+  const zip = area.zip ? ` · ZIP ${area.zip}` : "";
+  if (today !== undefined && !Number.isNaN(today)) {
+    return (
+      <Stat
+        k={census}
+        label={label}
+        note={areaPriority(census)?.note}
+        text={formatArea(census, today)}
+        source={z !== null ? `Est. for this area · Zillow ${formatArea(zillow, z)}${zip}` : "Est. for this area"}
+        flagged={flagged}
+      />
+    );
+  }
+  const k = z !== null ? zillow : census;
+  return (
+    <Stat
+      k={k}
+      label={label}
+      text={formatAreaValue(area, k)}
+      source={z !== null ? `Zillow${zip}` : "Census"}
+      flagged={flagged}
+    />
+  );
+}
+
 function Stat({
   k,
   label,
   text,
+  note,
   source,
   flagged,
 }: {
   k: string;
   /** Instead of the measure's own label ("Home value", not "Home value (Zillow, by ZIP)"). */
   label?: string;
+  /** Instead of the measure's own "i" text. */
+  note?: string;
   text: string;
   /** Where the number comes from, when it can come from more than one place. */
   source?: string;
@@ -888,7 +928,7 @@ function Stat({
     <div className="rounded-lg bg-neutral-100 px-3 py-2 dark:bg-neutral-900">
       <dt className="flex items-center gap-1 text-caption text-neutral-500 dark:text-neutral-400">
         {label ?? m?.label ?? k}
-        {m?.note && <InfoTip label={label ?? m.label}>{m.note}</InfoTip>}
+        {(note ?? m?.note) && <InfoTip label={label ?? m?.label ?? k}>{note ?? m?.note}</InfoTip>}
       </dt>
       <dd className="mt-0.5 text-body font-semibold tabular-nums">
         {text}
