@@ -369,10 +369,14 @@ const BETTER = { lower: "lower is better", higher: "higher is better", middle: "
 /** Where the value stands, said the way the score reads: "lower than 98% of US areas". */
 function standing(p: AreaPart): string {
   const of = p.level === "county" ? "US counties" : "US areas";
-  const raw = Math.round(p.rawPercentile ?? 0);
-  if (p.direction === "lower") return `lower than ${Math.max(0, 100 - raw)}% of ${of}`;
-  if (p.direction === "higher") return `higher than ${raw}% of ${of}`;
-  return `${ordinal(raw)} percentile of ${of} · ${BETTER.middle}`;
+  if (p.direction === "middle" || p.points === null || p.beats === null) {
+    return `${ordinal(Math.round(p.rawPercentile ?? 0))} percentile of ${of} · ${BETTER.middle}`;
+  }
+  // Points count ties as wins; `beats` counts them against. Say which, when it matters.
+  const word = p.direction === "lower" ? "lower" : "higher";
+  if (p.points >= 99.95 && p.beats < 99.5) return `as ${p.direction === "lower" ? "low" : "high"} as any of the ${of}`;
+  if (p.points - p.beats >= 1) return `${word} than or tied with ${Math.round(p.points)}% of ${of}`;
+  return `${word} than ${Math.round(p.beats)}% of ${of}`;
 }
 
 /** Home value and rent are scored at today's prices: Census by area × its ZIP's Zillow ratio. */
@@ -405,15 +409,15 @@ export function PriorityBar({ c, full, showLevel = true }: { c: AreaPart; full: 
         <>
           <div className="grid grid-cols-[minmax(0,1fr)_3.25rem] items-center gap-2.5">
             <span
-              className={`block h-2 rounded-full bg-neutral-200 dark:bg-neutral-800 ${trackOverflow(c.points)}`}
+              className={`block h-2 rounded-full bg-neutral-200 dark:bg-neutral-800 ${trackOverflow(isGold(c.beats))}`}
               role="img"
-              aria-label={`${Math.round(c.points)} of 100 points${isGold(c.points) ? " — top 1% in the US" : ""}`}
+              aria-label={`${Math.round(c.points)} of 100 points${isGold(c.beats) ? " — top 1% in the US" : ""}`}
             >
               <span
-                className={`block h-full rounded-full ${isGold(c.points) ? "gold-bar" : ""}`}
+                className={`block h-full rounded-full ${isGold(c.beats) ? "gold-bar" : ""}`}
                 style={{
                   width: `${Math.max(2, c.points)}%`,
-                  backgroundColor: isGold(c.points) ? undefined : scoreColor(c.points),
+                  backgroundColor: isGold(c.beats) ? undefined : scoreColor(c.points),
                 }}
               />
             </span>

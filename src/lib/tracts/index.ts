@@ -196,6 +196,8 @@ export const AREA_MEASURES: AreaMeasure[] = [
   { key: "dist_downtown_mi", label: "To downtown", format: "miles", colorable: true,
     note: "From where people in the area live to the nearest downtown of the metro's main cities (Dallas or Fort Worth, say): each one's densest cluster of jobs." },
   { key: "dist_airport_mi", label: "To a major airport", format: "miles", colorable: true },
+  { key: "dist_coast_mi", label: "To the coast", format: "miles", note: "Ocean, bays and tidal water (Natural Earth)." },
+  { key: "dist_metro_mi", label: "To a 500k+ metro", format: "miles" },
   { key: "commute_minutes", label: "Average commute", format: "minutes" },
   { key: "work_from_home_share", label: "Work from home", format: "percent" },
   { key: "violent_rate", label: "Violent crime", format: "rate", colorable: true,
@@ -208,6 +210,10 @@ export const AREA_MEASURES: AreaMeasure[] = [
     note: "FEMA National Risk Index: national percentile of expected yearly losses as a share of what's there." },
   { key: "hazard_wildfire", label: "Wildfire risk", format: "pctl" },
   { key: "hazard_inland_flood", label: "Flood risk", format: "pctl" },
+  { key: "hazard_hurricane", label: "Hurricane risk", format: "pctl" },
+  { key: "hazard_coastal_flood", label: "Coastal flood risk", format: "pctl" },
+  { key: "hazard_earthquake", label: "Earthquake risk", format: "pctl" },
+  { key: "hazard_tornado", label: "Tornado risk", format: "pctl" },
 ];
 
 export const AREA_MEASURE = new Map(AREA_MEASURES.map((m) => [m.key, m]));

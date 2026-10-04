@@ -40,7 +40,7 @@ const county = (fips: string, status: CountyScore["status"], points: number | nu
   index: 0, fips, score: points, status, failedFilters: [], unknownFilters: [], missingMetrics: [],
   contributions: weight
     ? [{ metric: "rpp_all", value: 100, direction: "lower", rawPercentile: 100 - (points ?? 0), percentile: points, weight,
-        impact: points === null ? null : weight * (points - 50) }]
+        impact: points === null ? null : weight * (points - 50), beats: null }]
     : [],
 });
 
@@ -103,7 +103,7 @@ describe("areas as the results (Phase 8f)", () => {
 
   it("words county priorities by their direction", () => {
     const part = (key: string, direction: "lower" | "higher", impact: number) => ({
-      key, label: key, level: "county" as const, direction, weight: 1, value: 1, rawPercentile: 50, points: 50, impact,
+      key, label: key, level: "county" as const, direction, weight: 1, value: 1, rawPercentile: 50, points: 50, impact, beats: null,
     });
     expect(tradeOff([part("rpp_all", "lower", 40), part("days_above_90f", "lower", 30)])).toBe(
       "Helped by low cost of living and few days above 90°F.",
@@ -137,5 +137,73 @@ describe("area names", () => {
     const lon = Float64Array.from([-97.05, -97.05, -97.05, -97.0, -90]);
     const names = distinctNames(["G · 1", "G · 1", "G · 1", "G · 1", "Solo · 2"], lat, lon);
     expect(names).toEqual(["G · 1 · central", "G · 1 · north", "G · 1 · south", "G · 1 · east", "Solo · 2"]);
+  });
+});
+
+describe("results audit rules (2026-10-04)", () => {
+  // e: 20 people (a park); f: zero violent and zero property crime (no report).
+  const a = parseNationalAreas({
+    format: "areas-v1",
+    n: 6,
+    columns: {
+      geoid: ["48001000100", "48001000200", "48001000300", "48001000400", "48001000500", "48001000600"],
+      label: ["A", "B", "C", "D", "E", "F"],
+      low_confidence: ["", "", "", "", "", "crime"],
+      population: [1000, 5000, 3000, 2000, 20, 4000],
+      walkability: [10, 18, null, 12, 20, 8],
+      hazard_hurricane: [0, 0, 0, 0, 0, 40],
+      median_home_value: [200_000, 300_000, 100_000, null, 50_000, 250_000],
+      violent_rate: [100, 200, 300, 150, 0, 0],
+      property_rate: [1000, 2000, 1500, 900, 0, 0],
+    },
+  });
+  const s = (over: Partial<NationalSearch>) => ({
+    criteria: [],
+    limits: [],
+    counties: countyParts([county("48001", "match", null)]),
+    ...over,
+  });
+
+  it("counts a missing value as average, never dropping it", () => {
+    const { criteria } = areaCriteria({ areaWeights: { walkability: 1, median_home_value: 1 }, areaDirections: {}, areaLimits: {} });
+    const sc = scoreNational(a, s({ criteria }));
+    // c: walkability unknown → 50; second-cheapest home of five → 75: 62.5, not 75.
+    expect(sc.score[2]).toBeCloseTo(62.5);
+  });
+
+  it("leaves places nobody lives out of the results", () => {
+    const sc = scoreNational(a, s({ criteria: areaCriteria({ areaWeights: { walkability: 1 }, areaDirections: {}, areaLimits: {} }).criteria }));
+    expect(sc.status[4]).toBe(OUT);
+    expect(topAreas(a, sc, 10, true)).not.toContain(4);
+  });
+
+  it("ranks areas unknown for a must-have after every verified match", () => {
+    const { criteria, limits } = areaCriteria({
+      areaWeights: { walkability: 1 },
+      areaDirections: {},
+      areaLimits: { median_home_value: { max: 400_000 } },
+    });
+    const sc = scoreNational(a, s({ criteria, limits }));
+    expect(sc.status[3]).toBe(UNKNOWN);
+    const top = topAreas(a, sc, 10, true);
+    expect(top.at(-1)).toBe(3);
+  });
+
+  it("scores the best value 100 however many share it; 'beats' counts ties against", () => {
+    const { criteria } = areaCriteria({ areaWeights: { hazard_hurricane: 1 }, areaDirections: {}, areaLimits: {} });
+    const parts = explainArea(a, 0, s({ criteria }), undefined);
+    expect(parts[0].points).toBe(100);
+    expect(parts[0].beats).toBeLessThan(99); // tied with most areas: no "top 1%" claim
+  });
+
+  it("reads zero violent and zero property crime as no data", () => {
+    expect(Number.isNaN(a.values.get("violent_rate")![5])).toBe(true);
+    expect(Number.isNaN(a.values.get("property_rate")![5])).toBe(true);
+  });
+
+  it("lists must-have matches by population when nothing is weighted", () => {
+    const { limits } = areaCriteria({ areaWeights: {}, areaDirections: {}, areaLimits: { walkability: { min: 9 } } });
+    const sc = scoreNational(a, s({ limits }));
+    expect(topAreas(a, sc, 10, false)).toEqual([1, 3, 0]);
   });
 });

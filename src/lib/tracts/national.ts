@@ -9,12 +9,22 @@
  * areas. Results are the top N areas; counties are ranked by their best area.
  *
  * Data: `areas.json` from `etl/tracts/national.py`, column by column. Pure.
+ *
+ * Results audit (2026-10-04) rules, so results never mislead:
+ * - A weighted priority with no value counts as average (50 points), never dropped.
+ * - Places nobody lives (50 residents or fewer: water, airports, parks) aren't results.
+ * - An area unknown for a must-have ranks after every verified match.
+ * - A value scores as at least as good as the values it ties with (best value = 100).
+ * - Zero violent AND zero property crime is no report, not a perfect record.
  */
 
 import {
+  beatsAt,
   directionalScore,
   getMetric,
+  percentileBounds,
   percentileRanks,
+  type PercentileBounds,
   type CountyScore,
   type Direction,
   type MetricKey,
@@ -55,6 +65,15 @@ export function parseNationalAreas(raw: unknown): NationalAreas {
   const values = new Map<string, Float64Array>();
   for (const c of Object.keys(cols)) {
     if (c !== "geoid" && c !== "label" && c !== "low_confidence") values.set(c, nums(c));
+  }
+  // Zero violent and zero property crime for a whole area is an agency that reported
+  // nothing (106 of the 108 such areas are flagged low confidence): no data.
+  const violent = values.get("violent_rate");
+  const property = values.get("property_rate");
+  if (violent && property) {
+    for (let i = 0; i < n; i++) {
+      if (violent[i] === 0 && property[i] === 0) violent[i] = property[i] = NaN;
+    }
   }
   const geoid = text("geoid");
   const label = text("label");
@@ -116,7 +135,34 @@ export function distinctNames(label: string[], lat: Float64Array, lon: Float64Ar
   return name;
 }
 
+/** Fewer people than this and an area isn't a place to move to (water, airports, parks). */
+export const MIN_RESIDENTS = 51;
+
+/** True for an area with 50 or fewer residents: never a result. */
+export const uninhabited = (areas: NationalAreas, i: number) => !(areas.population[i] >= MIN_RESIDENTS);
+
 const pctCache = new WeakMap<NationalAreas, Map<string, Float64Array>>();
+const boundsCache = new WeakMap<NationalAreas, Map<string, PercentileBounds>>();
+
+/** An area-level column's tie groups, for points (see `percentileBounds`), computed once. */
+export function areaBounds(areas: NationalAreas, column: string): PercentileBounds {
+  let cache = boundsCache.get(areas);
+  if (!cache) boundsCache.set(areas, (cache = new Map()));
+  let b = cache.get(column);
+  if (!b) {
+    b = percentileBounds(areas.values.get(column) ?? new Float64Array(areas.n).fill(NaN));
+    cache.set(column, b);
+  }
+  return b;
+}
+
+/** An area's points on one column (0–100, higher is better), or NaN with no value. */
+export function areaPoints(areas: NationalAreas, column: string, i: number, direction: Direction): number {
+  const p = areaPercentiles(areas, column)[i];
+  if (Number.isNaN(p)) return NaN;
+  const b = areaBounds(areas, column);
+  return directionalScore(p, direction, { lo: b.lo[i], hi: b.hi[i] });
+}
 
 /** An area-level column's national percentile per area (0–100, NaN unknown), computed once. */
 export function areaPercentiles(areas: NationalAreas, column: string): Float64Array {
@@ -171,13 +217,12 @@ export interface NationalScores {
 }
 
 export function scoreNational(areas: NationalAreas, s: NationalSearch): NationalScores {
-  const pcts = s.criteria.map((c) => areaPercentiles(areas, c.column));
   const limitValues = s.limits.map((l) => areas.values.get(l.column));
   const score = new Float64Array(areas.n).fill(NaN);
   const status = new Uint8Array(areas.n);
   for (let i = 0; i < areas.n; i++) {
     const cp = s.counties.get(areas.county[i]);
-    if (!cp) {
+    if (!cp || uninhabited(areas, i)) {
       status[i] = OUT;
       continue;
     }
@@ -199,11 +244,11 @@ export function scoreNational(areas: NationalAreas, s: NationalSearch): National
     if (st === EXCLUDED) continue;
     let sum = cp.sum;
     let w = cp.weight;
-    for (let k = 0; k < s.criteria.length; k++) {
-      const p = pcts[k][i];
-      if (Number.isNaN(p)) continue;
-      sum += s.criteria[k].weight * directionalScore(p, s.criteria[k].direction);
-      w += s.criteria[k].weight;
+    for (const c of s.criteria) {
+      const pts = areaPoints(areas, c.column, i, c.direction);
+      // No value: counted as average, never dropped (it would lift the score).
+      sum += c.weight * (Number.isNaN(pts) ? 50 : pts);
+      w += c.weight;
     }
     if (w > 0) score[i] = sum / w;
   }
@@ -212,13 +257,23 @@ export function scoreNational(areas: NationalAreas, s: NationalSearch): National
 
 const shown = (st: number, includeUnknown: boolean) => st === MATCH || (st === UNKNOWN && includeUnknown);
 
-/** The best `n` areas, best first (ties: more people first). */
+/**
+ * Result order: verified matches before areas unknown for a must-have, then by score,
+ * then more people first. With nothing weighted (must-haves only) there is no score,
+ * and matches come by population.
+ */
+const byResult = (areas: NationalAreas, sc: NationalScores) => (a: number, b: number) =>
+  sc.status[a] - sc.status[b] ||
+  (Number.isNaN(sc.score[b]) ? -1 : sc.score[b]) - (Number.isNaN(sc.score[a]) ? -1 : sc.score[a]) ||
+  (areas.population[b] || 0) - (areas.population[a] || 0);
+
+/** The best `n` areas, best first (see `byResult`). */
 export function topAreas(areas: NationalAreas, sc: NationalScores, n: number, includeUnknown: boolean): number[] {
   const idx: number[] = [];
   for (let i = 0; i < areas.n; i++) {
-    if (!Number.isNaN(sc.score[i]) && shown(sc.status[i], includeUnknown)) idx.push(i);
+    if (shown(sc.status[i], includeUnknown)) idx.push(i);
   }
-  idx.sort((a, b) => sc.score[b] - sc.score[a] || (areas.population[b] || 0) - (areas.population[a] || 0));
+  idx.sort(byResult(areas, sc));
   return idx.slice(0, n);
 }
 
@@ -233,7 +288,7 @@ export function countyMatches(
   for (let i = 0; i < areas.n; i++) {
     if (areas.county[i] === fips && shown(sc.status[i], includeUnknown)) idx.push(i);
   }
-  return idx.sort((a, b) => (sc.score[b] || -1) - (sc.score[a] || -1));
+  return idx.sort(byResult(areas, sc));
 }
 
 export interface CountyResult {
@@ -269,6 +324,8 @@ export interface AreaPart {
   points: number | null;
   /** weight × (points − 50). */
   impact: number | null;
+  /** Share of places strictly worse, 0–100 — for "top 1%" claims (see MetricContribution.beats). */
+  beats: number | null;
 }
 
 /** An area's parts, most important first (the fingerprint's order). */
@@ -281,17 +338,19 @@ export function explainArea(
   const parts: AreaPart[] = s.criteria.map((c) => {
     const p = areaPercentiles(areas, c.column)[i];
     const v = areas.values.get(c.column)?.[i] ?? NaN;
-    const points = Number.isNaN(p) ? null : directionalScore(p, c.direction);
+    const pts = areaPoints(areas, c.column, i, c.direction);
+    const points = Number.isNaN(pts) ? null : pts;
     return {
       key: c.column, label: c.label, level: "area", direction: c.direction, weight: c.weight,
       value: Number.isNaN(v) ? null : v, rawPercentile: Number.isNaN(p) ? null : p, points,
       impact: points === null ? null : c.weight * (points - 50),
+      beats: points === null ? null : beatsAt(areaBounds(areas, c.column), i, c.direction),
     };
   });
   for (const c of county?.contributions ?? []) {
     parts.push({
       key: c.metric, label: getMetric(c.metric).label, level: "county", direction: c.direction, weight: c.weight,
-      value: c.value, rawPercentile: c.rawPercentile, points: c.percentile, impact: c.impact,
+      value: c.value, rawPercentile: c.rawPercentile, points: c.percentile, impact: c.impact, beats: c.beats,
     });
   }
   return parts.sort((a, b) => b.weight - a.weight);
@@ -387,13 +446,12 @@ export function resultBadges(areas: NationalAreas, top: number[], s: NationalSea
   if (top.length < 2) return out;
   for (const c of s.criteria) {
     const def = areaPriority(c.column);
-    const p = areaPercentiles(areas, c.column);
     let best = -1;
     let bestPts = -Infinity;
     let tie = false;
     for (const i of top) {
-      if (Number.isNaN(p[i])) continue;
-      const pts = directionalScore(p[i], c.direction);
+      const pts = areaPoints(areas, c.column, i, c.direction);
+      if (Number.isNaN(pts)) continue;
       if (pts > bestPts) {
         best = i;
         bestPts = pts;
@@ -408,7 +466,8 @@ export function resultBadges(areas: NationalAreas, top: number[], s: NationalSea
     if (def?.topBadge && c.direction === def.defaultDirection) {
       for (const i of top) {
         const b = out.get(i)!;
-        if (b.top1.length === 0 && !Number.isNaN(p[i]) && directionalScore(p[i], c.direction) >= 99) b.top1.push(def.topBadge);
+        // Rarer than 99% of US areas, ties counted against it.
+        if (b.top1.length === 0 && (beatsAt(areaBounds(areas, c.column), i, c.direction) ?? 0) >= 99) b.top1.push(def.topBadge);
       }
     }
   }

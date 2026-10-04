@@ -11,9 +11,14 @@
  * - A filter on a metric the county has no value for neither passes nor
  *   fails it. The county's status becomes "unknown" (grey on the map), and
  *   the UI can show or hide unknowns.
- * - A weighted metric the county has no value for drops out of that county's
- *   average — its weight leaves both sums — and is listed in `missingMetrics`
- *   so the UI can mark the score as partial.
+ * - A weighted metric the county has no value for counts as average: 50 points at
+ *   its full weight (results audit, 2026-10-04 — dropping it let a place known on one
+ *   good measure outrank places known on all of them). It's listed in
+ *   `missingMetrics`, with no points or impact, so the UI says "No data".
+ *
+ * Ties: a value scores as at least as good as every value it ties with
+ * (`percentileBounds`), so the best possible value — no hurricane risk, a 0% income
+ * tax — gets 100 however many places share it.
  *
  * Percentiles are national: computed once over every county, not over the
  * ones that survive the filters. So tightening a filter never changes the
@@ -23,25 +28,26 @@
 import { getCategory, isCategoryKey, type CategoryKey } from "./categories";
 import type { CountyDataset } from "./dataset";
 import { getMetric, METRIC_KEYS, type Direction, type MetricKey } from "./metrics";
-import { percentileRanks } from "./percentile";
+import { percentileBounds, percentileRanks, type PercentileBounds } from "./percentile";
 
 export const MAX_WEIGHT = 5;
 
 /**
  * Turn a raw percentile (higher value → higher percentile) into 0–100 points
- * where higher is always better:
+ * where higher is always better. With `bounds` (its tie group's ranks), a tied value
+ * scores as at least as good as the values it ties with:
  * - higher: p
  * - lower:  100 − p
  * - middle: 100 − 2·|p − 50| — the median county gets 100, the 25th and 75th
  *   get 50, the extremes get 0. Symmetric in percentile terms, so "a bit more
  *   rain than typical" and "a bit less" cost the same.
  */
-export function directionalScore(percentile: number, direction: Direction): number {
+export function directionalScore(percentile: number, direction: Direction, bounds?: { lo: number; hi: number }): number {
   switch (direction) {
     case "higher":
-      return percentile;
+      return bounds ? bounds.hi : percentile;
     case "lower":
-      return 100 - percentile;
+      return bounds ? 100 - bounds.lo : 100 - percentile;
     case "middle":
       return 100 - 2 * Math.abs(percentile - 50);
   }
@@ -99,6 +105,12 @@ export interface MetricContribution {
   weight: number;
   /** weight × (percentile − 50): how far this metric pushed the score up or down. Null if unknown. */
   impact: number | null;
+  /**
+   * Share of places this value is strictly better than, 0–100 (ties count against it).
+   * Points treat a tie as a win, so "no hurricane risk" scores 100; claims of rarity —
+   * gold bars, "Top 1% in the US" — use this instead. Null if unknown or middle.
+   */
+  beats: number | null;
 }
 
 export interface CountyScore {
@@ -120,12 +132,29 @@ export interface PreparedDataset {
   data: CountyDataset;
   /** Percentile of the raw value (higher value → higher percentile), NaN if unknown. */
   percentiles: Record<MetricKey, Float64Array>;
+  /** Each value's tie group, for points (see `percentileBounds`). */
+  bounds: Record<MetricKey, PercentileBounds>;
+}
+
+/** Share of places strictly worse than value `i` (see MetricContribution.beats); null for middle. */
+export function beatsAt(b: PercentileBounds, i: number, direction: Direction): number | null {
+  if (Number.isNaN(b.lo[i]) || direction === "middle") return null;
+  return direction === "higher" ? b.lo[i] : 100 - b.hi[i];
+}
+
+/** Points for value `i` of a column: tie-aware for higher/lower, middle rank for middle. */
+export function pointsAt(p: Float64Array, b: PercentileBounds, i: number, direction: Direction): number {
+  return directionalScore(p[i], direction, { lo: b.lo[i], hi: b.hi[i] });
 }
 
 export function prepareDataset(data: CountyDataset): PreparedDataset {
   const percentiles = {} as Record<MetricKey, Float64Array>;
-  for (const key of METRIC_KEYS) percentiles[key] = percentileRanks(data.values[key]);
-  return { data, percentiles };
+  const bounds = {} as Record<MetricKey, PercentileBounds>;
+  for (const key of METRIC_KEYS) {
+    percentiles[key] = percentileRanks(data.values[key]);
+    bounds[key] = percentileBounds(data.values[key]);
+  }
+  return { data, percentiles, bounds };
 }
 
 function clampWeight(w: number | undefined): number {
@@ -135,7 +164,7 @@ function clampWeight(w: number | undefined): number {
 
 /** Score every county, in dataset order. Excluded counties are included, with status "excluded". */
 export function scoreCounties(prepared: PreparedDataset, input: ScoringInput): CountyScore[] {
-  const { data, percentiles } = prepared;
+  const { data, percentiles, bounds } = prepared;
 
   const weighted: { metric: MetricKey; weight: number; direction: Direction }[] = [];
   for (const key of METRIC_KEYS) {
@@ -178,18 +207,21 @@ export function scoreCounties(prepared: PreparedDataset, input: ScoringInput): C
       const raw = data.values[metric][i];
       const p = percentiles[metric][i];
       if (Number.isNaN(p)) {
+        // No value: counted as average (50 points), shown as "No data".
         missingMetrics.push(metric);
         contributions.push({
-          metric, value: null, direction, rawPercentile: null, percentile: null, weight, impact: null,
+          metric, value: null, direction, rawPercentile: null, percentile: null, weight, impact: null, beats: null,
         });
+        sumWeighted += weight * 50;
+        sumWeights += weight;
         continue;
       }
-      const pct = directionalScore(p, direction);
+      const pct = pointsAt(percentiles[metric], bounds[metric], i, direction);
       sumWeighted += weight * pct;
       sumWeights += weight;
       contributions.push({
         metric, value: raw, direction, rawPercentile: p, percentile: pct, weight,
-        impact: weight * (pct - 50),
+        impact: weight * (pct - 50), beats: beatsAt(bounds[metric], i, direction),
       });
     }
 
@@ -218,9 +250,12 @@ export interface RankOptions {
  */
 export function rankCounties(scores: CountyScore[], options: RankOptions = {}): CountyScore[] {
   const includeUnknown = options.includeUnknown ?? true;
+  // Verified matches before counties unknown for a must-have (results audit, 2026-10-04).
+  const rank = (s: CountyScore) => (s.status === "match" ? 0 : 1);
   return scores
     .filter((s) => s.status === "match" || (includeUnknown && s.status === "unknown"))
     .sort((a, b) => {
+      if (rank(a) !== rank(b)) return rank(a) - rank(b);
       if (a.score === null && b.score === null) return a.fips.localeCompare(b.fips);
       if (a.score === null) return 1;
       if (b.score === null) return -1;

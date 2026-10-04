@@ -53,6 +53,7 @@ import {
   areaValue,
   countiesOf,
   countyMatches,
+  uninhabited,
   MATCH,
   UNKNOWN,
   countyParts,
@@ -320,7 +321,10 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   const resultsView = viewChoice ?? (hasAreaFilters ? "areas" : "counties");
   // The map in area mode: the counties holding your top areas, colored by their best area.
   const mapRelative = useMemo(
-    () => (areaMode ? new Map<string, number | null>(countyResults.map((c) => [c.fips, c.bestScore])) : relative),
+    () =>
+      areaMode
+        ? new Map<string, number | null>(countyResults.map((c) => [c.fips, Number.isNaN(c.bestScore) ? null : c.bestScore]))
+        : relative,
     [areaMode, countyResults, relative],
   );
   const mapRank = useMemo(
@@ -455,7 +459,8 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     const inTop = new Set(topIdx);
     const topHere = matches.filter((i) => inTop.has(i));
     const matching = new Set(matches);
-    const ruledOut = [...indexByGeoid.values()].filter((i) => !matching.has(i));
+    // Not a match — but places nobody lives aren't listed at all (results audit).
+    const ruledOut = [...indexByGeoid.values()].filter((i) => !matching.has(i) && !uninhabited(national, i));
     return {
       areas: national,
       scores: nscores,
@@ -698,6 +703,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
             onCap={setResultCap}
             areaCount={topIdx.length}
             countyCount={countyResults.length}
+            ranked={!(topIdx.length && nscores && Number.isNaN(nscores.score[topIdx[0]]))}
           />
           {resultsView === "areas" ? (
             <AreaResultsList

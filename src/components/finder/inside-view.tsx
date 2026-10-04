@@ -260,7 +260,9 @@ function MatchList({
             <span className={`block truncate ${scored ? "text-body font-semibold" : "text-label"}`}>{ranking.areas.name[i]}</span>
             {scored && (
               <>
-                <span className="block truncate text-caption text-neutral-600 dark:text-neutral-400">{tradeOff(parts)}</span>
+                {parts.length > 0 && (
+                  <span className="block truncate text-caption text-neutral-600 dark:text-neutral-400">{tradeOff(parts)}</span>
+                )}
                 <Fingerprint parts={parts} />
               </>
             )}

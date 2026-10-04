@@ -22,6 +22,7 @@ const asPart = (c: MetricContribution): AreaPart => ({
   rawPercentile: c.rawPercentile,
   points: c.percentile,
   impact: c.impact,
+  beats: c.beats,
 });
 
 /**

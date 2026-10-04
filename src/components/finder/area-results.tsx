@@ -47,7 +47,10 @@ export function ResultsHeader({
   onCap,
   areaCount,
   countyCount,
+  ranked = true,
 }: {
+  /** False when nothing is weighted (must-haves only): the list isn't a ranking. */
+  ranked?: boolean;
   view: "areas" | "counties";
   onView: (v: "areas" | "counties") => void;
   cap: ResultCap;
@@ -93,7 +96,9 @@ export function ResultsHeader({
         </div>
       </div>
       <p className="text-caption text-neutral-500">
-        {view === "areas"
+        {!ranked
+          ? `Nothing is weighted, so these are ${areaCount.toLocaleString()} areas that pass your must-haves, most people first — in ${countyCount.toLocaleString()} ${countyCount === 1 ? "county" : "counties"}. Add priorities in Filters to rank them.`
+          : view === "areas"
           ? `Your top ${areaCount.toLocaleString()} areas nationwide, best match first — in ${countyCount.toLocaleString()} ${countyCount === 1 ? "county" : "counties"}.`
           : `The ${countyCount.toLocaleString()} ${countyCount === 1 ? "county" : "counties"} holding your top ${areaCount.toLocaleString()} areas, by their best area.`}
       </p>
@@ -108,6 +113,8 @@ const Chevron = ({ open }: { open: boolean }) => (
 );
 
 export function ScoreNumber({ score }: { score: number }) {
+  // Must-haves only: nothing is weighted, so there's no score to show.
+  if (Number.isNaN(score)) return <span className="text-label text-neutral-400" title="Nothing weighted, so no score">—</span>;
   return (
     <span className="font-bold tabular-nums" style={{ color: scoreColor(score) }}>
       {Math.round(score)}
@@ -116,8 +123,8 @@ export function ScoreNumber({ score }: { score: number }) {
 }
 
 /** A bar's fill: the score's color; at the top 1%, glowing metallic gold. */
-function Fill({ points }: { points: number }) {
-  const gold = isGold(points);
+function Fill({ points, beats }: { points: number; beats: number | null }) {
+  const gold = isGold(beats);
   return (
     <span
       className={`block h-full rounded-full ${gold ? "gold-bar" : ""}`}
@@ -137,8 +144,8 @@ export function Fingerprint({ parts }: { parts: AreaPart[] }) {
     return (
       <span role="img" aria-label={label} className="mt-1 flex items-center gap-1">
         {parts.map((p) => (
-          <span key={p.key} className={`block h-1.5 w-9 rounded-full bg-neutral-200 dark:bg-neutral-800 ${trackOverflow(p.points)}`}>
-            {p.points !== null && <Fill points={p.points} />}
+          <span key={p.key} className={`block h-1.5 w-9 rounded-full bg-neutral-200 dark:bg-neutral-800 ${trackOverflow(isGold(p.beats))}`}>
+            {p.points !== null && <Fill points={p.points} beats={p.beats} />}
           </span>
         ))}
       </span>
@@ -149,10 +156,10 @@ export function Fingerprint({ parts }: { parts: AreaPart[] }) {
       {parts.map((p) => (
         <span
           key={p.key}
-          className={`block w-2 rounded-t-sm ${p.points !== null && isGold(p.points) ? "gold-col" : ""}`}
+          className={`block w-2 rounded-t-sm ${isGold(p.beats) ? "gold-col" : ""}`}
           style={{
             height: `${Math.max(3, Math.round(((p.points ?? 0) / 100) * 20))}px`,
-            backgroundColor: p.points === null ? "#d4d4d4" : isGold(p.points) ? undefined : scoreColor(p.points),
+            backgroundColor: p.points === null ? "#d4d4d4" : isGold(p.beats) ? undefined : scoreColor(p.points),
           }}
         />
       ))}
@@ -201,15 +208,17 @@ function Summary({ i, parts, common }: { i: number; parts: AreaPart[]; common: C
     list.map((p) => (
       <li key={p.key} className="col-span-3 grid grid-cols-subgrid items-center text-label">
         <span className="leading-snug break-words text-neutral-600 dark:text-neutral-400">{p.label}</span>
-        <span className={`block h-2 rounded-full bg-neutral-200 dark:bg-neutral-800 ${trackOverflow(p.points)}`}>
-          {p.points !== null && <Fill points={p.points} />}
+        <span className={`block h-2 rounded-full bg-neutral-200 dark:bg-neutral-800 ${trackOverflow(isGold(p.beats))}`}>
+          {p.points !== null && <Fill points={p.points} beats={p.beats} />}
         </span>
         <span className="text-right font-medium whitespace-nowrap tabular-nums">{partValue(p)}</span>
       </li>
     ));
   return (
     <div className="mt-1 mb-3 ml-8 mr-2 space-y-2.5">
-      <p className="text-body font-medium">{tradeOff(parts)}</p>
+      <p className="text-body font-medium">
+        {parts.length ? tradeOff(parts) : "Nothing is weighted yet — add priorities in Filters to rank these."}
+      </p>
       {parts.length > 3 && (
         <p className="text-caption text-neutral-500">
           {all ? `All ${parts.length} priorities, the 3 that moved its score most first:` : "The 3 priorities that moved its score most:"}
@@ -287,7 +296,7 @@ export function AreaResultsList({
                   >
                     {common.areas.name[i]}
                   </button>
-                  <Badges badges={badges.get(i)} first={rank === 0} />
+                  <Badges badges={badges.get(i)} first={rank === 0 && !Number.isNaN(common.scores.score[i])} />
                 </div>
                 <p className="text-caption text-neutral-500">{common.countyName(common.areas.county[i])}</p>
                 <Fingerprint parts={parts} />
@@ -353,7 +362,7 @@ export function CountyResultsList({
                   >
                     {common.countyName(c.fips)}
                   </button>
-                  {rank === 0 && (
+                  {rank === 0 && !Number.isNaN(c.bestScore) && (
                     <span className="rounded-full bg-neutral-900 px-2 py-px text-caption font-semibold text-white dark:bg-neutral-100 dark:text-neutral-900">
                       #1 best match
                     </span>

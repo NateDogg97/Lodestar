@@ -26,15 +26,16 @@ export function scoreColor(score: number): string {
 }
 
 /**
- * True for a bar that shows gold: 100 points as shown, i.e. 99.5 and up (owner,
- * 2026-10-04; briefly 99). Where
+ * True for a bar that shows gold: better than 100% of places as shown — `beats` (the
+ * share strictly worse, ties counted against) of 99.5 and up (owner, 2026-10-04). Not
+ * points: a tie at the best value scores 100 points but is no rarity. Where
  * it's drawn, gold is the `gold-bar` / `gold-col` class (globals.css): metallic gold
  * with a gently glowing gold rim.
  */
-export const isGold = (score: number) => Math.round(score) >= 100;
+export const isGold = (beats: number | null) => beats !== null && Math.round(beats) >= 100;
 
 /** A bar's track: a gold bar's rim and glow reach outside it, so it mustn't clip them. */
-export const trackOverflow = (points: number | null) => (points !== null && isGold(points) ? "overflow-visible" : "overflow-hidden");
+export const trackOverflow = (gold: boolean) => (gold ? "overflow-visible" : "overflow-hidden");
 
 /** The map's scale as MapLibre `interpolate` stops: [0, c0, 10, c1, …, 99, deep green, 100, deep green]. */
 export const SCORE_STOPS: (number | string)[] = [

@@ -158,24 +158,25 @@ describe("scoreCounties", () => {
     expect(s.every((x) => x.score === null && x.status === "match")).toBe(true);
   });
 
-  it("drops a missing weighted metric from that county's average and flags it", () => {
+  it("counts a missing weighted metric as average (50) and flags it", () => {
     const data = setup([
       { fips: "00001", school_achievement: null, coldest_month_low_f: 50 },
       { fips: "00002", school_achievement: 1, coldest_month_low_f: 10 },
       { fips: "00003", school_achievement: 0, coldest_month_low_f: 30 },
     ]);
     const s = scoreCounties(data, { weights: { school_achievement: 5, coldest_month_low_f: 1 } });
-    // county 1 is scored on winter alone (100th percentile), not dragged to 0 by the gap
-    expect(s[0].score).toBe(100);
+    // county 1: schools unknown → 50 at weight 5; winter best → 100 at weight 1. Not lifted
+    // to 100 by leaving the gap out (results audit, 2026-10-04).
+    expect(s[0].score).toBeCloseTo((5 * 50 + 1 * 100) / 6);
     expect(s[0].missingMetrics).toEqual(["school_achievement"]);
     expect(s[0].contributions.find((c) => c.metric === "school_achievement")!.impact).toBeNull();
     expect(s[1].missingMetrics).toEqual([]);
   });
 
-  it("gives no score when every weighted metric is missing", () => {
+  it("scores a county with no data for any priority as average", () => {
     const data = setup([{ fips: "00001" }, { fips: "00002", annual_snow_in: 3 }]);
     const s = scoreCounties(data, { weights: { annual_snow_in: 1 } });
-    expect(s[0].score).toBeNull();
+    expect(s[0].score).toBe(50);
     expect(s[0].status).toBe("match");
   });
 });
@@ -231,14 +232,16 @@ describe("rankCounties", () => {
     filters: [{ metric: "annual_snow_in" as const, max: 10 }],
   };
 
-  it("sorts best first, drops excluded, keeps unknowns by default, unscored last", () => {
+  it("sorts verified matches best first, then unknowns; drops excluded", () => {
+    // 00004: schools unknown → average (50); 00001: worst schools (0); 00003: best schools
+    // but unknown for the snow limit — after every verified match.
     const ranked = rankCounties(scoreCounties(data, input));
-    expect(ranked.map((r) => r.fips)).toEqual(["00003", "00001", "00004"]);
+    expect(ranked.map((r) => r.fips)).toEqual(["00004", "00001", "00003"]);
   });
 
   it("can hide unknowns", () => {
     const ranked = rankCounties(scoreCounties(data, input), { includeUnknown: false });
-    expect(ranked.map((r) => r.fips)).toEqual(["00001", "00004"]);
+    expect(ranked.map((r) => r.fips)).toEqual(["00004", "00001"]);
   });
 
   it("breaks score ties by FIPS so the order is stable", () => {
@@ -261,8 +264,10 @@ describe("explainScore", () => {
       weights: { school_achievement: 2, coldest_month_low_f: 5, median_gross_rent: 1, annual_snow_in: 3 },
     });
     const { strengths, weaknesses } = explainScore(s);
-    // schools 100 × w2 = +100; rent 100 × w1 = +50; winter 0 × w5 = −250; snow tied at 50 = 0
+    // snow: both counties tie at the best (lowest) value → 100 points × w3 = +150;
+    // schools 100 × w2 = +100; rent 100 × w1 = +50; winter 0 × w5 = −250
     expect(strengths.map((c) => [c.metric, c.impact])).toEqual([
+      ["annual_snow_in", 150],
       ["school_achievement", 100],
       ["median_gross_rent", 50],
     ]);

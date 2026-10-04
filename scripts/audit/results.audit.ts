@@ -258,7 +258,7 @@ function run(sc: Scenario): string[] {
     });
     const missing = parts.filter((p) => p.points === null).length;
     out.push(
-      `| ${r + 1} | ${areas.name[i]} | ${countyName(areas.county[i])} | ${Math.round(areas.population[i]).toLocaleString()} | ${ns.score[i].toFixed(1)} | ${cells.join(" | ")} | ${[
+      `| ${r + 1} | ${areas.name[i]} | ${countyName(areas.county[i])} | ${Math.round(areas.population[i]).toLocaleString()} | ${Number.isNaN(ns.score[i]) ? "—" : ns.score[i].toFixed(1)} | ${cells.join(" | ")} | ${[
         ...areas.lowConfidence[i],
         ns.status[i] === UNKNOWN ? "UNKNOWN must-have" : "",
         missing ? `${missing} missing` : "",

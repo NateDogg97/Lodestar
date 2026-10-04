@@ -1782,27 +1782,35 @@ results are genuinely helpful, not misleading." `npm run audit:results` runs 16 
 searches over the real data (scripts/audit) and writes a report. First run's findings,
 worst first — each needs fixing (or an owner call) before more features:
 
-- [ ] **Missing data lifts scores.** A weighted priority with no value is dropped from the
+- [x] **Missing data lifts scores.** *Fixed: a missing value counts as average (50 points)
+      at full weight, areas and counties alike; still shown as "No data".* A weighted priority with no value is dropped from the
       area's average, so an area known on one good measure outranks areas known on all.
       Up to 63 of a top 100 (budget + commute), and many #1s ("Young family" #2–#7).
-- [ ] **Places nobody lives.** 493 areas have 0 residents (water, airports, parks), 605 ≤ 50;
+- [x] **Places nobody lives.** *Fixed: areas with 50 or fewer residents are never results
+      (`MIN_RESIDENTS`); they're still in the national percentiles.* 493 areas have 0 residents (water, airports, parks), 605 ≤ 50;
       they reach top results ("Near Destin", SFO, Memphis tracts with 0 people).
 - [ ] **Military bases and campuses** (Fort Hood, Fort Carson, Naval Academy, Kirtland AFB,
       Virginia Tech, Berkeley 94720): not places to move to. Needs group-quarters share from
       the Census (ETL) to leave out areas that are mostly barracks, dorms, prisons.
-- [ ] **"Unknown" outranks verified.** An area unknown for a must-have ranks with real
+- [x] **"Unknown" outranks verified.** *Fixed: verified matches first, then unknowns (areas
+      and counties).* An area unknown for a must-have ranks with real
       matches. Iowa tops "recreational marijuana" because its two sources disagree
       (CBD-only vs medical) — neither says recreational. Same for home-value limits.
-- [ ] **Ties at the best value score below 100.** Percentiles use mid-rank, so "no hurricane
+- [x] **Ties at the best value score below 100.** *Fixed: points count ties as wins
+      (`percentileBounds`). Rarity claims — gold bars, "Top 1% in the US" — use `beats`, the
+      share strictly worse, so a tie shared by most places is 100 points but never gold; the
+      breakdown says "as low as any US area" or "lower than or tied with N%".* Percentiles use mid-rank, so "no hurricane
       risk" shared by most areas gets 57–88 points and a 0% income tax gets 91 — the best
       possible value should score 100 (engine-wide, counties too).
-- [ ] **Zero crime.** 108 areas report 0 violent and 0 property crime (106 flagged low
+- [x] **Zero crime.** *Fixed in the app: zero violent and zero property crime reads as no
+      data (also to do in the crime ETL with the next rebuild).* 108 areas report 0 violent and 0 property crime (106 flagged low
       confidence); "Safety above all" returns 100 areas tied at the top.
-- [ ] **Must-haves only, no priorities → no results** (1,800 areas match, 0 shown).
+- [x] **Must-haves only, no priorities → no results** *Fixed: matches listed by population,
+      no score, and the list says it isn't a ranking.* (1,800 areas match, 0 shown).
 - [ ] **Mobile-home parks as "cheapest homes"** (Oakland County MI tracts at $25–58k beside
       $400k ZIPs). Real values, misleading next to houses: add mobile-home share (ETL) and a
       caution.
-- [ ] Small: distance to the coast prints without "mi".
+- [x] Small: distance to the coast prints without "mi". *Fixed.*
 
 Looked right: county-only rankings, walkable downtowns, typical-density suburbs, affluent
 areas with top high schools, Texas-only, no-income-tax states.
