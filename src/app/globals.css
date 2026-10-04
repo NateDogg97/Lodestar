@@ -72,3 +72,33 @@ body {
   --viz-muted: #898781;
 }
 
+
+/* The top 1% (99–100 points) on bars: metallic gold with a gold rim that gently glows
+   (owner, 2026-10-04, mockup round 4 "D"). Bars run horizontally; fingerprint columns
+   vertically. Still, with the rim, for "reduce motion". */
+@keyframes gold-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1.5px #d4a017, 0 0 3px 0 rgb(212 160 23 / 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 1.5px #e9b923, 0 0 10px 2px rgb(233 185 35 / 0.75);
+  }
+}
+.gold-bar,
+.gold-col {
+  animation: gold-glow 2.4s ease-in-out infinite;
+}
+.gold-bar {
+  background: linear-gradient(90deg, #c8960c 0%, #f3cf55 55%, #e2b020 75%, #fbe38e 100%);
+}
+.gold-col {
+  background: linear-gradient(180deg, #fdeaa0 0%, #e7b726 45%, #c8960c 70%, #a87b00 100%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .gold-bar,
+  .gold-col {
+    animation: none;
+    box-shadow: 0 0 0 1.5px #d4a017, 0 0 6px rgb(212 160 23 / 0.6);
+  }
+}

@@ -14,10 +14,6 @@ const STOPS: [number, [number, number, number]][] = [
   [99, [26, 127, 55]],
 ];
 
-/** The top 1% on a bar: gold rather than the deepest green. */
-export const GOLD = "#d4a017";
-const GOLD_FROM = 99.5;
-
 /** A score's color on the map and for numbers: red → yellow → deep green. */
 export function scoreColor(score: number): string {
   const p = Math.min(100, Math.max(0, score));
@@ -29,11 +25,15 @@ export function scoreColor(score: number): string {
   return `rgb(${c0.map((v, k) => Math.round(v + (c1[k] - v) * t)).join(",")})`;
 }
 
-/** True for a bar that shows gold (a glow is added where it's drawn). */
-export const isGold = (score: number) => score >= GOLD_FROM;
+/**
+ * True for a bar that shows gold: 99 or 100 points as shown (owner, 2026-10-04). Where
+ * it's drawn, gold is the `gold-bar` / `gold-col` class (globals.css): metallic gold
+ * with a gently glowing gold rim.
+ */
+export const isGold = (score: number) => Math.round(score) >= 99;
 
-/** A bar's color: the score scale, with gold for the top 1%. */
-export const barColor = (score: number) => (isGold(score) ? GOLD : scoreColor(score));
+/** A bar's track: a gold bar's rim and glow reach outside it, so it mustn't clip them. */
+export const trackOverflow = (points: number | null) => (points !== null && isGold(points) ? "overflow-visible" : "overflow-hidden");
 
 /** The map's scale as MapLibre `interpolate` stops: [0, c0, 10, c1, …, 99, deep green, 100, deep green]. */
 export const SCORE_STOPS: (number | string)[] = [

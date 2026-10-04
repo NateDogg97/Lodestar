@@ -31,7 +31,7 @@ import { formatValue, type MetricKey } from "@/lib/scoring";
 import { ordinal } from "@/lib/scoring/format";
 
 import type { AreaRankingView } from "./inside-view";
-import { barColor, isGold, scoreColor } from "./score-colors";
+import { isGold, scoreColor, trackOverflow } from "./score-colors";
 
 /**
  * An area's page below its name (owner, 2026-10-04, mockup round 3 "C"): every
@@ -404,13 +404,16 @@ export function PriorityBar({ c, full, showLevel = true }: { c: AreaPart; full: 
       ) : (
         <>
           <div className="grid grid-cols-[minmax(0,1fr)_3.25rem] items-center gap-2.5">
-            <span className="block h-2 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800" role="img" aria-label={`${Math.round(c.points)} of 100 points`}>
+            <span
+              className={`block h-2 rounded-full bg-neutral-200 dark:bg-neutral-800 ${trackOverflow(c.points)}`}
+              role="img"
+              aria-label={`${Math.round(c.points)} of 100 points${isGold(c.points) ? " — top 1% in the US" : ""}`}
+            >
               <span
-                className="block h-full rounded-full"
+                className={`block h-full rounded-full ${isGold(c.points) ? "gold-bar" : ""}`}
                 style={{
                   width: `${Math.max(2, c.points)}%`,
-                  backgroundColor: barColor(c.points),
-                  boxShadow: isGold(c.points) ? "0 0 6px rgba(212,160,23,.7)" : undefined,
+                  backgroundColor: isGold(c.points) ? undefined : scoreColor(c.points),
                 }}
               />
             </span>

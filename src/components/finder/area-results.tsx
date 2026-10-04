@@ -16,7 +16,7 @@ import {
 } from "@/lib/tracts";
 import { formatValue, type CountyScore, type MetricKey } from "@/lib/scoring";
 
-import { barColor, isGold, scoreColor } from "./score-colors";
+import { isGold, scoreColor, trackOverflow } from "./score-colors";
 
 /**
  * Areas as the results (plan §9 Phase 8f; mockups 2026-10-03): the best areas
@@ -115,16 +115,13 @@ export function ScoreNumber({ score }: { score: number }) {
   );
 }
 
-/** A bar's fill: the score's color, gold with a glow at the top 1%. */
+/** A bar's fill: the score's color; at the top 1%, glowing metallic gold. */
 function Fill({ points }: { points: number }) {
+  const gold = isGold(points);
   return (
     <span
-      className="block h-full rounded-full"
-      style={{
-        width: `${Math.max(4, points)}%`,
-        backgroundColor: barColor(points),
-        boxShadow: isGold(points) ? "0 0 6px rgba(212,160,23,.7)" : undefined,
-      }}
+      className={`block h-full rounded-full ${gold ? "gold-bar" : ""}`}
+      style={{ width: `${Math.max(4, points)}%`, backgroundColor: gold ? undefined : scoreColor(points) }}
     />
   );
 }
@@ -140,7 +137,7 @@ export function Fingerprint({ parts }: { parts: AreaPart[] }) {
     return (
       <span role="img" aria-label={label} className="mt-1 flex items-center gap-1">
         {parts.map((p) => (
-          <span key={p.key} className="block h-1.5 w-9 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+          <span key={p.key} className={`block h-1.5 w-9 rounded-full bg-neutral-200 dark:bg-neutral-800 ${trackOverflow(p.points)}`}>
             {p.points !== null && <Fill points={p.points} />}
           </span>
         ))}
@@ -152,10 +149,10 @@ export function Fingerprint({ parts }: { parts: AreaPart[] }) {
       {parts.map((p) => (
         <span
           key={p.key}
-          className="block w-2 rounded-t-sm"
+          className={`block w-2 rounded-t-sm ${p.points !== null && isGold(p.points) ? "gold-col" : ""}`}
           style={{
             height: `${Math.max(3, Math.round(((p.points ?? 0) / 100) * 20))}px`,
-            backgroundColor: p.points === null ? "#d4d4d4" : barColor(p.points),
+            backgroundColor: p.points === null ? "#d4d4d4" : isGold(p.points) ? undefined : scoreColor(p.points),
           }}
         />
       ))}
@@ -204,7 +201,7 @@ function Summary({ i, parts, common }: { i: number; parts: AreaPart[]; common: C
     list.map((p) => (
       <li key={p.key} className="col-span-3 grid grid-cols-subgrid items-center text-label">
         <span className="leading-snug break-words text-neutral-600 dark:text-neutral-400">{p.label}</span>
-        <span className="block h-2 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+        <span className={`block h-2 rounded-full bg-neutral-200 dark:bg-neutral-800 ${trackOverflow(p.points)}`}>
           {p.points !== null && <Fill points={p.points} />}
         </span>
         <span className="text-right font-medium whitespace-nowrap tabular-nums">{partValue(p)}</span>
