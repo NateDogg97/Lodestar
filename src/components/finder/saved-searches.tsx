@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { Icon } from "@/components/ui/icons";
+import { ShareButton } from "@/components/ui/share-button";
 
 import type { Preferences } from "./preferences";
 import {
@@ -21,7 +22,16 @@ import { summarizeSearch } from "./search-url";
  * name, and reopen saved or recent ones. Mounted only while the tab is open,
  * so the lists are read fresh each time it opens.
  */
-export function SavedSearches({ prefs, onOpen }: { prefs: Preferences; onOpen: (prefs: Preferences) => void }) {
+export function SavedSearches({
+  prefs,
+  onOpen,
+  getShareUrl,
+}: {
+  prefs: Preferences;
+  onOpen: (prefs: Preferences) => void;
+  /** This search's link, for Share. */
+  getShareUrl: () => string;
+}) {
   const [saved, setSaved] = useState(loadSaved);
   const [recent] = useState(loadRecent);
   const [name, setName] = useState("");
@@ -46,7 +56,10 @@ export function SavedSearches({ prefs, onOpen }: { prefs: Preferences; onOpen: (
   return (
     <div className="space-y-section px-gutter py-5 md:px-6">
       <section>
-        <h3 className="mb-1 text-title font-semibold">Save this search</h3>
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <h3 className="text-title font-semibold">Save this search</h3>
+          <ShareButton getUrl={getShareUrl} />
+        </div>
         <p className="mb-3 text-caption text-neutral-500 dark:text-neutral-400">
           {summary}
           {alreadySaved && <> · already saved as &ldquo;{alreadySaved.name}&rdquo;</>}
@@ -167,7 +180,7 @@ export function SavedSearches({ prefs, onOpen }: { prefs: Preferences; onOpen: (
       </section>
 
       <p className="text-caption text-neutral-500 dark:text-neutral-400">
-        Saved and recent searches stay in this browser on this device. To share a search, use Copy link.
+        Saved and recent searches stay in this browser on this device. To send one to someone, use Share.
       </p>
     </div>
   );

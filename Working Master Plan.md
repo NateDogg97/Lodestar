@@ -33,7 +33,9 @@
 >   redeploys on push, `EIA_API_KEY` secret, DNS, and a real-phone pass.
 > - 2026-09-30 — **Shareable searches.** The URL now carries the whole search and the open
 >   county (readable params: `?v=1&w=…&lim=…&cat=…&place=…`, `search-url.ts`), kept live in
->   the address bar; **Copy link** in the header copies it and shows "Copied". A link wins
+>   the address bar; **Share** (Filters → Saved, beside "Save this search"; 2026-10-04,
+>   replaced the header's Copy link) sends it by email or text, copies it, or opens the
+>   device's share sheet. A link wins
 >   over the saved search, and the search it replaces goes to Recent. Filters has a **Saved**
 >   button (beside the Priorities / Must-haves tabs): name and save the current search, reopen saved or recent ones (up to 8,
 >   recorded when Filters closes), all in localStorage (`searches-store.ts`).
@@ -1072,7 +1074,8 @@ Build order:
       the climate section needs it.
 - [x] URL-encoded filter state — *done 2026-09-30.* Readable query params, live in the
       address bar (debounced `replaceState`), plus the open county (`place=`), which opens and
-      zooms on arrival. Copy link button. The URL wins over the saved search; the replaced
+      zooms on arrival. Share button in Filters → Saved (email, text, copy link, the device's
+      share sheet; was a header Copy link until 2026-10-04). The URL wins over the saved search; the replaced
       search is kept in Recent.
 - [x] Saved and recent searches (2026-09-30) — a **Saved** button inside the Filters modal,
       beside the tabs (user call, after trying a header "Searches" button and a third tab). Stored as the same query strings.

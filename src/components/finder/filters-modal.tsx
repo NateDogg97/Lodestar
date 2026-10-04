@@ -144,6 +144,8 @@ interface Props {
   categoryCounts: Partial<Record<CategoryKey, Record<string, number>>>;
   /** Open a saved or recent search from the Saved tab. */
   onOpenSearch: (prefs: Preferences) => void;
+  /** This search's link, for Share on the Saved tab. */
+  getShareUrl: () => string;
 }
 
 export function FiltersModal({
@@ -160,6 +162,7 @@ export function FiltersModal({
   sources,
   categoryCounts,
   onOpenSearch,
+  getShareUrl,
 }: Props) {
   const [mode, setMode] = useState<FiltersMode>("priorities");
   // The Saved button swaps the body for saved and recent searches; the tabs,
@@ -244,9 +247,8 @@ export function FiltersModal({
             </button>
           ))}
         </div>
-        {!savedOpen && (
-          <InfoTip label={mode === "priorities" ? "priorities" : "must-haves"}>{MODE_TIPS[mode]}</InfoTip>
-        )}
+        {/* Always there, on Saved too, so the bar doesn't shift. */}
+        <InfoTip label={mode === "priorities" ? "priorities" : "must-haves"}>{MODE_TIPS[mode]}</InfoTip>
         <button
           type="button"
           onClick={() => setSavedOpen((o) => !o)}
@@ -268,6 +270,7 @@ export function FiltersModal({
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <SavedSearches
             prefs={prefs}
+            getShareUrl={getShareUrl}
             onOpen={(p) => {
               onOpenSearch(p);
               // Back to the filters, showing what was just opened.

@@ -21,7 +21,6 @@ import {
   type MetricKey,
 } from "@/lib/scoring";
 
-import { CopyLinkButton } from "@/components/ui/copy-link-button";
 import { InfoTip } from "@/components/ui/info-tip";
 import { LodestarLogo } from "@/components/ui/lodestar-logo";
 import { useTheme } from "@/components/ui/theme";
@@ -663,6 +662,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       sources={lawSources}
       categoryCounts={categoryCounts}
       onOpenSearch={openSearch}
+      getShareUrl={shareUrl}
     />
   );
 
@@ -858,7 +858,6 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
             <LodestarLogo size="sm" />
           </h1>
           <div className="flex shrink-0 items-center">
-            <CopyLinkButton getUrl={shareUrl} compact />
             {settingsButton}
           </div>
         </div>
@@ -902,7 +901,6 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         </h1>
         {filtersButton}
         <div className="ml-auto flex items-center gap-2">
-          <CopyLinkButton getUrl={shareUrl} />
           {settingsButton}
         </div>
       </header>

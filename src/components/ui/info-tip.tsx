@@ -84,7 +84,7 @@ export function InfoTip({ label, icon, children }: { label: string; icon?: React
 }
 
 /** Below the button, flipped above when there's no room, kept inside the viewport. */
-function place(anchor: HTMLElement, el: HTMLElement) {
+export function place(anchor: HTMLElement, el: HTMLElement) {
   const a = anchor.getBoundingClientRect();
   const { width, height } = el.getBoundingClientRect();
   const vw = document.documentElement.clientWidth;
