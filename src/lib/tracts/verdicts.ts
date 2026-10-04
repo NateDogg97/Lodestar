@@ -92,3 +92,12 @@ export function hazardsVerdict(overall: number | null, hazards: { label: string;
   if (worst && worst.p >= 80 && overall < 60) return `${word} overall — but ${worst.label.toLowerCase()}`;
   return `${word} risk overall`;
 }
+
+/** A county's distance to the nearest 500k+ metro ("Minneapolis-St. Paul-Bloomington, MN-WI"). */
+export function locationVerdict(metroMi: number | null, metro: string | null): string {
+  if (metroMi === null) return "Distances below";
+  const city = metro ? metro.split(/[-,]/)[0].trim() : "a big metro";
+  if (metroMi <= 25) return `In or near the ${city} metro`;
+  if (metroMi <= 75) return `${Math.round(metroMi)} mi to ${city}`;
+  return `Far from big metros · ${Math.round(metroMi)} mi to ${city}`;
+}

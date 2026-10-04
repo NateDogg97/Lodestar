@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { aroundVerdict, hazardsVerdict, marketVerdict, peopleVerdict, safetyVerdict, schoolsVerdict } from "./verdicts";
+import {
+  aroundVerdict,
+  hazardsVerdict,
+  locationVerdict,
+  marketVerdict,
+  peopleVerdict,
+  safetyVerdict,
+  schoolsVerdict,
+} from "./verdicts";
 
 describe("area page verdicts", () => {
   it("say what stands out, in words", () => {
@@ -15,6 +23,8 @@ describe("area page verdicts", () => {
     expect(aroundVerdict(1.2, 15.9)).toBe("Close to downtown, short commute");
     expect(aroundVerdict(null, 40)).toBe("Long commute");
     expect(marketVerdict(7.6)).toBe("Prices up 7.6% in a year (typical +1.6%)");
+    expect(locationVerdict(272, "Minneapolis-St. Paul-Bloomington, MN-WI")).toBe("Far from big metros · 272 mi to Minneapolis");
+    expect(locationVerdict(10, "Austin-Round Rock-San Marcos, TX")).toBe("In or near the Austin metro");
   });
 
   it("flag one standout hazard when the overall risk is lower", () => {

@@ -101,6 +101,19 @@ describe("areas as the results (Phase 8f)", () => {
     expect(tradeOff(parts)).toBe("Helped by cheap homes; held back by more violent crime.");
   });
 
+  it("words county priorities by their direction", () => {
+    const part = (key: string, direction: "lower" | "higher", impact: number) => ({
+      key, label: key, level: "county" as const, direction, weight: 1, value: 1, rawPercentile: 50, points: 50, impact,
+    });
+    expect(tradeOff([part("rpp_all", "lower", 40), part("days_above_90f", "lower", 30)])).toBe(
+      "Helped by low cost of living and few days above 90°F.",
+    );
+    expect(tradeOff([part("dist_airport_mi", "lower", -20), part("hazard_tornado", "lower", -10)])).toBe(
+      "Held back by the distance to a major airport and high risk of tornadoes.",
+    );
+    expect(tradeOff([part("hottest_month_high_f", "lower", 30)])).toBe("Helped by cooler summers.");
+  });
+
   it("badges the one best result per priority, and gold for the US top 1%", () => {
     const { criteria } = areaCriteria({ areaWeights: { walkability: 1, violent_rate: 1 }, areaDirections: {}, areaLimits: {} });
     const s = search({ criteria });

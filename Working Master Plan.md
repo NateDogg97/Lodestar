@@ -1764,8 +1764,12 @@ neighborhood near a specific school), not a county average. Decided with the own
   the must-have rows below the top 3, in the same style, with no details box. "Typical US area" =
   medians over all 84,119 areas, computed 2026-10-04 (`US_TYPICAL`); recompute on a new
   Census release. Built in `src/components/finder/area-detail.tsx`.
-- [ ] Data overload — county page: the same section style for its Overview (Location,
-  Natural hazards, How it's scored), if wanted.
+- [x] **Data overload — county page** (owner, 2026-10-04): its Overview tab uses the same
+  section style — How it's scored (trade-off sentence, top 3 bars, grows in place to the
+  rest), Location (nearest big metro and airport; coast on tap), Natural hazards (shared
+  with the area page). Trade-off sentences now word county priorities by direction ("low
+  cost of living", "few days above 90°F", "a major airport nearby", "high risk of
+  tornadoes") instead of "good …".
 
 ### Phase 9 — First-run tutorial (added 2026-10-01)
 

@@ -314,11 +314,39 @@ export function areaLimitResults(areas: NationalAreas, i: number, limits: AreaLi
   });
 }
 
+/** County measures that read better as their own phrase (in their default direction): [helps, hurts]. */
+const COUNTY_WORDS: Partial<Record<string, [string, string]>> = {
+  hottest_month_high_f: ["cooler summers", "hot summers"],
+  coldest_month_low_f: ["milder winters", "cold winters"],
+  spring_mean_f: ["warm springs", "cool springs"],
+  fall_mean_f: ["warm falls", "cool falls"],
+  hazard_risk: ["low hazard risk", "high hazard risk"],
+};
+
+/**
+ * How a priority reads in the trade-off sentence: an area measure's own words, else a
+ * phrase from its label and direction — "low cost of living", "few days above 90°F",
+ * "a major airport nearby", "high risk of tornadoes".
+ */
 const words = (part: AreaPart, good: boolean): string => {
   const def = part.level === "area" ? areaPriority(part.key) : undefined;
   if (def && part.direction === def.defaultDirection) return (good ? def.good : def.bad) ?? part.label.toLowerCase();
-  const name = part.level === "county" ? getMetric(part.key as MetricKey).label.toLowerCase() : part.label.toLowerCase();
-  return good ? `good ${name}` : name;
+  const metric = part.level === "county" ? getMetric(part.key as MetricKey) : undefined;
+  const own = COUNTY_WORDS[part.key];
+  if (metric && own && part.direction === metric.defaultDirection) return good ? own[0] : own[1];
+  const label = (metric?.label ?? part.label).replace(/\s*\(.*\)$/, "");
+  const name = label[0].toLowerCase() + label.slice(1);
+  const unit = metric?.unit ?? "";
+  if (part.direction === "middle") return good ? `typical ${name}` : `unusual ${name}`;
+  // Which end this place is at: the good end when it helped.
+  const high = part.direction === "higher" ? good : !good;
+  if (unit === "mi" && /^distance to /i.test(label)) {
+    const target = label.replace(/^distance to /i, "");
+    return high ? `the distance to ${target}` : good ? `${target} nearby` : `${target} close by`;
+  }
+  if (unit === "pctl") return `${high ? "high" : "low"} risk of ${name}`;
+  if (/^(days|nights)\//.test(unit)) return `${high ? "many" : "few"} ${name}`;
+  return `${high ? "high" : "low"} ${name}`;
 };
 
 const list = (xs: string[]) => (xs.length < 3 ? xs.join(" and ") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);

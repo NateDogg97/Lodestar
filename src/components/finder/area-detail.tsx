@@ -112,7 +112,7 @@ function Chevron({ up, className = "h-4 w-4" }: { up: boolean; className?: strin
   );
 }
 
-function AreaSection({
+export function AreaSection({
   id,
   icon,
   title,
@@ -324,7 +324,7 @@ function RiskRow({ label, p }: { label: string; p: number }) {
   );
 }
 
-function PlaceRow({ name, sub, value }: { name: string; sub: string; value: string }) {
+export function PlaceRow({ name, sub, value }: { name: string; sub: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3 text-label">
       <span className="min-w-0">
@@ -349,7 +349,7 @@ function SubHead({ children }: { children: ReactNode }) {
   return <p className="text-caption font-semibold tracking-wide text-neutral-500 uppercase dark:text-neutral-400">{children}</p>;
 }
 
-function Note({ children }: { children: ReactNode }) {
+export function Note({ children }: { children: ReactNode }) {
   return <p className="text-caption text-neutral-500 dark:text-neutral-400">{children}</p>;
 }
 
@@ -387,8 +387,9 @@ export const bound = (l: AreaLimit) =>
     .filter(Boolean)
     .join(", ");
 
-function PriorityBar({ c, full }: { c: AreaPart; full: boolean }) {
-  const tag = c.level === "county" ? "county-wide" : SCORED_ON_CENSUS.has(c.key) ? "today’s prices" : null;
+/** One priority's bar; `full` adds where it stands, its weight and its effect. */
+export function PriorityBar({ c, full, showLevel = true }: { c: AreaPart; full: boolean; showLevel?: boolean }) {
+  const tag = c.level === "county" ? (showLevel ? "county-wide" : null) : SCORED_ON_CENSUS.has(c.key) ? "today’s prices" : null;
   return (
     <div className="space-y-1">
       <div className="flex items-baseline justify-between gap-3 text-label">
@@ -583,11 +584,6 @@ export function AreaDetail({
   const highrise = v("highrise_share");
   const single = v("single_family_share");
   const yoy = v("zhvi_yoy");
-  const overall = v("hazard_risk");
-  const hazards = HAZARDS.map((h): { label: string; p: number | null } => ({ label: h.label, p: v(h.key) }));
-  const risky = hazards.filter((h): h is { label: string; p: number } => h.p !== null && h.p > 0).sort((a, b) => b.p - a.p);
-  const none = hazards.filter((h) => h.p === 0).map((h) => h.label.toLowerCase());
-  const overallWord = overall === null ? null : hazardWord(overall);
 
   return (
     <div className="px-gutter py-2">
@@ -833,39 +829,58 @@ export function AreaDetail({
         )}
       </AreaSection>
 
-      <AreaSection
-        id="hazards"
-        icon="alert"
-        title="Natural hazards"
-        lead={hazardsVerdict(overall, hazards)}
-        details={
-          risky.length > 1 || none.length > 0 ? (
-            <>
-              {risky.slice(1).map((h) => (
-                <RiskRow key={h.label} label={h.label} p={h.p} />
-              ))}
-              {none.length > 0 && <Note>None: {none.join(", ")}.</Note>}
-              <Note>{AREA_MEASURE.get("hazard_risk")?.note ?? "FEMA National Risk Index."} Longer bar = more risk.</Note>
-            </>
-          ) : undefined
-        }
-      >
-        {overall !== null && overallWord && (
-          <span
-            className={`inline-flex rounded-full px-3 py-1 text-label font-semibold ${
-              overall < 40
-                ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                : overall < 60
-                  ? "bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
-                  : "bg-rose-50 text-rose-900 dark:bg-rose-950 dark:text-rose-200"
-            }`}
-          >
-            Overall: {overallWord.toLowerCase()} · {ordinal(Math.round(overall))} percentile
-          </span>
-        )}
-        {risky[0] && <RiskRow label={risky[0].label} p={risky[0].p} />}
-      </AreaSection>
+      <HazardsSection id="hazards" get={v} />
     </div>
+  );
+}
+
+/**
+ * Natural hazards (FEMA National Risk Index percentiles), for an area or a county:
+ * the overall risk and the worst hazard up front, the others on tap.
+ */
+export function HazardsSection({ id, get }: { id: string; get: (key: string) => number | null }) {
+  const overall = get("hazard_risk");
+  const hazards = HAZARDS.map((h): { label: string; p: number | null } => ({ label: h.label, p: get(h.key) }));
+  const risky = hazards.filter((h): h is { label: string; p: number } => h.p !== null && h.p > 0).sort((a, b) => b.p - a.p);
+  const none = hazards.filter((h) => h.p === 0).map((h) => h.label.toLowerCase());
+  const overallWord = overall === null ? null : hazardWord(overall);
+  if (overall === null && risky.length === 0) return null;
+  return (
+    <AreaSection
+      id={id}
+      icon="alert"
+      title="Natural hazards"
+      lead={hazardsVerdict(overall, hazards)}
+      details={
+        risky.length > 1 || none.length > 0 ? (
+          <>
+            {risky.slice(1).map((h) => (
+              <RiskRow key={h.label} label={h.label} p={h.p} />
+            ))}
+            {none.length > 0 && <Note>None: {none.join(", ")}.</Note>}
+            <Note>
+              FEMA National Risk Index (Dec 2025): where this place ranks nationally on the share of its buildings, people and
+              farms expected to be lost to each hazard in a typical year. Longer bar = more risk.
+            </Note>
+          </>
+        ) : undefined
+      }
+    >
+      {overall !== null && overallWord && (
+        <span
+          className={`inline-flex rounded-full px-3 py-1 text-label font-semibold ${
+            overall < 40
+              ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+              : overall < 60
+                ? "bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+                : "bg-rose-50 text-rose-900 dark:bg-rose-950 dark:text-rose-200"
+          }`}
+        >
+          Overall: {overallWord.toLowerCase()} · {ordinal(Math.round(overall))} percentile
+        </span>
+      )}
+      {risky[0] && <RiskRow label={risky[0].label} p={risky[0].p} />}
+    </AreaSection>
   );
 }
 
