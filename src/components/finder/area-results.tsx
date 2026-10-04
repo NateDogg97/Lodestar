@@ -213,15 +213,17 @@ function Summary({ i, parts, common }: { i: number; parts: AreaPart[]; common: C
   return (
     <div className="mt-1 mb-3 ml-8 mr-2 space-y-2.5">
       <p className="text-body font-medium">{tradeOff(parts)}</p>
-      {parts.length > 3 && <p className="text-caption text-neutral-500">The 3 priorities that moved its score most:</p>}
-      <ul className="space-y-1.5">{bars(top)}</ul>
+      {parts.length > 3 && (
+        <p className="text-caption text-neutral-500">
+          {all ? `All ${parts.length} priorities, the 3 that moved its score most first:` : "The 3 priorities that moved its score most:"}
+        </p>
+      )}
+      {/* One list that grows; the toggle stays below it. */}
+      <ul className="space-y-1.5">{bars(all ? [...top, ...rest] : top)}</ul>
       {rest.length > 0 && parts.length > 3 && (
-        <>
-          <button type="button" onClick={() => setAll((a) => !a)} aria-expanded={all} className="text-label font-medium text-emerald-700 hover:underline dark:text-emerald-400">
-            {all ? `Hide the other ${rest.length}` : `Show the other ${rest.length} ${rest.length === 1 ? "priority" : "priorities"}`}
-          </button>
-          {all && <ul className="space-y-1.5">{bars(rest)}</ul>}
-        </>
+        <button type="button" onClick={() => setAll((a) => !a)} aria-expanded={all} className="text-label font-medium text-emerald-700 hover:underline dark:text-emerald-400">
+          {all ? `Hide the other ${rest.length}` : `Show the other ${rest.length} ${rest.length === 1 ? "priority" : "priorities"}`}
+        </button>
       )}
       {limits.length > 0 && (
         <p className="flex items-center gap-1.5 text-caption text-neutral-600 dark:text-neutral-400">
