@@ -121,6 +121,8 @@ function AreaSection({
   children,
   details,
   detailsLabel = "Show details",
+  lessLabel = "Hide details",
+  expandable = false,
   tone = "emerald",
 }: {
   id: string;
@@ -129,11 +131,14 @@ function AreaSection({
   lead: ReactNode;
   /** Beside the title (a score). */
   right?: ReactNode;
-  /** The headline visuals, always shown while the section is open. */
-  children: ReactNode;
+  /** The headline visuals; or, for a section that grows in place, a render of either state. */
+  children: ReactNode | ((more: boolean) => ReactNode);
   /** The full analysis, behind "Show details". */
   details?: ReactNode;
   detailsLabel?: string;
+  lessLabel?: string;
+  /** The section itself grows (children get `more`), instead of a details box. */
+  expandable?: boolean;
   tone?: "emerald" | "amber";
 }) {
   const [more, setMore] = useFold(`${id}.details`, false);
@@ -159,14 +164,14 @@ function AreaSection({
         </div>
         {right}
       </div>
-      <div className="mt-4 space-y-4">
-        {children}
+      <div id={detailsId} className="mt-4 space-y-4">
+        {typeof children === "function" ? children(more) : children}
         {details && more && (
-          <div id={detailsId} className="space-y-4 rounded-xl bg-neutral-50 p-3.5 dark:bg-neutral-900/60">
+          <div className="space-y-4 rounded-xl bg-neutral-50 p-3.5 dark:bg-neutral-900/60">
             {details}
           </div>
         )}
-        {details && (
+        {(details || expandable) && (
           <button
             type="button"
             aria-expanded={more}
@@ -174,7 +179,7 @@ function AreaSection({
             onClick={() => setMore(!more)}
             className="inline-flex min-h-8 items-center gap-1 text-label font-semibold text-emerald-700 hover:underline dark:text-emerald-400"
           >
-            {more ? "Hide details" : detailsLabel}
+            {more ? lessLabel : detailsLabel}
             <Chevron up={more} className="h-3.5 w-3.5" />
           </button>
         )}
@@ -436,6 +441,7 @@ function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRa
   const byEffect = [...parts].sort((a, b) => Math.abs(b.impact ?? 0) - Math.abs(a.impact ?? 0));
   const failed = limits.filter((l) => l.state === "fail").length;
   const unknown = limits.filter((l) => l.state === "unknown").length;
+  const rest = Math.max(0, byEffect.length - 3);
   const where =
     place >= 0 ? `${ordinal(place + 1)} of ${ranking.matches.length} matching areas in ${countyName}` : "Doesn't pass your must-haves";
   return (
@@ -452,16 +458,50 @@ function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRa
           </span>
         )
       }
-      detailsLabel="All priorities and must-haves"
-      details={
+      expandable={rest > 0 || limits.length > 0}
+      detailsLabel={
+        rest > 0 && limits.length > 0
+          ? `Show the other ${rest} ${rest === 1 ? "priority" : "priorities"} and your must-haves`
+          : rest > 0
+            ? `Show the other ${rest} ${rest === 1 ? "priority" : "priorities"}`
+            : limits.length === 1
+              ? "Show your must-have"
+              : "Show your must-haves"
+      }
+      lessLabel="Show less"
+    >
+      {(more: boolean) => (
         <>
-          <SubHead>All {parts.length} priorities, most effect first</SubHead>
-          {byEffect.map((c) => (
-            <PriorityBar key={c.key} c={c} full />
+          <p className="text-body">{tradeOff(parts)}</p>
+          {(more ? byEffect : byEffect.slice(0, 3)).map((c) => (
+            <PriorityBar key={c.key} c={c} full={more} />
           ))}
-          {limits.length > 0 && (
+          {limits.length > 0 && !more && (
+            <p className="flex items-center gap-2 text-label">
+              <span
+                aria-hidden
+                className={`grid h-5 w-5 place-items-center rounded-full text-caption font-bold ${
+                  failed
+                    ? "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
+                    : unknown
+                      ? "bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+                      : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                }`}
+              >
+                {failed ? "✕" : unknown ? "?" : "✓"}
+              </span>
+              {failed
+                ? `Fails ${failed} of your must-haves`
+                : unknown
+                  ? `No data for ${unknown} of your must-haves`
+                  : limits.length === 1
+                    ? "Passes your must-have"
+                    : `Passes all ${limits.length} must-haves`}
+            </p>
+          )}
+          {limits.length > 0 && more && (
             <>
-              <SubHead>Must-haves</SubHead>
+              <SubHead>Your must-haves</SubHead>
               {limits.map((l) => (
                 <div key={l.column} className="flex items-baseline justify-between gap-3 text-label">
                   <span>
@@ -480,34 +520,6 @@ function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRa
             </>
           )}
         </>
-      }
-    >
-      <p className="text-body">{tradeOff(parts)}</p>
-      {byEffect.slice(0, 3).map((c) => (
-        <PriorityBar key={c.key} c={c} full={false} />
-      ))}
-      {limits.length > 0 && (
-        <p className="flex items-center gap-2 text-label">
-          <span
-            aria-hidden
-            className={`grid h-5 w-5 place-items-center rounded-full text-caption font-bold ${
-              failed
-                ? "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
-                : unknown
-                  ? "bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
-                  : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-            }`}
-          >
-            {failed ? "✕" : unknown ? "?" : "✓"}
-          </span>
-          {failed
-            ? `Fails ${failed} of your must-haves`
-            : unknown
-              ? `No data for ${unknown} of your must-haves`
-              : limits.length === 1
-                ? "Passes your must-have"
-                : `Passes all ${limits.length} must-haves`}
-        </p>
       )}
     </AreaSection>
   );

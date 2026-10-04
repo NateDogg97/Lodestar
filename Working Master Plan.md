@@ -1759,7 +1759,9 @@ neighborhood near a specific school), not a county average. Decided with the own
   own/rent and home-type splits, risk bars), and "Show details" for the full analysis.
   Details start closed; which are open is remembered per device (`lodestar.area-sections`
   in browser storage, synced across tabs). Sections themselves don't fold — one toggle per
-  section (owner, 2026-10-04). "Typical US area" =
+  section (owner, 2026-10-04). "Why it ranks here" grows in place instead: its toggle
+  ("Show the other N priorities and your must-haves") adds the remaining priorities and
+  the must-have rows below the top 3, in the same style, with no details box. "Typical US area" =
   medians over all 84,119 areas, computed 2026-10-04 (`US_TYPICAL`); recompute on a new
   Census release. Built in `src/components/finder/area-detail.tsx`.
 - [ ] Data overload — county page: the same section style for its Overview (Location,
