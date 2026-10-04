@@ -312,6 +312,14 @@ export default function CountyMap({
     latest.current = { data, scoresByFips, rankByFips, onSelect, bottomInset, inside, onOpenArea };
   });
 
+  // The lower 48 above the phone's results sheet (owner, 2026-10-04): the opening view
+  // leaves the bottom `bottomInset` px for the sheet, so the whole country is visible.
+  const home = useRef(true);
+  const homePadding = (el: HTMLElement) => {
+    const inset = Math.min(latest.current.bottomInset, el.clientHeight * 0.6);
+    return { top: 20, left: 20, right: 20, bottom: 20 + inset };
+  };
+
   // Where the camera was when the map was last torn down (a theme switch), so
   // the rebuilt map opens on the same view.
   const camera = useRef<{ center: [number, number]; zoom: number } | null>(null);
@@ -330,12 +338,16 @@ export default function CountyMap({
         map = new MapLibreMap({
           container: container.current,
           style,
-          ...(camera.current ?? { bounds: CONTIGUOUS_US, fitBoundsOptions: { padding: 20 } }),
+          ...(camera.current ?? { bounds: CONTIGUOUS_US, fitBoundsOptions: { padding: homePadding(container.current) } }),
           attributionControl: { compact: true },
           dragRotate: false,
           pitchWithRotate: false,
         });
         map.touchZoomRotate.disableRotation();
+        // The opening view follows the phone sheet until the person moves the map.
+        map.on("movestart", (e) => {
+          if ((e as { originalEvent?: Event }).originalEvent) home.current = false;
+        });
         map.addControl(new NavigationControl({ showCompass: false }), "top-right");
         mapRef.current = map;
         // Development only: lets the browser console (and automated checks)
@@ -642,6 +654,16 @@ export default function CountyMap({
       for (const m of made) m.marker.remove();
     };
   }, [ready, marks, dark]);
+
+  // The sheet's height settles after load (and can change): keep the opening view above
+  // it until the map is moved by hand or something is selected.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || !home.current || camera.current || selectedFips || inside) return;
+    map.fitBounds(CONTIGUOUS_US, { padding: homePadding(map.getContainer()), duration: 0 });
+    // homePadding reads the latest inset.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, bottomInset]);
 
   // A pick from the area list or the results zooms to it — once its county's shapes are in.
   useEffect(() => {
