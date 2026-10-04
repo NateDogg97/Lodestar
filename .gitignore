@@ -58,3 +58,6 @@ __pycache__/
 
 # Phase 8 tract data (published by `python -m etl.tracts.publish`; hosted on R2 later)
 /public/data/tracts/
+
+# Results audit output (npm run audit:results)
+/scripts/audit/report.md
