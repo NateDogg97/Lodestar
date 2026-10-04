@@ -40,7 +40,7 @@ export interface MetricDef {
 
 export const METRICS = [
   // people
-  { key: "population", label: "Population", unit: "people", group: "people", defaultDirection: "higher" },
+  { key: "population", label: "County population", unit: "people", group: "people", defaultDirection: "higher" },
   { key: "median_household_income", label: "Median household income", unit: "$", group: "people", defaultDirection: "higher" },
   { key: "real_income", label: "Income adjusted for local prices", unit: "$", group: "people", defaultDirection: "higher" },
   // BLS LAUS, latest annual average
@@ -108,6 +108,26 @@ export type MetricKey = (typeof METRICS)[number]["key"];
 export const METRIC_KEYS: readonly MetricKey[] = METRICS.map((m) => m.key);
 
 const BY_KEY = new Map<string, MetricDef>(METRICS.map((m) => [m.key, m]));
+
+/**
+ * Measures kept as data (county page, cost-of-living breakdown, laws tab) but not offered
+ * as filters (owner, 2026-10-04: "fewer filters"):
+ * - the cost-of-living parts: "Cost of living" (rpp_all) already covers rents, goods,
+ *   utilities and services, and housing has its own rent and home value by area;
+ * - electricity price: part of utilities in the cost of living; shown in Laws & taxes;
+ * - ratios to the local income (home price to income, rent share of income, price to
+ *   rent) and income adjusted for local prices: a mover's own income is what matters,
+ *   so they're context on the county page, not something to rank by.
+ * A saved search or link that weighted one drops it (a cost-of-living part becomes
+ * "Cost of living" when that isn't set) — see `sanitizePreferences`.
+ */
+export const NOT_IN_FILTERS: ReadonlySet<MetricKey> = new Set<MetricKey>([
+  "rpp_rents", "rpp_utilities", "rpp_goods", "rpp_services", "electricity_price_cents_kwh",
+  "home_value_to_income", "rent_to_income", "price_to_rent", "real_income",
+]);
+
+/** Cost-of-living parts that fold into "Cost of living" when an old search weighted one. */
+export const COST_PARTS: readonly MetricKey[] = ["rpp_rents", "rpp_utilities", "rpp_goods", "rpp_services", "electricity_price_cents_kwh"];
 
 export function getMetric(key: MetricKey): MetricDef {
   const def = BY_KEY.get(key);

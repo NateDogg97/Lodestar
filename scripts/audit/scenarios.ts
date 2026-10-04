@@ -4,7 +4,7 @@
  * returns the results that break it; any means the audit fails.
  */
 import { AREA_PRIORITIES, COUNTY_METRICS_NOW_AREA } from "@/lib/tracts";
-import { METRICS, type Direction, type MetricKey } from "@/lib/scoring";
+import { METRICS, NOT_IN_FILTERS, type Direction, type MetricKey } from "@/lib/scoring";
 import { DEFAULT_PREFERENCES, EMPTY_PREFERENCES, type Preferences } from "@/components/finder/preferences";
 
 import { derive, quantile, sortedResidential } from "./checks";
@@ -79,9 +79,9 @@ const composite: Scenario[] = [
   },
   {
     name: "Walkable city life",
-    intent: "Very walkable, close to downtown, short commute.",
+    intent: "Very walkable, close to downtown.",
     expect: "Downtowns and dense inner neighborhoods: walkability 17+, under a mile from downtown.",
-    prefs: P({ area: { weights: { walkability: 5, dist_downtown_mi: 4, commute_minutes: 2 } } }),
+    prefs: P({ area: { weights: { walkability: 5, dist_downtown_mi: 4 } } }),
     checks: [allTop(20, "walkability under 17", (r, i) => r.value(i, "walkability") >= 17), allTop(20, "over 1 mi from downtown", (r, i) => r.value(i, "dist_downtown_mi") <= 1)],
   },
   {
@@ -155,9 +155,9 @@ const composite: Scenario[] = [
   },
   {
     name: "Big-city access on a budget",
-    intent: "Within 25 mi of a 500k+ metro; cheapest homes; short commute.",
+    intent: "Within 25 mi of a 500k+ metro; cheapest homes; close to downtown.",
     expect: "Cheap inner-city neighborhoods of Rust Belt metros (Toledo, Detroit, Cleveland…): homes under $100k, within 25 mi of a metro.",
-    prefs: P({ area: { weights: { median_home_value: 5, commute_minutes: 3 }, limits: { dist_metro_mi: { max: 25 } } } }),
+    prefs: P({ area: { weights: { median_home_value: 5, dist_downtown_mi: 3 }, limits: { dist_metro_mi: { max: 25 } } } }),
     checks: [allTop(20, "home over $100k", (r, i) => r.value(i, "median_home_value") <= 100_000), allTop(100, "metro over 25 mi", (r, i) => r.value(i, "dist_metro_mi") <= 25)],
   },
   {
@@ -209,9 +209,9 @@ const composite: Scenario[] = [
   },
   {
     name: "Renter on a budget",
-    intent: "Low rent (5), short commute (3), walkability (2).",
+    intent: "Low rent (5), close to downtown (3), walkability (2).",
     expect: "Cheap small cities: rent under $900 at today's prices in the top 20.",
-    prefs: P({ area: { weights: { median_gross_rent: 5, commute_minutes: 3, walkability: 2 } } }),
+    prefs: P({ area: { weights: { median_gross_rent: 5, dist_downtown_mi: 3, walkability: 2 } } }),
     checks: [allTop(20, "rent over $900", (r, i) => r.value(i, "median_gross_rent") <= 900)],
   },
   {
@@ -227,7 +227,7 @@ const composite: Scenario[] = [
     expect: "Schools in the top quarter (75th+) for the top 20 — the ten at 1 together outweigh the one at 5, so it leads but doesn't dictate; county-wide and area parts both present in every explanation.",
     prefs: P({
       weights: { rpp_all: 1, days_above_90f: 1, nights_below_32f: 1, unemployment_rate: 1, income_tax_top_rate: 1 },
-      area: { weights: { nearby_school_pctl: 5, violent_rate: 1, walkability: 1, median_home_value: 1, hazard_risk: 1, commute_minutes: 1 } },
+      area: { weights: { nearby_school_pctl: 5, violent_rate: 1, walkability: 1, median_home_value: 1, hazard_risk: 1, kids_share: 1 } },
     }),
     checks: [allTop(20, "schools under the 75th percentile", (r, i) => r.value(i, "nearby_school_pctl") >= 75), (r) => (r.top.slice(0, 5).every((i) => r.parts(i).length === 11) ? [] : ["an explanation is missing parts"])],
   },
@@ -277,10 +277,10 @@ const composite: Scenario[] = [
     checks: [allTop(100, "a permitless-carry or restrictive state", (r, i) => ["CA", "NY", "NJ", "MA", "MD", "IL", "WA", "OR", "CO", "MN", "NM", "HI", "DE", "CT", "RI", "VA", "NV", "MI", "PA", "DC", "AK", "AZ", "NE", "KS", "WI", "MT", "OH", "VT", "ME", "NH"].includes(r.stateOf(i)))],
   },
   {
-    name: "Low property tax and electricity, cheap homes",
-    intent: "Property tax rate 4, electricity price 3, home value 3.",
+    name: "Low property tax, low cost of living, cheap homes",
+    intent: "Property tax rate 4, cost of living 3, home value 3.",
     expect: "Deep South and Mountain West (AL, LA, WV, AR, ID, UT…): property tax rate under 0.7%.",
-    prefs: P({ weights: { property_tax_effective_rate: 4, electricity_price_cents_kwh: 3 }, area: { weights: { median_home_value: 3 } } }),
+    prefs: P({ weights: { property_tax_effective_rate: 4, rpp_all: 3 }, area: { weights: { median_home_value: 3 } } }),
     checks: [allTop(50, "property tax rate at or above 0.7%", (r, i) => countyValue(r, i, "property_tax_effective_rate") < 0.7)],
   },
   {
@@ -340,7 +340,7 @@ const flipped: Scenario[] = (
   };
 });
 
-const countySingles: Scenario[] = METRICS.filter((m) => !COUNTY_METRICS_NOW_AREA.has(m.key) && m.key !== "population").map((m) => ({
+const countySingles: Scenario[] = METRICS.filter((m) => !COUNTY_METRICS_NOW_AREA.has(m.key) && !NOT_IN_FILTERS.has(m.key) && m.key !== "population").map((m) => ({
   name: `County priority: ${m.label} (${m.defaultDirection})`,
   intent: `Only ${m.label.toLowerCase()} weighted — results are counties.`,
   expect: "The top 20 counties are in the best 2% of counties on this measure.",

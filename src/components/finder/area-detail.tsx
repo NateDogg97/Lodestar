@@ -704,9 +704,9 @@ export function AreaDetail({
             <div className="grid grid-cols-2 gap-2">
               <MiniStat label="Households with kids" value={pct(v("kids_share"))} typical={`${Math.round(US_TYPICAL.kids_share)}%`} />
               <MiniStat
-                label="People per sq mi"
+                label="Density"
                 value={formatArea("density_per_sq_mi", v("density_per_sq_mi"))}
-                typical={US_TYPICAL.density_per_sq_mi.toLocaleString()}
+                typical={formatArea("density_per_sq_mi", US_TYPICAL.density_per_sq_mi)}
               />
               <MiniStat label="Income per person" value={formatArea("per_capita_income", v("per_capita_income"))} />
               <MiniStat label="Homes built (median)" value={v("median_year_built") === null ? "—" : String(Math.round(v("median_year_built")!))} />

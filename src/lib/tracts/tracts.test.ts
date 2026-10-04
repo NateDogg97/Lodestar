@@ -69,6 +69,7 @@ describe("area data", () => {
     expect(formatArea("dist_downtown_mi", 1.44)).toBe("1.4 mi");
     expect(formatArea("violent_rate", 422.3)).toBe("422 /100k");
     expect(formatArea("zhvi", null)).toBe("—");
+    expect(formatArea("density_per_sq_mi", 2211.6)).toBe("2,212 /sq mi");
     const area = parseCountyAreas({
       ...payload,
       columns: [...payload.columns, "median_gross_rent", "topcoded"],

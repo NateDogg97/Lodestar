@@ -1,7 +1,7 @@
 "use client";
 
 import { formatValue, getMetric, type CountyDataset, type CountyScore, type MetricContribution } from "@/lib/scoring";
-import { locationVerdict, tradeOff, type AreaPart } from "@/lib/tracts";
+import { buyOrRentVerdict, locationVerdict, tradeOff, type AreaPart } from "@/lib/tracts";
 
 import { AreaSection, HazardsSection, Note, PlaceRow, PriorityBar } from "./area-detail";
 import { scoreColor } from "./score-colors";
@@ -112,6 +112,8 @@ export function PlaceOverview({ score: s, data }: Props) {
         </AreaSection>
       )}
 
+      <HousingCosts data={data} index={i} />
+
       <HazardsSection
         id="county.hazards"
         get={(k) => {
@@ -120,6 +122,53 @@ export function PlaceOverview({ score: s, data }: Props) {
         }}
       />
     </div>
+  );
+}
+
+/**
+ * The county's housing costs against its own incomes (owner, 2026-10-04): context, not
+ * filters — a mover's own income is what decides affordability, so these ratios say what
+ * the place is like rather than rank it. Census county medians, 2019–2023.
+ */
+function HousingCosts({ data, index: i }: { data: CountyDataset; index: number }) {
+  const v = (k: "median_home_value" | "median_gross_rent" | "price_to_rent" | "home_value_to_income" | "rent_to_income" | "property_tax_effective_rate") => {
+    const x = data.values[k][i];
+    return Number.isNaN(x) ? null : x;
+  };
+  const home = v("median_home_value");
+  const rent = v("median_gross_rent");
+  if (home === null && rent === null) return null;
+  const ptr = v("price_to_rent");
+  const hti = v("home_value_to_income");
+  const rti = v("rent_to_income");
+  const tax = v("property_tax_effective_rate");
+  return (
+    <AreaSection
+      id="county.housing"
+      icon="home"
+      title="Housing costs"
+      lead={buyOrRentVerdict(ptr)}
+      details={
+        <>
+          {hti !== null && (
+            <PlaceRow name="A home, in years of local income" sub="Median home value ÷ median household income · about 3 is typical" value={`${hti.toFixed(1)}×`} />
+          )}
+          {rti !== null && (
+            <PlaceRow name="Rent, as a share of local income" sub="A year of median rent ÷ median household income · 30% is the usual ceiling" value={formatValue("rent_to_income", rti)} />
+          )}
+          {tax !== null && (
+            <PlaceRow name="Property tax" sub="Taxes paid ÷ home values, owner-occupied" value={formatValue("property_tax_effective_rate", tax)} />
+          )}
+          <Note>
+            Census county medians, 2019–2023: they describe the people who live here now. For the price of a home in a
+            specific area at today&rsquo;s prices, open one of its areas.
+          </Note>
+        </>
+      }
+    >
+      {home !== null && <PlaceRow name="Median home value" sub="Census, 2019–2023" value={formatValue("median_home_value", home)} />}
+      {rent !== null && <PlaceRow name="Median rent" sub="Census, incl. utilities" value={formatValue("median_gross_rent", rent)} />}
+    </AreaSection>
   );
 }
 

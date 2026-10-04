@@ -127,10 +127,32 @@ export function hazardsVerdict(overall: number | null, hazards: { label: string;
   return `${word} risk overall`;
 }
 
+/**
+ * A county's price-to-rent ratio (median home value ÷ a year of median rent) in words:
+ * under 15 buying is cheap next to renting, over 20 renting is (the usual rule of thumb).
+ */
+export function buyOrRentVerdict(priceToRent: number | null): string {
+  if (priceToRent === null) return "No housing data";
+  // Judged on the rounded years shown, so "20 years" never reads as one side of the line.
+  const years = Math.round(priceToRent);
+  if (years < 15) return `Buying is cheap next to renting · a home costs ${years} years of rent`;
+  if (years > 20) return `Renting is cheap next to buying · a home costs ${years} years of rent`;
+  return `Buying and renting are about even · a home costs ${years} years of rent`;
+}
+
+/** Hyphenated city names that metro names would otherwise split ("Winston-Salem, NC"). */
+const HYPHENATED = ["Winston-Salem", "Wilkes-Barre"];
+
+/** A metro's first city: "Minneapolis-St. Paul-Bloomington, MN-WI" → "Minneapolis". */
+export function metroCity(metro: string): string {
+  const head = metro.split(",")[0].trim();
+  return HYPHENATED.find((c) => head.startsWith(c)) ?? head.split("-")[0].trim();
+}
+
 /** A county's distance to the nearest 500k+ metro ("Minneapolis-St. Paul-Bloomington, MN-WI"). */
 export function locationVerdict(metroMi: number | null, metro: string | null): string {
   if (metroMi === null) return "Distances below";
-  const city = metro ? metro.split(/[-,]/)[0].trim() : "a big metro";
+  const city = metro ? metroCity(metro) : "a big metro";
   if (metroMi <= 25) return `In or near the ${city} metro`;
   if (metroMi <= 75) return `${Math.round(metroMi)} mi to ${city}`;
   return `Far from big metros · ${Math.round(metroMi)} mi to ${city}`;

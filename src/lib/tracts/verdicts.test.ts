@@ -9,6 +9,7 @@ import {
   safetyVerdict,
   schoolsVerdict,
   standing,
+  buyOrRentVerdict,
 } from "./verdicts";
 
 describe("area page verdicts", () => {
@@ -26,6 +27,8 @@ describe("area page verdicts", () => {
     expect(marketVerdict(7.6)).toBe("Prices up 7.6% in a year (typical +1.6%)");
     expect(locationVerdict(272, "Minneapolis-St. Paul-Bloomington, MN-WI")).toBe("Far from big metros · 272 mi to Minneapolis");
     expect(locationVerdict(10, "Austin-Round Rock-San Marcos, TX")).toBe("In or near the Austin metro");
+    expect(locationVerdict(104, "Winston-Salem, NC")).toBe("Far from big metros · 104 mi to Winston-Salem");
+    expect(locationVerdict(30, "Nashville-Davidson--Murfreesboro--Franklin, TN")).toBe("30 mi to Nashville");
   });
 
   it("say 'too little to rate' when the ETL withdrew a crime rate, 'no data' when there was none", () => {
@@ -52,6 +55,15 @@ describe("area page verdicts", () => {
     expect(area({ points: 100, beats: 99.9 })).toBe("lower than 100% of US areas");
     expect(area({ direction: "middle", points: 90, beats: null, rawPercentile: 45.2 })).toBe("45th percentile of US areas · typical is best");
     expect(area({ level: "county", points: null, beats: null, rawPercentile: null })).toBe("0th percentile of US counties · typical is best");
+  });
+
+  it("say whether buying or renting is the cheaper way into a county", () => {
+    expect(buyOrRentVerdict(12.4)).toBe("Buying is cheap next to renting · a home costs 12 years of rent");
+    expect(buyOrRentVerdict(17)).toBe("Buying and renting are about even · a home costs 17 years of rent");
+    expect(buyOrRentVerdict(28.6)).toBe("Renting is cheap next to buying · a home costs 29 years of rent");
+    expect(buyOrRentVerdict(null)).toBe("No housing data");
+    expect(buyOrRentVerdict(20.2)).toBe("Buying and renting are about even · a home costs 20 years of rent");
+    expect(buyOrRentVerdict(14.6)).toBe("Buying and renting are about even · a home costs 15 years of rent");
   });
 
   it("flag one standout hazard when the overall risk is lower", () => {

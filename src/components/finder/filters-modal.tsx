@@ -10,6 +10,7 @@ import {
   formatValue,
   MAX_WEIGHT,
   METRICS,
+  NOT_IN_FILTERS,
   type CategoryDef,
   type CategoryKey,
   type Direction,
@@ -42,15 +43,15 @@ type SectionId = AreaGroup | "states" | "policies";
 
 const SECTIONS: { id: SectionId; label: string; mustsOnly?: boolean }[] = [
   { id: "states", label: "States", mustsOnly: true },
-  { id: "cost", label: "Cost of living" },
-  { id: "housing", label: "Housing" },
+  // Cost of living, housing and taxes are one section (owner, 2026-10-04: fewer filters,
+  // grouped): what it costs to live here.
+  { id: "housing", label: "Housing, costs & taxes" },
   { id: "schools", label: "Schools" },
   { id: "safety", label: "Safety" },
   { id: "climate", label: "Climate" },
   { id: "hazards", label: "Natural hazards" },
   { id: "location", label: "Location" },
   { id: "people", label: "People & income" },
-  { id: "taxes", label: "Taxes" },
   { id: "policies", label: "Policies", mustsOnly: true },
 ];
 
@@ -69,6 +70,15 @@ const MODE_TIPS: Record<FiltersMode, string> = {
     "Importance sets how much each measure counts toward a place’s score; Off leaves it out. “Better” sets which end scores well — Average favors the typical place, and both extremes score worst. Measures tagged “by area” compare each area with every US area; county-wide ones count the same for every area in a county. With any “by area” priority set, results are areas.",
   musts:
     "Limits and policies rule places out entirely: county-wide ones whole counties, “by area” ones single areas. A place with no data for one of them is kept as unknown (grey) rather than guessed.",
+};
+
+/** The "i" beside a county-wide measure, where its name doesn't say enough. */
+const COUNTY_NOTES: Partial<Record<MetricKey, string>> = {
+  population:
+    "How many people live in the whole county: a rough sense of how much there is nearby — shops, jobs, hospitals. Neighborhood density, beside it, is how crowded the area itself feels.",
+  rpp_all:
+    "One index of local prices — rent, goods, utilities (electricity included) and services — where 100 is the US average (BEA Regional Price Parities). For the price of a home or rent in a specific area, use Housing.",
+  unemployment_rate: "Share of the county's labor force looking for work (BLS, latest yearly average).",
 };
 
 const DIRECTION_LABELS: Record<Direction, string> = {
@@ -103,9 +113,18 @@ function sectionCount(prefs: Preferences, mode: FiltersMode, id: SectionId): num
   );
 }
 
-/** A section's county-wide measures: not the ones that are by area now. */
-const countyMetrics = (id: SectionId) => METRICS.filter((m) => m.group === id && !COUNTY_METRICS_NOW_AREA.has(m.key));
-const areaMeasures = (id: SectionId) => AREA_PRIORITIES.filter((d) => d.group === id);
+/** The measure groups a section holds, in the order they're shown. */
+const SECTION_GROUPS: Partial<Record<SectionId, readonly AreaGroup[]>> = { housing: ["cost", "housing", "taxes"] };
+const groupsOf = (id: SectionId): readonly string[] => SECTION_GROUPS[id] ?? [id];
+
+/** A section's county-wide measures: not the ones that are by area now, nor the ones that aren't filters. */
+const countyMetrics = (id: SectionId) => {
+  const groups = groupsOf(id);
+  return METRICS.filter((m) => groups.includes(m.group) && !COUNTY_METRICS_NOW_AREA.has(m.key) && !NOT_IN_FILTERS.has(m.key)).sort(
+    (a, b) => groups.indexOf(a.group) - groups.indexOf(b.group),
+  );
+};
+const areaMeasures = (id: SectionId) => AREA_PRIORITIES.filter((d) => groupsOf(id).includes(d.group));
 
 /** Active filters per mode — for the Filters button badge and the mode switch. */
 export function countActiveFilters(prefs: Preferences): Record<FiltersMode, number> {
@@ -172,7 +191,7 @@ export function FiltersModal({
   const [mode, setMode] = useState<FiltersMode>("priorities");
   // The Saved button swaps the body for saved and recent searches; the tabs,
   // or the button again, bring the filters back.
-  const [section, setSection] = useState<SectionId>("cost");
+  const [section, setSection] = useState<SectionId>("housing");
   const pane = useRef<HTMLDivElement>(null);
   const active = countActiveFilters(prefs);
 
@@ -373,6 +392,7 @@ export function FiltersModal({
                   id={m.key}
                   label={m.label}
                   level="county"
+                  note={COUNTY_NOTES[m.key]}
                   weight={prefs.weights[m.key] ?? 0}
                   direction={prefs.directions[m.key] ?? m.defaultDirection}
                   typical={ranges[m.key] ? `Aiming for the typical county: ${formatValue(m.key, ranges[m.key]!.median)}` : undefined}
@@ -386,6 +406,7 @@ export function FiltersModal({
                   id={m.key}
                   label={m.label}
                   level="county"
+                  note={COUNTY_NOTES[m.key]}
                   unit={m.unit}
                   limit={prefs.limits[m.key]}
                   placeholders={ranges[m.key] ? [plainNumber(ranges[m.key]!.min), plainNumber(ranges[m.key]!.max)] : undefined}

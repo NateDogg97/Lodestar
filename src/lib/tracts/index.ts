@@ -154,7 +154,7 @@ export function parseCountyAreas(payload: unknown): CountyAreas {
 // ---------------------------------------------------------------------------
 // Measures shown inside a county
 
-export type AreaFormat = "dollars" | "percent" | "pctl" | "miles" | "number" | "minutes" | "rate" | "walk" | "change";
+export type AreaFormat = "dollars" | "percent" | "pctl" | "miles" | "number" | "minutes" | "rate" | "walk" | "change" | "density";
 
 export interface AreaMeasure {
   key: string;
@@ -195,7 +195,8 @@ export const AREA_MEASURES: AreaMeasure[] = [
   { key: "owner_share", label: "Owner-occupied", format: "percent" },
   { key: "median_age", label: "Median age", format: "number" },
   { key: "bachelors_share", label: "Bachelor's degree or more", format: "percent" },
-  { key: "density_per_sq_mi", label: "People per sq mi", format: "number", colorable: true },
+  { key: "density_per_sq_mi", label: "Density", format: "density", colorable: true,
+    note: "People per square mile in this area: how rural or urban it feels." },
   { key: "dist_downtown_mi", label: "To downtown", format: "miles", colorable: true,
     note: "From where people in the area live to the nearest downtown of the metro's main cities (Dallas or Fort Worth, say): each one's densest cluster of jobs." },
   { key: "dist_airport_mi", label: "To a major airport", format: "miles", colorable: true },
@@ -277,6 +278,8 @@ export function formatArea(key: string, v: number | null): string {
       return `${v.toFixed(1)} / 20`;
     case "change":
       return `${v > 0 ? "+" : ""}${v.toFixed(1)}%`;
+    case "density":
+      return `${Math.round(v).toLocaleString()} /sq mi`;
     default:
       return Math.round(v).toLocaleString();
   }

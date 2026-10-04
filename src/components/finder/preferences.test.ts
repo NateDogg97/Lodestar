@@ -53,6 +53,22 @@ describe("sanitizePreferences", () => {
     });
   });
 
+  it("drops measures that aren't filters any more; a cost-of-living part becomes Cost of living", () => {
+    const p = sanitizePreferences({
+      weights: { rpp_rents: 4, rpp_utilities: 2, real_income: 3, price_to_rent: 2, days_above_90f: 1 },
+      directions: { rent_to_income: "higher" },
+      limits: { home_value_to_income: { max: 4 }, electricity_price_cents_kwh: { max: 15 } },
+      area: { weights: { commute_minutes: 3, walkability: 2 }, directions: {}, limits: { commute_minutes: { max: 30 } } },
+    })!;
+    expect(p.weights).toEqual({ days_above_90f: 1, rpp_all: 4 });
+    expect(p.directions).toEqual({});
+    expect(p.limits).toEqual({});
+    expect(p.area.weights).toEqual({ walkability: 2 });
+    expect(p.area.limits).toEqual({});
+    // Cost of living already set: the part doesn't override it.
+    expect(sanitizePreferences({ weights: { rpp_all: 1, rpp_goods: 5 } })!.weights).toEqual({ rpp_all: 1 });
+  });
+
   it("rejects non-objects", () => {
     expect(sanitizePreferences(null)).toBeNull();
     expect(sanitizePreferences([1, 2])).toBeNull();

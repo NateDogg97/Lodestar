@@ -73,7 +73,7 @@ export interface PlaceProps {
  * the rank on the right, colored as the map colors ranks. On phones this is the
  * sheet's drag header.
  */
-export function PlaceIdentity({ score: s, data, rank, total, onBack }: PlaceProps) {
+export function PlaceIdentity({ score: s, data, rank, total, onBack, topAreas }: PlaceProps) {
   const people = data.values.population[s.index];
   return (
     <div>
@@ -108,7 +108,15 @@ export function PlaceIdentity({ score: s, data, rank, total, onBack }: PlaceProp
             </>
           ) : (
             <span className="block max-w-28 text-caption text-neutral-500">
-              {s.status === "excluded" ? "Ruled out by a must-have" : "Hidden: no data for a must-have"}
+              {/* No rank: ruled out, unknown for a must-have, or (areas as results) none of
+                  its areas made your top N — not "no data" (full audit, 2026-10-04). */}
+              {s.status === "excluded"
+                ? "Ruled out by a must-have"
+                : s.status === "unknown"
+                  ? "No data for a must-have"
+                  : topAreas
+                    ? `Not in your top ${topAreas.cap}`
+                    : "Not ranked"}
             </span>
           )}
         </div>
@@ -275,6 +283,7 @@ function CostOfLivingNote({ value, data, index }: { value: number; data: CountyD
           </>
         )}
       </p>
+      <CostParts data={data} index={index} />
       <p className="mt-2">
         Covers rent, goods, utilities and services (BEA Regional Price Parities, 2024). BEA publishes it for metro
         areas and states only;{" "}
@@ -283,6 +292,29 @@ function CostOfLivingNote({ value, data, index }: { value: number; data: CountyD
           : `this county isn’t in a metro, so it uses ${area ?? "its state"}’s statewide figure, which runs high for rural areas.`}
       </p>
     </>
+  );
+}
+
+/** The parts of the cost of living (not filters since 2026-10-04: the index covers them). */
+function CostParts({ data, index }: { data: CountyDataset; index: number }) {
+  const parts = (
+    [
+      ["Rents", "rpp_rents"],
+      ["Goods", "rpp_goods"],
+      ["Utilities", "rpp_utilities"],
+      ["Services", "rpp_services"],
+    ] as const
+  ).map(([label, k]) => [label, data.values[k][index]] as const).filter(([, x]) => !Number.isNaN(x));
+  if (parts.length === 0) return null;
+  return (
+    <ul className="mt-2 grid grid-cols-2 gap-x-4 gap-y-0.5">
+      {parts.map(([label, x]) => (
+        <li key={label} className="flex justify-between gap-2">
+          <span>{label}</span>
+          <span className="tabular-nums">{formatValue("rpp_all", x)}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

@@ -1,6 +1,8 @@
 import {
   CATEGORIES,
+  COST_PARTS,
   DIRECTIONS,
+  NOT_IN_FILTERS,
   METRIC_KEYS,
   type CategoryFilter,
   type CategoryKey,
@@ -198,6 +200,15 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
     if (d !== undefined && out.area.directions[move.to] === undefined) out.area.directions[move.to] = d;
     if (l && move.keepLimit && out.area.limits[move.to] === undefined) out.area.limits[move.to] = l;
   }
+  // Fewer filters (owner, 2026-10-04): measures no longer offered as filters are dropped;
+  // a weighted cost-of-living part becomes "Cost of living" when that isn't set.
+  const partWeight = Math.max(0, ...COST_PARTS.map((k) => out.weights[k] ?? 0));
+  for (const k of NOT_IN_FILTERS) {
+    delete out.weights[k];
+    delete out.directions[k];
+    delete out.limits[k];
+  }
+  if (partWeight > 0 && out.weights.rpp_all === undefined) out.weights.rpp_all = partWeight;
   return out;
 }
 
