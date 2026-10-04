@@ -17,6 +17,16 @@ export const PAYLOAD_FORMAT = "counties-columnar-v1";
 export const TEXT_COLUMNS = ["nearest_airport", "nearest_metro", "rpp_source_geo"] as const;
 export type TextColumn = (typeof TEXT_COLUMNS)[number];
 
+/**
+ * Numeric columns shown but never scored or filtered (2026-10-04): who lives here —
+ * shares by race and Hispanic origin, the diversity index, the Gini index
+ * (etl/demographics.py). NaN where unknown, or when the file predates them.
+ */
+export const INFO_COLUMNS = [
+  "white_share", "hispanic_share", "black_share", "asian_share", "other_race_share", "diversity_index", "gini_index",
+] as const;
+export type InfoColumn = (typeof INFO_COLUMNS)[number];
+
 export interface CountyDataset {
   /** Number of counties. */
   n: number;
@@ -32,6 +42,8 @@ export interface CountyDataset {
   categories: Record<CategoryKey, (string | null)[]>;
   /** Descriptive text columns (not scored), null where unknown. */
   text: Record<TextColumn, (string | null)[]>;
+  /** Descriptive numeric columns (not scored), NaN where unknown. */
+  info: Record<InfoColumn, Float64Array>;
   /** Row index by FIPS. */
   indexByFips: Map<string, number>;
   /**
@@ -116,6 +128,12 @@ export function parseCountyPayload(payload: unknown): CountyDataset {
       ]),
     ) as Record<CategoryKey, (string | null)[]>,
     text: Object.fromEntries(TEXT_COLUMNS.map((c) => [c, text(c)])) as Record<TextColumn, (string | null)[]>,
+    info: Object.fromEntries(
+      INFO_COLUMNS.map((c) => {
+        const i = col.get(c);
+        return [c, Float64Array.from(rows, (r) => (i !== undefined && typeof r[i] === "number" ? (r[i] as number) : NaN))];
+      }),
+    ) as Record<InfoColumn, Float64Array>,
     indexByFips: new Map(fips.map((f, i) => [f, i])),
     missingColumns,
   };
@@ -146,6 +164,10 @@ export function subsetDataset(data: CountyDataset, keep: (index: number) => bool
     values,
     categories,
     text: Object.fromEntries(TEXT_COLUMNS.map((c) => [c, pick(data.text[c])])) as Record<TextColumn, (string | null)[]>,
+    info: Object.fromEntries(INFO_COLUMNS.map((c) => [c, Float64Array.from(idx, (i) => data.info[c][i])])) as Record<
+      InfoColumn,
+      Float64Array
+    >,
     indexByFips: new Map(fips.map((f, i) => [f, i])),
     missingColumns: data.missingColumns,
   };

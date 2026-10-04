@@ -11,6 +11,9 @@ thing; this patches public/data/tracts/{fips}.json in place:
 - crime rates become yearly rates (full audit, 2026-10-04): a partial year's counts are
   annualized, and an agency with too little to rate (crime.rate_note: few months, too few
   person-years, implausibly little for its size) loses its rate and gains `crime_note`.
+- who lives here (2026-10-04, etl/demographics.py): shares by race and Hispanic origin,
+  the diversity index and the Gini index (flagged like a median). `--demographics` does
+  only this (one Census call per state).
 - a household income at the Census cap ($250,001) is top-coded, not low confidence
   (full audit, 2026-10-04; config.ACS_TOPCODE gained the cap).
   `--offline` does only these last two, with no network.
@@ -21,6 +24,7 @@ to rebuild areas.json, then `python -m etl.tracts.upload`.
     python -m etl.tracts.backfill            # every published county
     python -m etl.tracts.backfill --state TX # one state
     python -m etl.tracts.backfill --offline  # only the crime and top-code rules (no network)
+    python -m etl.tracts.backfill --demographics  # only who lives here
 """
 
 from __future__ import annotations
@@ -119,6 +123,36 @@ def patch_crime(payload: dict) -> dict[str, int]:
     return counts
 
 
+DEMOGRAPHICS_DIGITS = {"gini_index": 3}
+
+
+def patch_demographics(payload: dict, by_geoid: dict[str, dict]) -> dict[str, int]:
+    """Add the demographics columns (etl/demographics.py) to one county payload, in place,
+    with the Gini index's low-confidence flag. Idempotent: values are replaced."""
+    from ..demographics import COLUMNS
+
+    cols: list[str] = payload["columns"]
+    for c in COLUMNS:
+        if c not in cols:
+            cols.append(c)
+            for r in payload["rows"]:
+                r.append(None)
+    at = {c: cols.index(c) for c in cols}
+    counts = {"demographics": 0}
+    for r in payload["rows"]:
+        src = by_geoid.get(r[at["geoid"]])
+        if not src:
+            continue
+        for c in COLUMNS:
+            r[at[c]] = _num(src.get(c), DEMOGRAPHICS_DIGITS.get(c, 1))
+        flags = [f for f in (r[at["low_confidence"]] or "").split(";") if f and f != "gini_index"]
+        if "gini_index" in src["flags"] and r[at["gini_index"]] is not None:
+            flags.append("gini_index")
+        r[at["low_confidence"]] = ";".join(flags)
+        counts["demographics"] += 1
+    return counts
+
+
 def patch_topcodes(payload: dict) -> dict[str, int]:
     """Top-coded Census medians (config.ACS_TOPCODE) noted in `topcoded`, never flagged low
     confidence for the margin the Census can't compute there. Idempotent."""
@@ -149,6 +183,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--state", help="two-digit state FIPS, comma-separated (default: all published)")
     ap.add_argument("--offline", action="store_true", help="only the crime and top-code rules (no Census calls)")
+    ap.add_argument("--demographics", action="store_true", help="only who lives here (one Census call per state)")
     args = ap.parse_args()
     wanted = set(args.state.split(",")) if args.state else None
     files = sorted(PUBLISH_DIR.glob("[0-9][0-9][0-9][0-9][0-9].json"))
@@ -157,6 +192,22 @@ def main() -> None:
         if wanted is None or f.stem[:2] in wanted:
             by_state[f.stem[:2]].append(f)
     total = defaultdict(int)
+    if args.demographics:
+        from ..demographics import COLUMNS
+
+        for state, paths in sorted(by_state.items()):
+            parsed = acs.parse(acs._state_raw(state))
+            by_geoid = {
+                g: {**{c: v for c, v in zip(COLUMNS, vals)}, "flags": set((lc or "").split(";"))}
+                for g, lc, *vals in zip(parsed["geoid"], parsed["low_confidence"], *(parsed[c] for c in COLUMNS))
+            }
+            for path in paths:
+                payload = json.loads(path.read_text())
+                total["demographics"] += patch_demographics(payload, by_geoid)["demographics"]
+                path.write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False))
+            log.info("state %s: %d counties", state, len(paths))
+        log.info("done: %d areas with demographics", total["demographics"])
+        return
     if args.offline:
         for state, paths in sorted(by_state.items()):
             for path in paths:

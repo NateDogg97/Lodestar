@@ -19,6 +19,9 @@ import {
   peopleVerdict,
   safetyVerdict,
   schoolsVerdict,
+  diversityVerdict,
+  incomeGapWord,
+  RACE_GROUPS,
   standing,
   tradeOff,
   notResidential,
@@ -104,6 +107,7 @@ const ICONS = {
   route: "M8 18h6a4 4 0 000-8h-4a4 4 0 010-8h6M4 18a2 2 0 104 0 2 2 0 10-4 0M16 6a2 2 0 104 0 2 2 0 10-4 0",
   chart: "M4 19h16M6 15l4-4 3 3 5-6",
   alert: "M12 4l9 16H3zM12 10v4M12 17h.01",
+  people: "M16 20v-1a4 4 0 00-4-4H8a4 4 0 00-4 4v1M10 11a3 3 0 100-6 3 3 0 000 6M20 20v-1a3.5 3.5 0 00-2.5-3.4M15.5 5.3a3 3 0 010 5.4",
 } as const;
 
 function Chevron({ up, className = "h-4 w-4" }: { up: boolean; className?: string }) {
@@ -750,6 +754,8 @@ export function AreaDetail({
         </div>
       </AreaSection>
 
+      <PeopleSection id="who" get={v} typical={US_TYPICAL} of="area" flagged={flagged} />
+
       <AreaSection
         id="around"
         icon="route"
@@ -848,6 +854,68 @@ export function AreaDetail({
 
       <HazardsSection id="hazards" get={v} />
     </div>
+  );
+}
+
+const GROUP_COLORS = ["#6366f1", "#0d9488", "#d97706", "#0284c7", "#a3a3a3"];
+
+/**
+ * Who lives here (owner, 2026-10-04), for an area or a county: race and Hispanic origin,
+ * how mixed that is, and the income gap. Context, not a score. Census ACS 2019–2023.
+ */
+export function PeopleSection({
+  id,
+  get,
+  typical,
+  of,
+  flagged,
+}: {
+  id: string;
+  get: (key: string) => number | null;
+  typical: { diversity_index: number; gini_index: number };
+  of: "area" | "county";
+  flagged?: Set<string>;
+}) {
+  const shares: { label: string; pct: number | null }[] = RACE_GROUPS.map((g) => ({ label: g.label, pct: get(g.key) }));
+  const diversity = get("diversity_index");
+  const gini = get("gini_index");
+  if (diversity === null && gini === null) return null;
+  const known = shares.filter((s) => s.pct !== null);
+  return (
+    <AreaSection
+      id={id}
+      icon="people"
+      title="Who lives here"
+      lead={diversityVerdict(diversity, shares)}
+      details={
+        <>
+          <Row label={`Diversity index · a typical US ${of}: ${Math.round(typical.diversity_index)}`}>
+            <span className="font-medium tabular-nums">{diversity === null ? "—" : Math.round(diversity)}</span>
+          </Row>
+          <Row label={`Income gap (Gini) · a typical US ${of}: ${typical.gini_index.toFixed(2)}`}>
+            <span className="font-medium tabular-nums">{gini === null ? "—" : gini.toFixed(2)}</span>
+            <FlagMark on={flagged?.has("gini_index")} />
+          </Row>
+          <Note>
+            Census ACS 2019–2023 (tables B03002 and B19083). Diversity index: the chance that two people picked at random here
+            are in different groups, 0–80 with these five groups. Gini index: 0 if every household had the same income, 1 if
+            one had it all; the US as a whole is about 0.48. White, Black and Asian count people who aren&rsquo;t Hispanic or
+            Latino; Hispanic or Latino people can be of any race.{of === "area" ? " Small areas are sampled, so shares can be off by several points." : ""}
+          </Note>
+        </>
+      }
+    >
+      {known.length > 0 && (
+        <SplitBar
+          label="Race and ethnicity"
+          parts={RACE_GROUPS.map((g, k) => ({ name: g.label, pct: get(g.key) ?? 0, color: GROUP_COLORS[k] }))}
+        />
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        <MiniStat label="Diversity index" value={diversity === null ? "—" : `${Math.round(diversity)} of 80`} typical={String(Math.round(typical.diversity_index))} />
+        <MiniStat label="Income gap" value={incomeGapWord(gini)} typical={`Gini ${typical.gini_index.toFixed(2)}`} />
+      </div>
+    </AreaSection>
   );
 }
 

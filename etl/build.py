@@ -214,6 +214,8 @@ COLUMN_DECIMALS = {
     "days_above_90f": 1, "nights_below_32f": 1, "rainy_days": 1, "snow_days": 1,
     "climate_station_dist_mi": 1, "climate_station_count": 0,
     "rent_to_income": 4,
+    "hispanic_share": 1, "white_share": 1, "black_share": 1, "asian_share": 1, "other_race_share": 1,
+    "diversity_index": 1, "gini_index": 3,
     "property_tax_effective_rate": 3,
     "hazard_risk": 1, "hazard_hurricane": 1, "hazard_wildfire": 1, "hazard_inland_flood": 1,
     "hazard_coastal_flood": 1, "hazard_earthquake": 1, "hazard_tornado": 1,

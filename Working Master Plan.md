@@ -8,6 +8,11 @@
 > Last updated: 2026-10-04
 >
 > **Changelog**
+> - 2026-10-04 — **Fewer filters; who lives here.** Filters drop the cost-of-living
+>   parts, electricity, the income ratios and commute (data kept for the pages);
+>   Cost of living, Housing and Taxes are one section. Race and Hispanic origin, a
+>   diversity index and the Gini index are shown on area and county pages (§9 "Filters
+>   tightened").
 > - 2026-10-04 — **Full audit** (scoring and results first; see §9 "Full audit"). Crime
 >   rates are now yearly rates with an exposure floor (a 4-month Phoenix read as a third
 >   of its real rate; 168 of the 200 "safest" areas were partial-year or tiny-agency
@@ -1914,7 +1919,7 @@ percentiles over residential areas only.
 
 **Still open — recommendations, and what the owner must decide**
 
-- [ ] **Upload the republished data.** `public/data/tracts/` is patched locally (1,210
+- [ ] **Upload the republished data** (now also the demographics in every county file). `public/data/tracts/` is patched locally (1,210
       files changed: county files with `crime_note`, areas.json). The upload to R2 was
       blocked as a production action in the audit session: run
       `etl/.venv/bin/python -m etl.tracts.upload`, then check
@@ -1957,6 +1962,48 @@ each with a written expectation, and fails on any hard finding; warnings (ties, 
 state or county crowding the list, small areas, low-confidence shares) are listed in
 `scripts/audit/report.md` for a person to judge. Re-run it after any scoring or data
 change.
+
+### Filters tightened, and who lives here (2026-10-04, owner)
+
+Owner: "fewer filters, grouped together when we can"; and "a diversity filter… a social
+equality metric… or even racial stats on the area or county page."
+
+- [x] **Not filters any more** (`NOT_IN_FILTERS` in `src/lib/scoring/metrics.ts`; the
+      data stays): cost of living's rents, utilities, goods and services, and
+      electricity price — "Cost of living" covers them, and rent has its own filter by
+      area; home price to income, rent share of income, price to rent, income adjusted
+      for local prices — they turn on the mover's own income, not the place's; average
+      commute — it turns on where the mover works (still on the area page). Saved
+      searches and links drop them; a weighted cost-of-living part becomes "Cost of
+      living" if that isn't set.
+- [x] **One section "Housing, costs & taxes"**: home value, rent (by area), cost of
+      living, property, income and sales tax. Filters has 8 sections (10 with the
+      must-have-only ones), down from 10 (12).
+- [x] **County population vs density**: kept both (owner liked both), renamed "County
+      population" and "Neighborhood density", each with an "i" saying what the other is;
+      density prints "2,212 /sq mi".
+- [x] **County page "Housing costs"**: median home value and rent, buy-or-rent in words
+      (price to rent: under 15 years of rent buying is cheap, over 20 renting is), home
+      price and rent against local incomes, property tax. The cost-of-living "i" lists
+      its four parts.
+- [x] **Who lives here** (`etl/demographics.py`, Census ACS 2019–2023 B03002 and B19083):
+      shares by race and Hispanic origin (White, Hispanic or Latino, Black, Asian, other
+      or multiracial), a diversity index (the chance two residents differ, 0–80; median
+      area 43, county 32) and the Gini index of household income ("income gap"; median
+      area 0.42, county 0.44). A section on the area page and the county page; display
+      only. Counties rebuilt with `python -m etl.build --only acs` (no other column
+      changed); areas with `python -m etl.tracts.backfill --demographics`. Needs the
+      R2 upload to reach the live area pages (the county page is live on deploy).
+- [ ] **Diversity or income gap as a filter — owner decision.** Not built. Ranking or
+      ruling out neighborhoods by racial makeup is what the Fair Housing Act calls
+      steering when real-estate businesses do it, which is why Zillow, Redfin and
+      Realtor.com show no such filter; and the "Better: lower" toggle every priority has
+      would turn a diversity priority into "least diverse first". Options: (a) keep it
+      context only (built); (b) a "diversity" priority that only scores "more diverse is
+      better" (needs a one-direction priority in Filters, and `diversity_index` in
+      areas.json); (c) the income gap (Gini) as an ordinary priority — far less
+      sensitive. Recommendation: (a), plus (c) if wanted. Never a filter on a race share.
+- [ ] Not changed: unemployment stays a county-wide priority; county population stays.
 
 ### Phase 9 — First-run tutorial (added 2026-10-01) ✅ **BUILT 2026-10-04**
 

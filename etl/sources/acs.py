@@ -149,6 +149,11 @@ def fetch(year: int | None = None) -> pd.DataFrame:
         out[friendly] = clean_census_nulls(df[var_id])
 
     out = out.dropna(subset=["fips"]).sort_values("fips").reset_index(drop=True)
+    # Who lives here: shares by race and Hispanic origin, the diversity index (2026-10-04).
+    from ..demographics import RACE_VARIABLES, derive
+
+    derived = derive(out)
+    out = pd.concat([out.drop(columns=list(RACE_VARIABLES.values()) + ["gini_index"]), derived], axis=1)
 
     # Record the vintage alongside the data. The app should surface this —
     # "data as of" is the first thing anyone asks of a tool like this.
@@ -158,7 +163,7 @@ def fetch(year: int | None = None) -> pd.DataFrame:
         raise ValueError("Duplicate FIPS in ACS output — the API returned unexpected rows")
 
     # Report how much got nulled, because a sudden jump means something broke.
-    for friendly in config.ACS_VARIABLES.values():
+    for friendly in [c for c in config.ACS_VARIABLES.values() if c in out] + ["diversity_index", "gini_index"]:
         n_null = int(out[friendly].isna().sum())
         if n_null:
             log.info("%s: %d counties with no value (%.1f%%)",

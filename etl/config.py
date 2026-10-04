@@ -206,6 +206,14 @@ ACS_VARIABLES = {
     # Aggregate taxes / aggregate value is also Tax Foundation's method.
     "B25090_001E": "aggregate_real_estate_taxes",  # owner-occupied, dollars
     "B25082_001E": "aggregate_home_value",         # owner-occupied, dollars
+    # Who lives here (2026-10-04): race and Hispanic origin counts and the Gini index;
+    # etl/demographics.py turns them into shares and a diversity index.
+    **{f"{k}E": v for k, v in {
+        "B03002_001": "race_total", "B03002_003": "race_white_nh", "B03002_004": "race_black_nh",
+        "B03002_005": "race_aian_nh", "B03002_006": "race_asian_nh", "B03002_007": "race_nhpi_nh",
+        "B03002_008": "race_other_nh", "B03002_009": "race_two_plus_nh", "B03002_012": "race_hispanic",
+        "B19083_001": "gini_index",
+    }.items()},
 }
 
 # The Census API encodes "no data" as large negative sentinels rather than
@@ -371,6 +379,17 @@ ACS_TRACT_VARIABLES = {
     "B09019_026": "group_quarters",            # people in barracks, dorms, prisons, nursing homes
     "B25032_002": "owner_occupied",
     "B25032_011": "owner_mobile_homes",        # owner-occupied mobile homes
+    # Who lives here (2026-10-04, etl/demographics.py): race and Hispanic origin, Gini.
+    "B03002_001": "race_total",
+    "B03002_003": "race_white_nh",
+    "B03002_004": "race_black_nh",
+    "B03002_005": "race_aian_nh",
+    "B03002_006": "race_asian_nh",
+    "B03002_007": "race_nhpi_nh",
+    "B03002_008": "race_other_nh",
+    "B03002_009": "race_two_plus_nh",
+    "B03002_012": "race_hispanic",
+    "B19083_001": "gini_index",
 }
 # ACS top-codes: a median at these values means "this much or more". (Household income
 # was missing until the full audit, 2026-10-04: 483 areas at the cap were flagged "low

@@ -1,9 +1,9 @@
 "use client";
 
 import { formatValue, getMetric, type CountyDataset, type CountyScore, type MetricContribution } from "@/lib/scoring";
-import { buyOrRentVerdict, locationVerdict, tradeOff, type AreaPart } from "@/lib/tracts";
+import { buyOrRentVerdict, locationVerdict, tradeOff, US_TYPICAL_COUNTY, type AreaPart } from "@/lib/tracts";
 
-import { AreaSection, HazardsSection, Note, PlaceRow, PriorityBar } from "./area-detail";
+import { AreaSection, HazardsSection, Note, PeopleSection, PlaceRow, PriorityBar } from "./area-detail";
 import { scoreColor } from "./score-colors";
 
 interface Props {
@@ -113,6 +113,16 @@ export function PlaceOverview({ score: s, data }: Props) {
       )}
 
       <HousingCosts data={data} index={i} />
+
+      <PeopleSection
+        id="county.who"
+        of="county"
+        typical={US_TYPICAL_COUNTY}
+        get={(k) => {
+          const col = data.info[k as keyof typeof data.info];
+          return col && !Number.isNaN(col[i]) ? col[i] : null;
+        }}
+      />
 
       <HazardsSection
         id="county.hazards"

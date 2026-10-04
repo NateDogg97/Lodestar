@@ -41,6 +41,7 @@ RUN STANDALONE
 from __future__ import annotations
 
 import functools
+import hashlib
 import json
 import sys
 
@@ -90,7 +91,10 @@ def _state_raw(state: str) -> pd.DataFrame:
         params = {"get": ",".join(chunk), "for": "tract:*", "in": f"state:{state} county:*"}
         if config.CENSUS_API_KEY:
             params["key"] = config.CENSUS_API_KEY
-        body = http_get(url, params=params, cache_hint=f"acs5_{config.ACS_YEAR}_tracts_{state}_{k // MAX_VARIABLES_PER_CALL}",
+        # The chunk's own variables are in the cache key: adding a variable shifts what each
+        # chunk holds, and a key by position alone would hand back a stale chunk.
+        tag = hashlib.sha1(",".join(chunk).encode()).hexdigest()[:8]
+        body = http_get(url, params=params, cache_hint=f"acs5_{config.ACS_YEAR}_tracts_{state}_{k // MAX_VARIABLES_PER_CALL}_{tag}",
                         check=_check)
         assert isinstance(body, str)
         header, *rows = json.loads(body)
@@ -152,6 +156,16 @@ def parse(raw: pd.DataFrame) -> pd.DataFrame:
     out["commute_minutes"] = r
     out["commute_minutes_moe"] = np.sqrt(moe["commute_minutes_total"] ** 2 + r**2 * commuters_moe**2) / commuters
     flag(out["commute_minutes_moe"] / 1.645 / r > config.TRACT_MAX_CV, "commute_minutes")
+
+    # Who lives here (2026-10-04, etl/demographics.py): shares by race and Hispanic origin
+    # and the diversity index — context on the area page, never flagged (small areas'
+    # margins are wide; the page says so); the Gini index flagged like a median.
+    from ..demographics import derive
+
+    for col, values in derive(est).items():
+        out[col] = values
+    gini_cv = moe["gini_index"] / 1.645 / est["gini_index"]
+    flag(gini_cv > config.TRACT_MAX_CV, "gini_index")
 
     out["topcoded"] = [";".join(c for c in topped.columns if topped.at[i, c]) for i in est.index]
     out["low_confidence"] = [";".join(f) for f in flags]

@@ -10,6 +10,8 @@ import {
   schoolsVerdict,
   standing,
   buyOrRentVerdict,
+  diversityVerdict,
+  incomeGapWord,
 } from "./verdicts";
 
 describe("area page verdicts", () => {
@@ -64,6 +66,22 @@ describe("area page verdicts", () => {
     expect(buyOrRentVerdict(null)).toBe("No housing data");
     expect(buyOrRentVerdict(20.2)).toBe("Buying and renting are about even · a home costs 20 years of rent");
     expect(buyOrRentVerdict(14.6)).toBe("Buying and renting are about even · a home costs 15 years of rent");
+  });
+
+  it("describe who lives here without grading it", () => {
+    const shares = (w: number, h: number) => [
+      { label: "White", pct: w },
+      { label: "Hispanic or Latino", pct: h },
+      { label: "Black", pct: null },
+    ];
+    expect(diversityVerdict(9.7, shares(95, 1))).toBe("Mostly one group · largest group White (95%)");
+    expect(diversityVerdict(67.8, shares(43, 29))).toBe("Very diverse · largest group White (43%)");
+    expect(diversityVerdict(45, shares(30, 52))).toBe("Diverse · largest group Hispanic or Latino (52%)");
+    expect(diversityVerdict(null, [])).toBe("No data on who lives here");
+    expect(incomeGapWord(0.33)).toBe("Incomes fairly even");
+    expect(incomeGapWord(0.42)).toBe("A typical income gap");
+    expect(incomeGapWord(0.5)).toBe("A wide income gap");
+    expect(incomeGapWord(0.6)).toBe("A very wide income gap");
   });
 
   it("flag one standout hazard when the overall risk is lower", () => {

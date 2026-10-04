@@ -26,7 +26,40 @@ export const US_TYPICAL = {
   commute_minutes: 25.7,
   work_from_home_share: 10.6,
   zhvi_yoy: 1.6,
+  // Who lives here (2026-10-04): area medians.
+  diversity_index: 43.2,
+  gini_index: 0.42,
 } as const;
+
+/** The typical US county on the same measures (county medians, 2026-10-04). */
+export const US_TYPICAL_COUNTY = { diversity_index: 32.2, gini_index: 0.44 } as const;
+
+/** The five groups of etl/demographics.py, in the order they're drawn. */
+export const RACE_GROUPS = [
+  { key: "white_share", label: "White" },
+  { key: "hispanic_share", label: "Hispanic or Latino" },
+  { key: "black_share", label: "Black" },
+  { key: "asian_share", label: "Asian" },
+  { key: "other_race_share", label: "Other or multiracial" },
+] as const;
+
+/**
+ * The diversity index (the chance two residents differ in race or ethnicity, 0–80) in
+ * words, with the largest group: "Diverse · largest group White (48%)". Neutral: it
+ * describes, it doesn't grade.
+ */
+export function diversityVerdict(index: number | null, shares: { label: string; pct: number | null }[]): string {
+  if (index === null) return "No data on who lives here";
+  const words = index < 20 ? "Mostly one group" : index < 40 ? "Somewhat diverse" : index < 60 ? "Diverse" : "Very diverse";
+  const largest = shares.filter((s): s is { label: string; pct: number } => s.pct !== null).sort((a, b) => b.pct - a.pct)[0];
+  return largest ? `${words} · largest group ${largest.label} (${Math.round(largest.pct)}%)` : words;
+}
+
+/** The Gini index of household income (0 = everyone the same, 1 = one has it all) in words. */
+export function incomeGapWord(gini: number | null): string {
+  if (gini === null) return "No data";
+  return gini < 0.38 ? "Incomes fairly even" : gini <= 0.46 ? "A typical income gap" : gini <= 0.52 ? "A wide income gap" : "A very wide income gap";
+}
 
 const BETTER = { lower: "lower is better", higher: "higher is better", middle: "typical is best" } as const;
 

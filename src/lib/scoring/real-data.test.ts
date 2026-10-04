@@ -76,6 +76,19 @@ describe("the dataset and the Alaska / Hawaii toggles", () => {
   });
 });
 
+describe("who lives here (display only, 2026-10-04)", () => {
+  it("parses race shares, the diversity index and the Gini index, and keeps them through a subset", () => {
+    const sf = all.indexByFips.get(SAN_FRANCISCO)!;
+    expect(all.info.asian_share[sf]).toBeGreaterThan(30);
+    expect(all.info.diversity_index[sf]).toBeGreaterThan(60);
+    expect(all.info.gini_index[sf]).toBeGreaterThan(0.45);
+    const shares = (["white_share", "hispanic_share", "black_share", "asian_share", "other_race_share"] as const).reduce(
+      (s, k) => s + all.info[k][sf], 0);
+    expect(shares).toBeCloseTo(100, 0);
+    expect(data.info.diversity_index[data.indexByFips.get(SAN_FRANCISCO)!]).toBe(all.info.diversity_index[sf]);
+  });
+});
+
 describe("rankings agree with common knowledge", () => {
   it("cost of living: Cleveland beats San Francisco, and the SF metro is dead last", () => {
     const { get, ranked } = run({ weights: { rpp_all: 5 } });

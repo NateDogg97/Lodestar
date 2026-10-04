@@ -997,6 +997,38 @@ def test_tract_crime_rates() -> None:
     check(counts == {"topcoded": 1} and patch_topcodes(tc) == {"topcoded": 0}, "idempotent")
 
 
+def test_demographics() -> None:
+    """Who lives here (2026-10-04): shares, the diversity index, and the area backfill."""
+    print("\ndemographics: shares, diversity index, Gini")
+    from etl.demographics import derive
+    from etl.tracts.backfill import patch_demographics
+
+    counts = pd.DataFrame({
+        "race_total": [100, 100, 0], "race_white_nh": [100, 20, 0], "race_black_nh": [0, 20, 0],
+        "race_aian_nh": [0, 5, 0], "race_asian_nh": [0, 20, 0], "race_nhpi_nh": [0, 0, 0],
+        "race_other_nh": [0, 5, 0], "race_two_plus_nh": [0, 10, 0], "race_hispanic": [0, 20, 0],
+        "gini_index": [0.4, 0.5, None],
+    })
+    d = derive(counts)
+    check(d.at[0, "white_share"] == 100 and d.at[0, "diversity_index"] == 0, "one group: diversity 0")
+    check(abs(d.at[1, "other_race_share"] - 20) < 1e-9, "'other' sums the four smaller groups")
+    check(abs(d.at[1, "diversity_index"] - 80) < 1e-9, "five equal groups: diversity 80, the most possible")
+    check(abs(d.loc[1, ["hispanic_share", "white_share", "black_share", "asian_share", "other_race_share"]].sum() - 100) < 1e-9,
+          "the five shares add to 100")
+    check(d.loc[2].isna().all(), "no people: everything unknown")
+
+    payload = {"columns": ["geoid", "low_confidence"], "rows": [["1", "kids_share"], ["2", "gini_index"]]}
+    src = {"1": {**{c: d.at[1, c] for c in d.columns}, "flags": {"gini_index"}},
+           "2": {**{c: d.at[0, c] for c in d.columns}, "flags": set()}}
+    patch_demographics(payload, src)
+    patch_demographics(payload, src)
+    row = {r[0]: dict(zip(payload["columns"], r)) for r in payload["rows"]}
+    check(row["1"]["diversity_index"] == 80.0 and row["1"]["gini_index"] == 0.5, "area values carried, rounded")
+    check(row["1"]["low_confidence"] == "kids_share;gini_index" and row["2"]["low_confidence"] == "",
+          "the Gini flag follows the source, once", str(row))
+    check(len(payload["columns"]) == 2 + 7, "idempotent: columns added once")
+
+
 def test_tract_acs_confidence() -> None:
     """Phase 8: tract ACS parsing — MOE codes, derived shares, low-confidence flags."""
     print("\ntract ACS: margins of error and low confidence")
@@ -1070,6 +1102,7 @@ def main() -> int:
         test_tract_today_prices()
         test_tract_backfill_audit_columns()
         test_tract_crime_rates()
+        test_demographics()
         test_tract_crime_and_gate()
 
         fixtures = _make_synthetic()
