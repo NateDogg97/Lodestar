@@ -16,6 +16,9 @@ import {
 } from "@/lib/tracts";
 import { formatValue, type CountyScore, type MetricKey } from "@/lib/scoring";
 
+import { Icon } from "@/components/ui/icons";
+import { InfoTip } from "@/components/ui/info-tip";
+
 import { isGold, scoreColor, trackOverflow } from "./score-colors";
 
 /**
@@ -195,6 +198,44 @@ function Badges({ badges, first }: { badges: ResultBadges | undefined; first: bo
 const partValue = (p: AreaPart) =>
   p.level === "county" ? formatValue(p.key as MetricKey, p.value) : formatArea(p.key, p.value);
 
+/** The small amber mark beside a low-confidence value. */
+function Flag({ on }: { on: boolean }) {
+  if (!on) return null;
+  return (
+    <span className="ml-1 text-amber-500 dark:text-amber-400" title="Low confidence">
+      <Icon name="warning" className="inline h-3 w-3" />
+    </span>
+  );
+}
+
+/**
+ * Beside a result's name when one of your priorities rests on a low-confidence value
+ * (full audit, 2026-10-04): a wide Census margin, a small police agency. Tap for which.
+ */
+function PriorityCaution({ parts }: { parts: AreaPart[] }) {
+  const flagged = parts.filter((p) => p.flagged);
+  if (flagged.length === 0) return null;
+  return (
+    <span className="inline-flex" onClick={(e) => e.stopPropagation()}>
+      <InfoTip label="Low confidence" icon={<Icon name="warning" className="h-4 w-4" />}>
+        <p className="font-semibold">Low confidence</p>
+        <p className="mt-1">Uncertain for this area:</p>
+        <ul className="mt-1 list-disc pl-4">
+          {flagged.map((p) => (
+            <li key={p.key}>
+              {p.label} ({partValue(p)})
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2 text-caption text-neutral-500 dark:text-neutral-400">
+          A small area sampled by the Census (a wide margin of error), or a small police agency. It still counts in the
+          score.
+        </p>
+      </InfoTip>
+    </span>
+  );
+}
+
 /** The open summary: the trade-off, the 3 priorities that moved the score most, must-haves. */
 function Summary({ i, parts, common }: { i: number; parts: AreaPart[]; common: Common }) {
   const [all, setAll] = useState(false);
@@ -211,7 +252,10 @@ function Summary({ i, parts, common }: { i: number; parts: AreaPart[]; common: C
         <span className={`block h-2 rounded-full bg-neutral-200 dark:bg-neutral-800 ${trackOverflow(isGold(p.beats))}`}>
           {p.points !== null && <Fill points={p.points} beats={p.beats} />}
         </span>
-        <span className="text-right font-medium whitespace-nowrap tabular-nums">{partValue(p)}</span>
+        <span className="text-right font-medium whitespace-nowrap tabular-nums">
+          {partValue(p)}
+          <Flag on={p.flagged} />
+        </span>
       </li>
     ));
   return (
@@ -296,6 +340,7 @@ export function AreaResultsList({
                   >
                     {common.areas.name[i]}
                   </button>
+                  <PriorityCaution parts={parts} />
                   <Badges badges={badges.get(i)} first={rank === 0 && !Number.isNaN(common.scores.score[i])} />
                 </div>
                 <p className="text-caption text-neutral-500">{common.countyName(common.areas.county[i])}</p>

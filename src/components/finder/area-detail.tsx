@@ -19,7 +19,9 @@ import {
   peopleVerdict,
   safetyVerdict,
   schoolsVerdict,
+  standing,
   tradeOff,
+  notResidential,
   US_TYPICAL,
   type Area,
   type AreaLimit,
@@ -364,21 +366,6 @@ function FlagMark({ on }: { on?: boolean }) {
 
 // ---- Why it ranks here ----
 
-const BETTER = { lower: "lower is better", higher: "higher is better", middle: "typical is best" } as const;
-
-/** Where the value stands, said the way the score reads: "lower than 98% of US areas". */
-function standing(p: AreaPart): string {
-  const of = p.level === "county" ? "US counties" : "US areas";
-  if (p.direction === "middle" || p.points === null || p.beats === null) {
-    return `${ordinal(Math.round(p.rawPercentile ?? 0))} percentile of ${of} · ${BETTER.middle}`;
-  }
-  // Points count ties as wins; `beats` counts them against. Say which, when it matters.
-  const word = p.direction === "lower" ? "lower" : "higher";
-  if (p.points >= 99.95 && p.beats < 99.5) return `as ${p.direction === "lower" ? "low" : "high"} as any of the ${of}`;
-  if (p.points - p.beats >= 1) return `${word} than or tied with ${Math.round(p.points)}% of ${of}`;
-  return `${word} than ${Math.round(p.beats)}% of ${of}`;
-}
-
 /** Home value and rent are scored at today's prices: Census by area × its ZIP's Zillow ratio. */
 const SCORED_ON_CENSUS = new Set(["median_home_value", "median_gross_rent"]);
 
@@ -401,10 +388,13 @@ export function PriorityBar({ c, full, showLevel = true }: { c: AreaPart; full: 
           {c.label}
           {tag && <span className="font-normal text-caption text-neutral-500"> · {tag}</span>}
         </span>
-        <span className="shrink-0 font-semibold tabular-nums">{partValue(c)}</span>
+        <span className="shrink-0 font-semibold tabular-nums">
+          {partValue(c)}
+          <FlagMark on={c.flagged} />
+        </span>
       </div>
       {c.points === null ? (
-        <Note>No data — left out of this area&rsquo;s score (weight {c.weight}).</Note>
+        <Note>No data — counted as average (50 points) at weight {c.weight}, so it neither helps nor hurts.</Note>
       ) : (
         <>
           <div className="grid grid-cols-[minmax(0,1fr)_3.25rem] items-center gap-2.5">
@@ -450,8 +440,11 @@ function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRa
   const failed = limits.filter((l) => l.state === "fail").length;
   const unknown = limits.filter((l) => l.state === "unknown").length;
   const rest = Math.max(0, byEffect.length - 3);
-  const where =
-    place >= 0 ? `${ordinal(place + 1)} of ${ranking.matches.length} matching areas in ${countyName}` : "Doesn't pass your must-haves";
+  const where = notResidential(ranking.areas, i)
+    ? "Not a place to move to (few residents, or mostly a base, campus or prison), so it isn't ranked"
+    : place >= 0
+      ? `${ordinal(place + 1)} of ${ranking.matches.length} matching areas in ${countyName}`
+      : "Doesn't pass your must-haves";
   return (
     <AreaSection
       id="why"
@@ -652,7 +645,7 @@ export function AreaDetail({
         id="safety"
         icon="shield"
         title="Safety"
-        lead={safetyVerdict(v("violent_rate"))}
+        lead={safetyVerdict(v("violent_rate"), r.crime_note ? String(r.crime_note) : null)}
         details={
           <>
             <CompareBar
@@ -666,7 +659,13 @@ export function AreaDetail({
               flagged={flagged.has("crime")}
             />
             <Note>
-              {r.crime_agency ? `Reported for ${String(r.crime_agency)}, ${String(r.crime_year)} (FBI Crime Data Explorer). ` : ""}
+              {r.crime_agency && r.crime_note
+                ? `${String(r.crime_agency)} ${String(r.crime_note)}. `
+                : r.crime_agency
+                  ? `Reported for ${String(r.crime_agency)}, ${String(r.crime_year)}${
+                      typeof r.crime_months === "number" && r.crime_months < 12 ? ` (${r.crime_months} months, scaled to a year)` : ""
+                    } (FBI Crime Data Explorer). `
+                  : ""}
               {AREA_MEASURE.get("violent_rate")?.note}
             </Note>
           </>
