@@ -35,9 +35,9 @@ import { barColor, isGold, scoreColor } from "./score-colors";
 
 /**
  * An area's page below its name (owner, 2026-10-04, mockup round 3 "C"): every
- * section has a header with a one-line takeaway (tap to fold the section), one or two
- * headline visuals, and "Show details" for the full analysis. Details start closed;
- * which sections are folded or opened is remembered on this device.
+ * section has a header with a one-line takeaway, one or two headline visuals, and
+ * "Show details" for the full analysis. Details start closed; which ones are open is
+ * remembered on this device. (Sections don't fold: one toggle per section, owner.)
  */
 
 // ---- Remembered folds (a per-device convenience: browser storage, never required) ----
@@ -136,59 +136,49 @@ function AreaSection({
   detailsLabel?: string;
   tone?: "emerald" | "amber";
 }) {
-  const [open, setOpen] = useFold(id, true);
   const [more, setMore] = useFold(`${id}.details`, false);
-  const bodyId = useId();
   const detailsId = useId();
   return (
     <section className="border-t border-neutral-200 py-5 first:border-t-0 dark:border-neutral-800">
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={bodyId}
-        onClick={() => setOpen(!open)}
-        className="flex min-h-11 w-full items-center gap-3 text-left"
-      >
+      <div className="flex min-h-11 items-center gap-3">
         <span
+          aria-hidden
           className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${
             tone === "amber"
               ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
               : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
           }`}
         >
-          <svg aria-hidden viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d={ICONS[icon]} />
           </svg>
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-body font-semibold">{title}</span>
-          <span className="block text-label text-neutral-600 dark:text-neutral-400">{lead}</span>
-        </span>
-        {right}
-        <Chevron up={open} className="h-4 w-4 shrink-0 text-neutral-500" />
-      </button>
-      {open && (
-        <div id={bodyId} className="mt-4 space-y-4">
-          {children}
-          {details && more && (
-            <div id={detailsId} className="space-y-4 rounded-xl bg-neutral-50 p-3.5 dark:bg-neutral-900/60">
-              {details}
-            </div>
-          )}
-          {details && (
-            <button
-              type="button"
-              aria-expanded={more}
-              aria-controls={detailsId}
-              onClick={() => setMore(!more)}
-              className="inline-flex min-h-8 items-center gap-1 text-label font-semibold text-emerald-700 hover:underline dark:text-emerald-400"
-            >
-              {more ? "Hide details" : detailsLabel}
-              <Chevron up={more} className="h-3.5 w-3.5" />
-            </button>
-          )}
+        <div className="min-w-0 flex-1">
+          <h3 className="text-body font-semibold">{title}</h3>
+          <p className="text-label text-neutral-600 dark:text-neutral-400">{lead}</p>
         </div>
-      )}
+        {right}
+      </div>
+      <div className="mt-4 space-y-4">
+        {children}
+        {details && more && (
+          <div id={detailsId} className="space-y-4 rounded-xl bg-neutral-50 p-3.5 dark:bg-neutral-900/60">
+            {details}
+          </div>
+        )}
+        {details && (
+          <button
+            type="button"
+            aria-expanded={more}
+            aria-controls={detailsId}
+            onClick={() => setMore(!more)}
+            className="inline-flex min-h-8 items-center gap-1 text-label font-semibold text-emerald-700 hover:underline dark:text-emerald-400"
+          >
+            {more ? "Hide details" : detailsLabel}
+            <Chevron up={more} className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
     </section>
   );
 }

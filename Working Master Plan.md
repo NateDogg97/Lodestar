@@ -1757,8 +1757,9 @@ neighborhood near a specific school), not a county average. Decided with the own
   Natural hazards) has an icon, a one-line takeaway in words (`src/lib/tracts/verdicts.ts`,
   tested), one or two headline visuals (percentile bars, bars against the typical US area,
   own/rent and home-type splits, risk bars), and "Show details" for the full analysis.
-  Details start closed; folded sections and opened details are remembered per device
-  (`lodestar.area-sections` in browser storage, synced across tabs). "Typical US area" =
+  Details start closed; which are open is remembered per device (`lodestar.area-sections`
+  in browser storage, synced across tabs). Sections themselves don't fold — one toggle per
+  section (owner, 2026-10-04). "Typical US area" =
   medians over all 84,119 areas, computed 2026-10-04 (`US_TYPICAL`); recompute on a new
   Census release. Built in `src/components/finder/area-detail.tsx`.
 - [ ] Data overload — county page: the same section style for its Overview (Location,
