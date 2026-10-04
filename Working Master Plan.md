@@ -1655,7 +1655,8 @@ neighborhood near a specific school), not a county average. Decided with the own
   longer within-county). Needs every area's scoring columns in the browser: measured
   2026-10-03 at 84,119 areas × ~18 columns = 3.4 MB gzipped, loaded only when a search
   has an area-level filter.
-- **Results are capped by areas, not counties:** the top N areas nationally (default 100).
+- **Results are capped by areas, not counties:** the top N areas nationally — 100 by default, with
+  "show more" to 250 and 500 (owner, 2026-10-03).
   Counties are the ones holding at least one of them — however many that is.
 - **County ranking: by their best area** (owner: "that's the whole purpose of this app"),
   each showing "5 of your top 100 areas". Open: a "most options" sort (count of top-N areas,
@@ -1666,6 +1667,8 @@ neighborhood near a specific school), not a county average. Decided with the own
   themselves when zoomed in (only top-N areas; geometry loaded per county as needed).
 - **Inside a county: only the areas that match**, best 5 first, "Show 5 more" for the next
   ones; the rest stay off the map, so it's not every area ranked at once.
+- Mockup first (owner, 2026-10-03): area page, county page and results list reorganized
+  around "Your search" — https://claude.ai/artifact/BM9S29sxGTLmV87V2Lj72X (private).
 - Next, separately: **data overload** — reorganize county and area pages (nothing removed),
   so what matters for *this* search comes first and the rest is a tap away.
 
