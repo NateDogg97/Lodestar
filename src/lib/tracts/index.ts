@@ -204,8 +204,8 @@ export const AREA_MEASURES: AreaMeasure[] = [
   { key: "commute_minutes", label: "Average commute", format: "minutes" },
   { key: "work_from_home_share", label: "Work from home", format: "percent" },
   { key: "violent_rate", label: "Violent crime", format: "rate", colorable: true,
-    note: "FBI, per 100,000 residents, for the police agency covering the area (city police or county sheriff) — not the neighborhood itself." },
-  { key: "property_rate", label: "Property crime", format: "rate", note: "FBI, per 100,000 residents, for the covering police agency." },
+    note: "FBI, per 100,000 residents per year, for the police agency covering the area (city police or county sheriff) — not the neighborhood itself. A partial year's reports are scaled to a year; an agency with too little to rate shows none." },
+  { key: "property_rate", label: "Property crime", format: "rate", note: "FBI, per 100,000 residents per year, for the covering police agency." },
   { key: "zhvi_yoy", label: "Home value, last 12 months (by ZIP)", format: "change", colorable: true },
   { key: "days_on_market", label: "Days on market", format: "number", note: "Redfin median for the ZIP, latest 90 days." },
   { key: "sale_to_list", label: "Sale-to-list", format: "percent", note: "Redfin average sale price as a share of list price." },
@@ -251,8 +251,14 @@ export function formatAreaValue(a: Area, key: string): string {
   return a.topcoded.includes(key) && text !== "—" ? `${text}+` : text;
 }
 
+/** The Census stops counting household income here ("$250,000 or more"): a floor, not a value. */
+export const INCOME_TOP_CODE = 250_000;
+
 export function formatArea(key: string, v: number | null): string {
   if (v === null) return "—";
+  // areas.json rounds the Census top-code ($250,001) to $250,000; the per-county files say so
+  // in `topcoded` (see formatAreaValue). Either way it means "at least this".
+  if (key === "median_household_income" && v >= INCOME_TOP_CODE) return `$${INCOME_TOP_CODE.toLocaleString()}+`;
   const f = AREA_MEASURE.get(key)?.format ?? "number";
   switch (f) {
     case "dollars":

@@ -18,6 +18,14 @@
  * - An area unknown for a must-have ranks after every verified match.
  * - A value scores as at least as good as the values it ties with (best value = 100).
  * - Zero violent AND zero property crime is no report, not a perfect record.
+ *
+ * Full audit (2026-10-04):
+ * - National percentiles are over the areas that can be results: places nobody lives
+ *   (`notResidential`) are left out of the distribution too, not just the list — they
+ *   held half the bottom 1% of density and a fifth of the bottom 1% of walkability.
+ * - A county-wide priority the county has no value for counts as average (50), like an
+ *   area one (`countyParts` used to drop it).
+ * - Each part says whether its value is low confidence (`flagged`), so lists can show it.
  */
 
 import {
@@ -155,6 +163,25 @@ export const mostlyMobileHomes = (areas: NationalAreas, i: number) => areas.lowC
 
 const pctCache = new WeakMap<NationalAreas, Map<string, Float64Array>>();
 const boundsCache = new WeakMap<NationalAreas, Map<string, PercentileBounds>>();
+const rankedCache = new WeakMap<NationalAreas, Map<string, Float64Array>>();
+
+/**
+ * The column as the percentiles see it: places that can't be results (`notResidential`)
+ * are NaN, so they take no part in anyone's rank — the distribution is of the places a
+ * person could move to. (Their own points come out NaN; they're never listed.)
+ */
+function rankedColumn(areas: NationalAreas, column: string): Float64Array {
+  let cache = rankedCache.get(areas);
+  if (!cache) rankedCache.set(areas, (cache = new Map()));
+  let v = cache.get(column);
+  if (!v) {
+    const src = areas.values.get(column);
+    v = new Float64Array(areas.n).fill(NaN);
+    if (src) for (let i = 0; i < areas.n; i++) if (!notResidential(areas, i)) v[i] = src[i];
+    cache.set(column, v);
+  }
+  return v;
+}
 
 /** An area-level column's tie groups, for points (see `percentileBounds`), computed once. */
 export function areaBounds(areas: NationalAreas, column: string): PercentileBounds {
@@ -162,7 +189,7 @@ export function areaBounds(areas: NationalAreas, column: string): PercentileBoun
   if (!cache) boundsCache.set(areas, (cache = new Map()));
   let b = cache.get(column);
   if (!b) {
-    b = percentileBounds(areas.values.get(column) ?? new Float64Array(areas.n).fill(NaN));
+    b = percentileBounds(rankedColumn(areas, column));
     cache.set(column, b);
   }
   return b;
@@ -182,10 +209,24 @@ export function areaPercentiles(areas: NationalAreas, column: string): Float64Ar
   if (!cache) pctCache.set(areas, (cache = new Map()));
   let p = cache.get(column);
   if (!p) {
-    p = percentileRanks(areas.values.get(column) ?? new Float64Array(areas.n).fill(NaN));
+    p = percentileRanks(rankedColumn(areas, column));
     cache.set(column, p);
   }
   return p;
+}
+
+/**
+ * The scoring columns an area's low-confidence flags cover: a flag is usually the
+ * column's own name; "crime" covers both crime rates and "mobile_homes" the home value.
+ */
+export function flaggedColumns(areas: NationalAreas, i: number): Set<string> {
+  const out = new Set<string>();
+  for (const f of areas.lowConfidence[i]) {
+    if (f === "crime") out.add("violent_rate").add("property_rate");
+    else if (f === "mobile_homes") out.add("median_home_value");
+    else out.add(f);
+  }
+  return out;
 }
 
 /** A county's shared part of its areas' scores: its status and its county-level points. */
@@ -201,8 +242,8 @@ export function countyParts(scores: CountyScore[]): Map<string, CountyPart> {
     let sum = 0;
     let weight = 0;
     for (const c of s.contributions) {
-      if (c.percentile === null) continue;
-      sum += c.weight * c.percentile;
+      // No value: average (50) at full weight, the same rule as `scoreCounties`.
+      sum += c.weight * (c.percentile ?? 50);
       weight += c.weight;
     }
     out.set(s.fips, { status: s.status, sum, weight });
@@ -338,6 +379,8 @@ export interface AreaPart {
   impact: number | null;
   /** Share of places strictly worse, 0–100 — for "top 1%" claims (see MetricContribution.beats). */
   beats: number | null;
+  /** The value is low confidence (a wide Census margin, a small police agency): show a caution. */
+  flagged: boolean;
 }
 
 /** An area's parts, most important first (the fingerprint's order). */
@@ -347,6 +390,7 @@ export function explainArea(
   s: NationalSearch,
   county: CountyScore | undefined,
 ): AreaPart[] {
+  const flagged = flaggedColumns(areas, i);
   const parts: AreaPart[] = s.criteria.map((c) => {
     const p = areaPercentiles(areas, c.column)[i];
     const v = areas.values.get(c.column)?.[i] ?? NaN;
@@ -357,12 +401,14 @@ export function explainArea(
       value: Number.isNaN(v) ? null : v, rawPercentile: Number.isNaN(p) ? null : p, points,
       impact: points === null ? null : c.weight * (points - 50),
       beats: points === null ? null : beatsAt(areaBounds(areas, c.column), i, c.direction),
+      flagged: !Number.isNaN(v) && flagged.has(c.column),
     };
   });
   for (const c of county?.contributions ?? []) {
     parts.push({
       key: c.metric, label: getMetric(c.metric).label, level: "county", direction: c.direction, weight: c.weight,
       value: c.value, rawPercentile: c.rawPercentile, points: c.percentile, impact: c.impact, beats: c.beats,
+      flagged: false,
     });
   }
   return parts.sort((a, b) => b.weight - a.weight);

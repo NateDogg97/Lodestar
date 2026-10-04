@@ -8,6 +8,7 @@ import {
   peopleVerdict,
   safetyVerdict,
   schoolsVerdict,
+  standing,
 } from "./verdicts";
 
 describe("area page verdicts", () => {
@@ -25,6 +26,32 @@ describe("area page verdicts", () => {
     expect(marketVerdict(7.6)).toBe("Prices up 7.6% in a year (typical +1.6%)");
     expect(locationVerdict(272, "Minneapolis-St. Paul-Bloomington, MN-WI")).toBe("Far from big metros · 272 mi to Minneapolis");
     expect(locationVerdict(10, "Austin-Round Rock-San Marcos, TX")).toBe("In or near the Austin metro");
+  });
+
+  it("say 'too little to rate' when the ETL withdrew a crime rate, 'no data' when there was none", () => {
+    expect(safetyVerdict(null, "reported only 1 month of 2025: too little to rate")).toBe("Too little reported to rate");
+    expect(safetyVerdict(null)).toBe("No crime data");
+    expect(safetyVerdict(null, null)).toBe("No crime data");
+    expect(safetyVerdict(0)).toBe("Much safer than a typical US area");
+    expect(safetyVerdict(248)).toBe("About as safe as a typical US area");
+    expect(safetyVerdict(600)).toBe("Much more crime than a typical US area");
+  });
+
+  it("word where a value stands so a tie is never claimed as a rarity", () => {
+    const area = (over: Partial<Parameters<typeof standing>[0]>) => standing({
+      level: "area", direction: "lower", points: 80, beats: 79.6, rawPercentile: 20, ...over,
+    });
+    expect(area({})).toBe("lower than 80% of US areas");
+    expect(area({ direction: "higher", points: 95.2, beats: 95.1, rawPercentile: 95.2 })).toBe("higher than 95% of US areas");
+    // The best value shared by most places: 100 points, but "as low as any", not "lower than 100%".
+    expect(area({ points: 100, beats: 42 })).toBe("as low as any of the US areas");
+    expect(area({ direction: "higher", points: 100, beats: 0 })).toBe("as high as any of the US areas");
+    // A smaller tie: say it's a tie.
+    expect(area({ points: 97, beats: 93 })).toBe("lower than or tied with 97% of US areas");
+    // The only one at the best value: a real rarity.
+    expect(area({ points: 100, beats: 99.9 })).toBe("lower than 100% of US areas");
+    expect(area({ direction: "middle", points: 90, beats: null, rawPercentile: 45.2 })).toBe("45th percentile of US areas · typical is best");
+    expect(area({ level: "county", points: null, beats: null, rawPercentile: null })).toBe("0th percentile of US counties · typical is best");
   });
 
   it("flag one standout hazard when the overall risk is lower", () => {

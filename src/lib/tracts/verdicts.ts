@@ -3,10 +3,15 @@
  * front, analysis on tap"), and the typical US area they compare with. Pure: no UI.
  */
 
+import type { Direction } from "@/lib/scoring";
+import { ordinal } from "@/lib/scoring/format";
+
 /**
  * The typical US area: medians over all 84,119 areas (census tracts), computed
- * 2026-10-04 from the published area files. They move slowly; recompute when the
- * area data is rebuilt from a new Census release.
+ * 2026-10-04 from the published area files and re-checked in the full audit the same
+ * day (residential areas only give the same values within rounding; population-weighted
+ * medians differ by a few percent). They move slowly; recompute when the area data is
+ * rebuilt from a new Census release.
  */
 export const US_TYPICAL = {
   violent_rate: 248,
@@ -23,6 +28,31 @@ export const US_TYPICAL = {
   zhvi_yoy: 1.6,
 } as const;
 
+const BETTER = { lower: "lower is better", higher: "higher is better", middle: "typical is best" } as const;
+
+/**
+ * Where a priority's value stands, said the way the score reads: "lower than 98% of US
+ * areas". Points count ties as wins and `beats` counts them against, so when they differ
+ * it says which: "as low as any US area" for the best value shared by many, "lower than or
+ * tied with 97%" when the tie is smaller. Only the percentile for "typical is best".
+ */
+export function standing(p: {
+  level: "area" | "county";
+  direction: Direction;
+  points: number | null;
+  beats: number | null;
+  rawPercentile: number | null;
+}): string {
+  const of = p.level === "county" ? "US counties" : "US areas";
+  if (p.direction === "middle" || p.points === null || p.beats === null) {
+    return `${ordinal(Math.round(p.rawPercentile ?? 0))} percentile of ${of} · ${BETTER.middle}`;
+  }
+  const word = p.direction === "lower" ? "lower" : "higher";
+  if (p.points >= 99.95 && p.beats < 99.5) return `as ${p.direction === "lower" ? "low" : "high"} as any of the ${of}`;
+  if (p.points - p.beats >= 1) return `${word} than or tied with ${Math.round(p.points)}% of ${of}`;
+  return `${word} than ${Math.round(p.beats)}% of ${of}`;
+}
+
 /** FEMA risk percentile in words — the same cutoffs as the county page. */
 export function hazardWord(p: number): string {
   return p < 20 ? "Very low" : p < 40 ? "Low" : p < 60 ? "Moderate" : p < 80 ? "High" : "Very high";
@@ -34,9 +64,13 @@ export function schoolsVerdict(p: number | null): string {
   return p >= 75 ? "Strong schools" : p >= 60 ? "Above average" : p >= 40 ? "About average" : p >= 25 ? "Below average" : "Weak schools";
 }
 
-/** Violent crime against the typical US area. */
-export function safetyVerdict(violent: number | null): string {
-  if (violent === null) return "No crime data";
+/**
+ * Violent crime against the typical US area. `note`: the ETL's reason there is no rate
+ * (`crime_note`: the agency reported too few months, serves too few people, or reported
+ * implausibly little) — then it's "too little to rate", not "no data".
+ */
+export function safetyVerdict(violent: number | null, note?: string | null): string {
+  if (violent === null) return note ? "Too little reported to rate" : "No crime data";
   const r = violent / US_TYPICAL.violent_rate;
   return r < 0.6
     ? "Much safer than a typical US area"

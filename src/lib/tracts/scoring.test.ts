@@ -9,6 +9,7 @@ import {
   distinctNames,
   EXCLUDED,
   explainArea,
+  flaggedColumns,
   MATCH,
   notResidential,
   OUT,
@@ -20,6 +21,7 @@ import {
   UNKNOWN,
   type NationalSearch,
 } from "./national";
+import { formatArea } from "./index";
 import { areaCriteria, MOVED_TO_AREAS } from "./scoring";
 
 // Four areas in two counties (48001: a, b; 48003: c, d).
@@ -104,7 +106,7 @@ describe("areas as the results (Phase 8f)", () => {
 
   it("words county priorities by their direction", () => {
     const part = (key: string, direction: "lower" | "higher", impact: number) => ({
-      key, label: key, level: "county" as const, direction, weight: 1, value: 1, rawPercentile: 50, points: 50, impact, beats: null,
+      key, label: key, level: "county" as const, direction, weight: 1, value: 1, rawPercentile: 50, points: 50, impact, beats: null, flagged: false,
     });
     expect(tradeOff([part("rpp_all", "lower", 40), part("days_above_90f", "lower", 30)])).toBe(
       "Helped by low cost of living and few days above 90°F.",
@@ -168,8 +170,9 @@ describe("results audit rules (2026-10-04)", () => {
   it("counts a missing value as average, never dropping it", () => {
     const { criteria } = areaCriteria({ areaWeights: { walkability: 1, median_home_value: 1 }, areaDirections: {}, areaLimits: {} });
     const sc = scoreNational(a, s({ criteria }));
-    // c: walkability unknown → 50; second-cheapest home of five → 75: 62.5, not 75.
-    expect(sc.score[2]).toBeCloseTo(62.5);
+    // c: walkability unknown → 50; the cheapest home among the areas that can be results (the
+    // 20-person park e doesn't count, full audit) → 100: 75, not 100.
+    expect(sc.score[2]).toBeCloseTo(75);
   });
 
   it("leaves places nobody lives out of the results", () => {
@@ -206,6 +209,73 @@ describe("results audit rules (2026-10-04)", () => {
     const { limits } = areaCriteria({ areaWeights: {}, areaDirections: {}, areaLimits: { walkability: { min: 9 } } });
     const sc = scoreNational(a, s({ limits }));
     expect(topAreas(a, sc, 10, false)).toEqual([1, 3, 0]);
+  });
+});
+
+describe("full audit rules (2026-10-04)", () => {
+  // e (20 people) and f (a base) aren't places to move to: they must not shape anyone's percentile.
+  const a = parseNationalAreas({
+    format: "areas-v1",
+    n: 6,
+    columns: {
+      geoid: ["48001000100", "48001000200", "48001000300", "48001000400", "48001000500", "48001000600"],
+      label: ["A", "B", "C", "D", "E", "F"],
+      low_confidence: ["", "crime", "mobile_homes", "median_household_income", "", ""],
+      population: [1000, 5000, 3000, 2000, 20, 4000],
+      group_quarters_share: [0, 0, 0, 0, 0, 95],
+      density_per_sq_mi: [1000, 2000, 3000, 4000, 1, 2],
+      violent_rate: [100, 200, 300, 150, 50, 60],
+      property_rate: [1000, 2000, 1500, 900, 500, 600],
+      median_home_value: [200_000, 300_000, 100_000, 400_000, 50_000, 250_000],
+      median_household_income: [60_000, 70_000, 80_000, 250_000, 90_000, 100_000],
+    },
+  });
+  const s = (over: Partial<NationalSearch>) => ({
+    criteria: [], limits: [], counties: countyParts([county("48001", "match", null)]), ...over,
+  });
+
+  it("computes percentiles over the areas that can be results, not parks and bases", () => {
+    const { criteria } = areaCriteria({ areaWeights: { density_per_sq_mi: 1 }, areaDirections: {}, areaLimits: {} });
+    const parts = (i: number) => explainArea(a, i, s({ criteria }), undefined)[0];
+    // Among a–d alone the least dense (a) is best: 100 points. With e and f counted it would be 50.
+    expect(parts(0).points).toBe(100);
+    expect(parts(0).beats).toBe(100);
+    expect(parts(3).points).toBe(0);
+    // The park and the base themselves have no rank.
+    expect(parts(4).points).toBeNull();
+    expect(scoreNational(a, s({ criteria })).status[4]).toBe(OUT);
+  });
+
+  it("counts a county-wide priority with no value as average, like an area one", () => {
+    const missing: CountyScore = {
+      ...county("48001", "match", null),
+      contributions: [
+        { metric: "rpp_all", value: null, direction: "lower", rawPercentile: null, percentile: null, weight: 2, impact: null, beats: null },
+        { metric: "days_above_90f", value: 10, direction: "lower", rawPercentile: 0, percentile: 100, weight: 2, impact: 100, beats: 100 },
+      ],
+    };
+    const cp = countyParts([missing]).get("48001")!;
+    expect(cp.weight).toBe(4);
+    expect(cp.sum).toBe(2 * 50 + 2 * 100);
+    const { criteria } = areaCriteria({ areaWeights: { density_per_sq_mi: 4 }, areaDirections: {}, areaLimits: {} });
+    // a: density 100 points at weight 4, county 75 at weight 4 → 87.5 (90 if the missing one were dropped).
+    expect(scoreNational(a, s({ criteria, counties: countyParts([missing]) })).score[0]).toBeCloseTo(87.5);
+  });
+
+  it("marks each part whose value is low confidence, by what the flag covers", () => {
+    expect([...flaggedColumns(a, 1)]).toEqual(["violent_rate", "property_rate"]);
+    expect([...flaggedColumns(a, 2)]).toEqual(["median_home_value"]);
+    expect([...flaggedColumns(a, 3)]).toEqual(["median_household_income"]);
+    const { criteria } = areaCriteria({ areaWeights: { violent_rate: 1, median_home_value: 1 }, areaDirections: {}, areaLimits: {} });
+    const flags = (i: number) => Object.fromEntries(explainArea(a, i, s({ criteria }), undefined).map((p) => [p.key, p.flagged]));
+    expect(flags(1)).toEqual({ violent_rate: true, median_home_value: false });
+    expect(flags(2)).toEqual({ violent_rate: false, median_home_value: true });
+    expect(flags(0)).toEqual({ violent_rate: false, median_home_value: false });
+  });
+
+  it("shows the Census income top-code as a floor", () => {
+    expect(formatArea("median_household_income", 250_000)).toBe("$250,000+");
+    expect(formatArea("median_household_income", 249_900)).toBe("$249,900");
   });
 });
 
