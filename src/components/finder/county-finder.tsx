@@ -591,7 +591,6 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         total: areaMode ? countyResults.length : ranked.length,
         rel: mapRelative.get(selected.fips),
         laws,
-        input: scoringInput,
         compareFips,
         onCompare: compareWith,
         onBack: backToList,

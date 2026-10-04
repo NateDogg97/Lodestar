@@ -10,7 +10,6 @@ import {
   type CountyDataset,
   type CountyScore,
   type MetricKey,
-  type ScoringInput,
 } from "@/lib/scoring";
 
 import { InfoTip } from "@/components/ui/info-tip";
@@ -19,7 +18,8 @@ import { ClimateIcon } from "./climate-icons";
 import { ClimateTab } from "./climate-tab";
 import { LawsSection } from "./laws-section";
 import { PlaceOverview } from "./place-overview";
-import { ScoreBadge, StatusBadges } from "./results-list";
+import { StatusBadges } from "./results-list";
+import { scoreColor } from "./score-colors";
 
 /**
  * The place view (plan Phase 6): what the Results panel / sheet shows once a
@@ -38,7 +38,6 @@ const TABS: { id: PlaceTab; label: string }[] = [
 
 /** A few headline numbers under the name. */
 const QUICK_FACTS: { metric: MetricKey; label: string }[] = [
-  { metric: "population", label: "Population" },
   { metric: "rpp_all", label: "Cost of living" },
   { metric: "median_home_value", label: "Home value" },
   { metric: "school_achievement", label: "Schools" },
@@ -53,8 +52,6 @@ export interface PlaceProps {
   total: number;
   rel: number | null | undefined;
   laws: LawData | null;
-  /** The search the county was scored against (for the Overview's filter list). */
-  input: ScoringInput;
   /** The county the Climate tab compares against, if any (remembered across places). */
   compareFips: string | null;
   onCompare: (fips: string | null) => void;
@@ -69,14 +66,13 @@ export interface PlaceProps {
   bestScore?: number;
 }
 
-/** Back link, name, rank and score. On phones this is the sheet's drag header. */
-export function PlaceIdentity({ score: s, data, rank, total, rel, onBack, bestScore }: PlaceProps) {
-  const where =
-    s.status === "excluded"
-      ? "Ruled out by a filter"
-      : rank !== null
-        ? `#${rank.toLocaleString()} of ${total.toLocaleString()}`
-        : "Hidden (unknown for a filter)";
+/**
+ * Back link, name and rank, laid out like an area's (Phase 8f, owner 2026-10-04):
+ * the rank on the right, colored as the map colors ranks. On phones this is the
+ * sheet's drag header.
+ */
+export function PlaceIdentity({ score: s, data, rank, total, onBack }: PlaceProps) {
+  const people = data.values.population[s.index];
   return (
     <div>
       <button
@@ -84,26 +80,36 @@ export function PlaceIdentity({ score: s, data, rank, total, rel, onBack, bestSc
         onClick={onBack}
         className="-ml-1 rounded px-1 text-label font-medium text-emerald-700 hover:underline dark:text-emerald-400"
       >
-        ← All results
+        ← Results
       </button>
       <div className="mt-1 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="truncate text-heading font-semibold">
-            {data.countyName[s.index]}, {data.state[s.index]}
-          </h2>
+          <h2 className="truncate text-heading font-semibold">{data.countyName[s.index]}</h2>
           <p className="mt-0.5 text-label text-neutral-500">
-            {where}
+            {categoryLabel("state", data.state[s.index])}
+            {!Number.isNaN(people) && ` · ${Math.round(people).toLocaleString()} people`}
             <StatusBadges score={s} />
           </p>
         </div>
-        {bestScore !== undefined ? (
-          <span title="Its best area's match score" className="text-right">
-            <ScoreBadge score={bestScore} rel={bestScore} />
-            <span className="block text-caption text-neutral-500">best area</span>
-          </span>
-        ) : (
-          <ScoreBadge score={s.score} rel={rel} />
-        )}
+        <div className="shrink-0 text-right">
+          {s.status !== "excluded" && rank !== null ? (
+            <>
+              <span
+                className="block text-heading font-bold tabular-nums"
+                style={{ color: scoreColor(total > 1 ? 100 * (1 - (rank - 1) / (total - 1)) : 100) }}
+              >
+                #{rank.toLocaleString()}
+              </span>
+              <span className="block text-caption text-neutral-500">
+                of {total.toLocaleString()} {total === 1 ? "county" : "counties"}
+              </span>
+            </>
+          ) : (
+            <span className="block max-w-28 text-caption text-neutral-500">
+              {s.status === "excluded" ? "Ruled out by a must-have" : "Hidden: no data for a must-have"}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -115,7 +121,7 @@ export function PlaceIdentity({ score: s, data, rank, total, rel, onBack, bestSc
  * lives in the sheet header instead.
  */
 export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
-  const { score: s, data, laws, input, compareFips, onCompare, withIdentity } = props;
+  const { score: s, data, laws, compareFips, onCompare, withIdentity } = props;
   const [tab, setTab] = useState<PlaceTab>("overview");
   const facts = QUICK_FACTS.map((f) => ({ ...f, value: data.values[f.metric][s.index] })).filter(
     (f) => !Number.isNaN(f.value),
@@ -193,7 +199,7 @@ export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
       </div>
 
       <div id="place-tabpanel" role="tabpanel" aria-labelledby={`place-tab-${tab}`} className="px-gutter py-4">
-        {tab === "overview" && <PlaceOverview score={s} data={data} input={input} />}
+        {tab === "overview" && <PlaceOverview score={s} data={data} />}
         {tab === "climate" && (
           <ClimateTab fips={s.fips} data={data} compareFips={compareFips} onCompare={onCompare} />
         )}

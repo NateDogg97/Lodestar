@@ -1717,7 +1717,11 @@ neighborhood near a specific school), not a county average. Decided with the own
   fill is hidden underneath (it had shown through as one color — fixed 2026-10-04).
 - [x] Area page header: its overall rank in your top results ("#1 of your top 100"),
   colored like the map's ranks; the low-confidence warning sits beside the name.
-- [x] County page in area mode leads with its best 3 areas and shows its best area's score.
+- [x] County page in area mode leads with its best 3 areas. Its title matches an area's
+  (owner, 2026-10-04): "← Results", name, state · population, and its rank on the right
+  ("#1 of 24 counties", colored like the map). The Overview tab dropped "Why it ranks
+  here", "Your filters" and "Passes all N filters" (a note stays when ruled out or
+  unknown); "How it's scored" is drawn like an area's breakdown.
 - [x] Map by zoom: state count bubbles (< z5), county count bubbles (z5–7.5), area dots
   colored by score (≥ z7.5; tap opens the area). Bubbles are HTML markers because the
   offline basemap has no fonts. Dots sit at each area's population center rather than its
