@@ -26,11 +26,12 @@ export function scoreColor(score: number): string {
 }
 
 /**
- * True for a bar that shows gold: 99 or 100 points as shown (owner, 2026-10-04). Where
+ * True for a bar that shows gold: 100 points as shown, i.e. 99.5 and up (owner,
+ * 2026-10-04; briefly 99). Where
  * it's drawn, gold is the `gold-bar` / `gold-col` class (globals.css): metallic gold
  * with a gently glowing gold rim.
  */
-export const isGold = (score: number) => Math.round(score) >= 99;
+export const isGold = (score: number) => Math.round(score) >= 100;
 
 /** A bar's track: a gold bar's rim and glow reach outside it, so it mustn't clip them. */
 export const trackOverflow = (points: number | null) => (points !== null && isGold(points) ? "overflow-visible" : "overflow-hidden");

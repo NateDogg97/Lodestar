@@ -1689,7 +1689,7 @@ neighborhood near a specific school), not a county average. Decided with the own
   one tap away; opening a summary outlines the area on the map ("Open <area> →" stays).
   **Score colors:** deep red at 1, yellow around 75, deep green at the top. **Gold** (top 1%)
   only on bars (fingerprints, breakdowns) and badges — the map and score numbers top out
-  at deep green (owner, 2026-10-04). A gold bar = 99 or 100 points as shown, drawn as
+  at deep green (owner, 2026-10-04). A gold bar = 100 points as shown (99.5 and up), drawn as
   metallic gold with a gold rim that gently glows (mockup round 4 "D"; `gold-bar` /
   `gold-col` in globals.css, still for "reduce motion"). **Badges:** "best of your results" (green: Most walkable,
   Best schools, Cheapest homes… — the single best returned area on a priority, at most two
