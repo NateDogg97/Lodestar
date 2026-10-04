@@ -353,7 +353,7 @@ export function CountyResultsList({
                     </span>
                   )}
                 </div>
-                <p className="text-caption text-emerald-700 dark:text-emerald-400">
+                <p className="text-caption text-neutral-700 dark:text-neutral-300">
                   {c.areas.length} of your top areas · best: {common.areas.name[c.areas[0]]}
                 </p>
               </div>
