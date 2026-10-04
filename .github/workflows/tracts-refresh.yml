@@ -100,8 +100,12 @@ jobs:
           cat check.md >> "$GITHUB_STEP_SUMMARY"
           exit $code
 
+      # areas.json: every area's scoring columns, for ranking areas nationwide (Phase 8f).
+      # Started from the live file, so a run that rebuilt some states keeps the rest.
       - name: Publish
-        run: python -m etl.tracts.publish
+        run: |
+          python -m etl.tracts.publish
+          python -m etl.tracts.national --merge-live
 
       - name: Upload to R2
         run: python -m etl.tracts.upload

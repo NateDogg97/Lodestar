@@ -51,7 +51,7 @@ def sync(dry_run: bool, state_fips: list[str] | None = None) -> None:
     a laptop never overwrites what CI published for the others."""
     files = sorted(PUBLISH_DIR.glob("*.json"), key=lambda p: p.name == "index.json")  # index last
     if state_fips:
-        files = [p for p in files if p.name == "index.json" or p.name[:2] in state_fips]
+        files = [p for p in files if p.name in ("index.json", "areas.json") or p.name[:2] in state_fips]
     if not any(p.name == "index.json" for p in files):
         raise SystemExit(f"No index.json in {PUBLISH_DIR}: run `python -m etl.tracts.publish` first")
     s3, bucket = r2.client("R2_BUCKET")
