@@ -44,6 +44,8 @@ export function formatValue(metric: MetricKey, value: number | null): string {
       return `${oneDp.format(value)}×`;
     case "index":
       return oneDp.format(value);
+    case "of 100":
+      return `${whole.format(value)} of 100`;
     case "grades": {
       const sign = value > 0 ? "+" : value < 0 ? "−" : "";
       return `${sign}${Math.abs(value).toFixed(2)} grades`;

@@ -43,6 +43,9 @@ export const METRICS = [
   { key: "population", label: "County population", unit: "people", group: "people", defaultDirection: "higher" },
   { key: "median_household_income", label: "Median household income", unit: "$", group: "people", defaultDirection: "higher" },
   { key: "real_income", label: "Income adjusted for local prices", unit: "$", group: "people", defaultDirection: "higher" },
+  // Racial equality (2026-10-04, etl/sources/equality.py): income parity between groups
+  // and residential integration, 0–100. County-wide: both compare neighborhoods.
+  { key: "racial_equality", label: "Racial equality", unit: "of 100", group: "people", defaultDirection: "higher" },
   // BLS LAUS, latest annual average
   { key: "unemployment_rate", label: "Unemployment rate", unit: "%", group: "people", defaultDirection: "lower" },
 

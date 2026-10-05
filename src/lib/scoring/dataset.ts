@@ -24,6 +24,8 @@ export type TextColumn = (typeof TEXT_COLUMNS)[number];
  */
 export const INFO_COLUMNS = [
   "white_share", "hispanic_share", "black_share", "asian_share", "other_race_share", "diversity_index", "gini_index",
+  // The two parts of racial equality (etl/sources/equality.py).
+  "income_parity", "integration",
 ] as const;
 export type InfoColumn = (typeof INFO_COLUMNS)[number];
 

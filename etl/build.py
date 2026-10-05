@@ -69,6 +69,8 @@ PIPELINE = [
     ("bls", "etl.sources.bls", False),
     # After spine, popcenter and acs: measures from population centers, sizes metros.
     ("distances", "etl.sources.distances", False),
+    # Racial equality by county (2026-10-04): reads the tract ACS cache per state.
+    ("equality", "etl.sources.equality", False),
     # Map shapes. Not joined — written as its own file and published beside
     # the data after validation confirms both cover the same counties.
     ("boundaries", "etl.sources.boundaries", False),
@@ -216,6 +218,7 @@ COLUMN_DECIMALS = {
     "rent_to_income": 4,
     "hispanic_share": 1, "white_share": 1, "black_share": 1, "asian_share": 1, "other_race_share": 1,
     "diversity_index": 1, "gini_index": 3,
+    "income_parity": 1, "integration": 1, "racial_equality": 1,
     "property_tax_effective_rate": 3,
     "hazard_risk": 1, "hazard_hurricane": 1, "hazard_wildfire": 1, "hazard_inland_flood": 1,
     "hazard_coastal_flood": 1, "hazard_earthquake": 1, "hazard_tornado": 1,

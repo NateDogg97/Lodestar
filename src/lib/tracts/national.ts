@@ -438,6 +438,7 @@ const COUNTY_WORDS: Partial<Record<string, [string, string]>> = {
   spring_mean_f: ["warm springs", "cool springs"],
   fall_mean_f: ["warm falls", "cool falls"],
   hazard_risk: ["low hazard risk", "high hazard risk"],
+  racial_equality: ["racial equality", "racial inequality"],
 };
 
 /**

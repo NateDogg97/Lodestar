@@ -59,6 +59,8 @@ NUMBERS = {  # column -> decimals kept
     # Results audit (2026-10-04): mostly group quarters → not a result; mostly mobile
     # homes → the home value gets a caution.
     "group_quarters_share": 0, "mobile_home_share": 0,
+    # Who lives here (2026-10-04): racial diversity is a priority by area.
+    "diversity_index": 1,
     "hazard_risk": 0, "hazard_hurricane": 0, "hazard_wildfire": 0, "hazard_inland_flood": 0,
     "hazard_coastal_flood": 0, "hazard_earthquake": 0, "hazard_tornado": 0,
 }

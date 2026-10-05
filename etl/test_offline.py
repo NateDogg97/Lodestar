@@ -1029,6 +1029,27 @@ def test_demographics() -> None:
     check(len(payload["columns"]) == 2 + 7, "idempotent: columns added once")
 
 
+def test_racial_equality() -> None:
+    """Racial equality by county (2026-10-04): income parity and integration."""
+    print("\nracial equality: income parity, integration (Theil's H)")
+    from etl.sources.equality import income_parity, integration
+
+    hh = {"White": 5000, "Black": 1000, "Asian": 30, "Hispanic or Latino": 2000}
+    med = {"White": 100_000, "Black": 50_000, "Asian": 20_000, "Hispanic or Latino": 80_000}
+    check(income_parity(med, hh, 8030) == 50, "lowest / highest over groups big enough (Asian, 30 households, left out)")
+    check(np.isnan(income_parity(med, {"White": 8000}, 8030)), "one measurable group: unknown")
+    moes = {"White": 3000, "Black": 40_000, "Asian": None, "Hispanic or Latino": 4000}
+    check(income_parity(med, hh, 8030, moes) == 80, "a group whose median has a wide margin (Black, CV 0.49) is left out")
+    same = np.array([[50, 30, 10, 10, 0]] * 6)
+    apart = np.array([[100, 0, 0, 0, 0], [0, 100, 0, 0, 0], [0, 0, 100, 0, 0]] * 2)
+    check(abs(integration(same) - 100) < 1e-9, "every neighborhood with the county's mix: 100")
+    check(abs(integration(apart)) < 1e-9, "every group apart: 0")
+    mixed = np.array([[80, 20, 0, 0, 0], [20, 80, 0, 0, 0]] * 3)
+    check(0 < integration(mixed) < 100, "partly apart: in between")
+    check(np.isnan(integration(np.array([[99, 1, 0, 0, 0]] * 6))), "nearly one group: unknown")
+    check(np.isnan(integration(same[:3])), "too few neighborhoods: unknown")
+
+
 def test_tract_acs_confidence() -> None:
     """Phase 8: tract ACS parsing — MOE codes, derived shares, low-confidence flags."""
     print("\ntract ACS: margins of error and low confidence")
@@ -1103,6 +1124,7 @@ def main() -> int:
         test_tract_backfill_audit_columns()
         test_tract_crime_rates()
         test_demographics()
+        test_racial_equality()
         test_tract_crime_and_gate()
 
         fixtures = _make_synthetic()

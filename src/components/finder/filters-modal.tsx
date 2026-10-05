@@ -79,6 +79,8 @@ const COUNTY_NOTES: Partial<Record<MetricKey, string>> = {
   rpp_all:
     "One index of local prices — rent, goods, utilities (electricity included) and services — where 100 is the US average (BEA Regional Price Parities). For the price of a home or rent in a specific area, use Housing.",
   unemployment_rate: "Share of the county's labor force looking for work (BLS, latest yearly average).",
+  racial_equality:
+    "How equal life is across racial and ethnic groups in the county, 0–100: the average of income parity (the lowest-earning group's median household income as a share of the highest's) and integration (whether groups live in the same neighborhoods or apart; Census entropy index). Counties that are nearly one group, or too small to measure both parts, have no value and count as average. Census, 2019–2023.",
 };
 
 const DIRECTION_LABELS: Record<Direction, string> = {

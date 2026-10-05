@@ -118,6 +118,12 @@ export function PlaceOverview({ score: s, data }: Props) {
         id="county.who"
         of="county"
         typical={US_TYPICAL_COUNTY}
+        equality={{
+          score: num(data.values.racial_equality[i]),
+          parity: num(data.info.income_parity[i]),
+          integration: num(data.info.integration[i]),
+          typical: US_TYPICAL_COUNTY.racial_equality,
+        }}
         get={(k) => {
           const col = data.info[k as keyof typeof data.info];
           return col && !Number.isNaN(col[i]) ? col[i] : null;

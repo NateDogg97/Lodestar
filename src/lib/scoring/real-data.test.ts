@@ -87,6 +87,14 @@ describe("who lives here (display only, 2026-10-04)", () => {
     expect(shares).toBeCloseTo(100, 0);
     expect(data.info.diversity_index[data.indexByFips.get(SAN_FRANCISCO)!]).toBe(all.info.diversity_index[sf]);
   });
+
+  it("racial equality ranks the most segregated big counties low", () => {
+    const { rankOf } = run({ weights: { racial_equality: 1 } });
+    // Detroit (Wayne) and Chicago (Cook): among the most segregated US metros by every measure.
+    expect(rankOf("26163")).toBeGreaterThan(1500);
+    expect(rankOf("17031")).toBeGreaterThan(1500);
+    expect(rankOf(SAN_FRANCISCO)).toBeLessThan(rankOf("26163"));
+  });
 });
 
 describe("rankings agree with common knowledge", () => {

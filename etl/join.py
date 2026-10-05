@@ -69,6 +69,7 @@ SOURCES = [
     ("nri", "FEMA National Risk Index", False),
     ("bls", "BLS unemployment (LAUS)", False),
     ("distances", "Distances to airport, coast, metro", False),
+    ("equality", "Racial equality (income parity, integration)", False),
 ]
 
 

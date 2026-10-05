@@ -869,12 +869,15 @@ export function PeopleSection({
   typical,
   of,
   flagged,
+  equality,
 }: {
   id: string;
   get: (key: string) => number | null;
   typical: { diversity_index: number; gini_index: number };
   of: "area" | "county";
   flagged?: Set<string>;
+  /** County pages: racial equality and its two parts (etl/sources/equality.py). */
+  equality?: { score: number | null; parity: number | null; integration: number | null; typical: number };
 }) {
   const shares: { label: string; pct: number | null }[] = RACE_GROUPS.map((g) => ({ label: g.label, pct: get(g.key) }));
   const diversity = get("diversity_index");
@@ -896,6 +899,25 @@ export function PeopleSection({
             <span className="font-medium tabular-nums">{gini === null ? "—" : gini.toFixed(2)}</span>
             <FlagMark on={flagged?.has("gini_index")} />
           </Row>
+          {equality && (
+            <>
+              <Row label={`Racial equality · a typical US county: ${Math.round(equality.typical)}`}>
+                <span className="font-medium tabular-nums">{equality.score === null ? "—" : `${Math.round(equality.score)} of 100`}</span>
+              </Row>
+              <Row label="Income parity: the lowest-earning group's median household income, as a share of the highest's">
+                <span className="font-medium tabular-nums">{equality.parity === null ? "—" : `${Math.round(equality.parity)}%`}</span>
+              </Row>
+              <Row label="Integration: 100 if every neighborhood had the county's mix, 0 if every group lived apart">
+                <span className="font-medium tabular-nums">{equality.integration === null ? "—" : Math.round(equality.integration)}</span>
+              </Row>
+              <Note>
+                Racial equality is the average of income parity and integration (Census ACS 2019–2023, B19013 by race of
+                householder; the Census entropy index over the county&rsquo;s neighborhoods). Only groups with at least 5% of
+                households, and a median the Census measured reliably, count toward parity. A county that is nearly one group, or
+                too small to measure both parts, isn&rsquo;t rated.
+              </Note>
+            </>
+          )}
           <Note>
             Census ACS 2019–2023 (tables B03002 and B19083). Diversity index: the chance that two people picked at random here
             are in different groups, 0–80 with these five groups. Gini index: 0 if every household had the same income, 1 if
@@ -914,6 +936,13 @@ export function PeopleSection({
       <div className="grid grid-cols-2 gap-2">
         <MiniStat label="Diversity index" value={diversity === null ? "—" : `${Math.round(diversity)} of 80`} typical={String(Math.round(typical.diversity_index))} />
         <MiniStat label="Income gap" value={incomeGapWord(gini)} typical={`Gini ${typical.gini_index.toFixed(2)}`} />
+        {equality && (
+          <MiniStat
+            label="Racial equality"
+            value={equality.score === null ? "Not measured" : `${Math.round(equality.score)} of 100`}
+            typical={String(Math.round(equality.typical))}
+          />
+        )}
       </div>
     </AreaSection>
   );
