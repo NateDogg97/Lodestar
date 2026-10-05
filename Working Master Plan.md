@@ -2003,8 +2003,11 @@ equality metric… or even racial stats on the area or county page."
       - *Racial diversity*, by area: the diversity index, "higher" by default, either
         direction. Group-neutral — 85% of any one group is equally "not diverse".
         In areas.json (one decimal). Shown "75 of 80".
-      - *Racial equality*, county-wide (`etl/sources/equality.py`, `python -m etl.build
-        --only equality`), 0–100: the mean of **income parity** (lowest group's median
+      - *Racial equality* — **not a filter** (owner, 2026-10-04, the same day: only 1,445
+        of 3,144 counties can be rated, and a filter would have to count the rest as
+        average, which isn't true). Shown in "Who lives here" on the county page and,
+        as its county's figure, on the area page. County-wide (`etl/sources/equality.py`,
+        `python -m etl.build --only equality`), 0–100 (typical rated county 77): the mean of **income parity** (lowest group's median
         household income ÷ highest's; White, Black, American Indian and Alaska Native,
         Asian, Hispanic; only groups with 5%+ of households and a reliably measured
         median) and **integration** (100 × (1 − Theil's H) over the county's tracts).

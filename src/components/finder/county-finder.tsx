@@ -61,6 +61,7 @@ import {
   resultBadges,
   scoreNational,
   topAreas,
+  US_TYPICAL_COUNTY,
   type ResultBadges,
 } from "@/lib/tracts";
 import { AreaResultsList, CountyBestAreas, CountyResultsList, ResultsHeader, type ResultCap } from "./area-results";
@@ -810,6 +811,16 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
           leaveInside();
           backToList();
         },
+        countyEquality: ((i: number) => {
+          const num = (x: number) => (Number.isNaN(x) ? null : x);
+          return {
+            score: num(scoped.values.racial_equality[i]),
+            parity: num(scoped.info.income_parity[i]),
+            integration: num(scoped.info.integration[i]),
+            typical: US_TYPICAL_COUNTY.racial_equality,
+            county: scoped.countyName[i],
+          };
+        })(placeProps.score.index),
       }
     : null;
 

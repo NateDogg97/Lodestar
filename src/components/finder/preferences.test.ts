@@ -55,7 +55,7 @@ describe("sanitizePreferences", () => {
 
   it("drops measures that aren't filters any more; a cost-of-living part becomes Cost of living", () => {
     const p = sanitizePreferences({
-      weights: { rpp_rents: 4, rpp_utilities: 2, real_income: 3, price_to_rent: 2, days_above_90f: 1 },
+      weights: { rpp_rents: 4, rpp_utilities: 2, real_income: 3, price_to_rent: 2, racial_equality: 5, days_above_90f: 1 },
       directions: { rent_to_income: "higher" },
       limits: { home_value_to_income: { max: 4 }, electricity_price_cents_kwh: { max: 15 } },
       area: { weights: { commute_minutes: 3, walkability: 2 }, directions: {}, limits: { commute_minutes: { max: 30 } } },

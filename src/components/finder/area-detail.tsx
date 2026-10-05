@@ -569,11 +569,14 @@ export function AreaDetail({
   county,
   countyName,
   ranking,
+  countyEquality,
 }: {
   area: Area;
   county: CountyAreas;
   countyName: string;
   ranking: AreaRankingView | null;
+  /** The county's racial equality, shown in "Who lives here" (county-wide). */
+  countyEquality?: PeopleEquality;
 }) {
   const v = (key: string) => areaValue(area, key);
   const flagged = new Set(area.lowConfidence);
@@ -754,7 +757,7 @@ export function AreaDetail({
         </div>
       </AreaSection>
 
-      <PeopleSection id="who" get={v} typical={US_TYPICAL} of="area" flagged={flagged} />
+      <PeopleSection id="who" get={v} typical={US_TYPICAL} of="area" flagged={flagged} equality={countyEquality} />
 
       <AreaSection
         id="around"
@@ -857,6 +860,14 @@ export function AreaDetail({
   );
 }
 
+export type PeopleEquality = {
+  score: number | null;
+  parity: number | null;
+  integration: number | null;
+  typical: number;
+  county: string;
+};
+
 const GROUP_COLORS = ["#6366f1", "#0d9488", "#d97706", "#0284c7", "#a3a3a3"];
 
 /**
@@ -876,8 +887,11 @@ export function PeopleSection({
   typical: { diversity_index: number; gini_index: number };
   of: "area" | "county";
   flagged?: Set<string>;
-  /** County pages: racial equality and its two parts (etl/sources/equality.py). */
-  equality?: { score: number | null; parity: number | null; integration: number | null; typical: number };
+  /**
+   * Racial equality and its two parts (etl/sources/equality.py): always the county's — on
+   * an area's page it's the county the area is in. Null where the county isn't rated.
+   */
+  equality?: { score: number | null; parity: number | null; integration: number | null; typical: number; county: string };
 }) {
   const shares: { label: string; pct: number | null }[] = RACE_GROUPS.map((g) => ({ label: g.label, pct: get(g.key) }));
   const diversity = get("diversity_index");
@@ -901,7 +915,7 @@ export function PeopleSection({
           </Row>
           {equality && (
             <>
-              <Row label={`Racial equality · a typical US county: ${Math.round(equality.typical)}`}>
+              <Row label={`Racial equality${of === "area" ? ` of ${equality.county}` : ""} · a typical US county: ${Math.round(equality.typical)}`}>
                 <span className="font-medium tabular-nums">{equality.score === null ? "—" : `${Math.round(equality.score)} of 100`}</span>
               </Row>
               <Row label="Income parity: the lowest-earning group's median household income, as a share of the highest's">
@@ -913,8 +927,9 @@ export function PeopleSection({
               <Note>
                 Racial equality is the average of income parity and integration (Census ACS 2019–2023, B19013 by race of
                 householder; the Census entropy index over the county&rsquo;s neighborhoods). Only groups with at least 5% of
-                households, and a median the Census measured reliably, count toward parity. A county that is nearly one group, or
-                too small to measure both parts, isn&rsquo;t rated.
+                households, and a median the Census measured reliably, count toward parity. Measured for whole counties, since
+                both parts compare neighborhoods. A county that is nearly one group, or too small to measure both parts, isn&rsquo;t
+                rated — about half of US counties.
               </Note>
             </>
           )}
@@ -938,8 +953,8 @@ export function PeopleSection({
         <MiniStat label="Income gap" value={incomeGapWord(gini)} typical={`Gini ${typical.gini_index.toFixed(2)}`} />
         {equality && (
           <MiniStat
-            label="Racial equality"
-            value={equality.score === null ? "Not measured" : `${Math.round(equality.score)} of 100`}
+            label={of === "area" ? "Racial equality · county" : "Racial equality"}
+            value={equality.score === null ? "Not measured here" : `${Math.round(equality.score)} of 100`}
             typical={String(Math.round(equality.typical))}
           />
         )}

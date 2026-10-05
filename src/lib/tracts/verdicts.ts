@@ -32,7 +32,7 @@ export const US_TYPICAL = {
 } as const;
 
 /** The typical US county on the same measures (county medians, 2026-10-04). */
-export const US_TYPICAL_COUNTY = { diversity_index: 32.2, gini_index: 0.44, racial_equality: 81.7 } as const;
+export const US_TYPICAL_COUNTY = { diversity_index: 32.2, gini_index: 0.44, racial_equality: 77.3 } as const;
 
 /** The five groups of etl/demographics.py, in the order they're drawn. */
 export const RACE_GROUPS = [

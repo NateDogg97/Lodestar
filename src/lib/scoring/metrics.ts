@@ -44,7 +44,8 @@ export const METRICS = [
   { key: "median_household_income", label: "Median household income", unit: "$", group: "people", defaultDirection: "higher" },
   { key: "real_income", label: "Income adjusted for local prices", unit: "$", group: "people", defaultDirection: "higher" },
   // Racial equality (2026-10-04, etl/sources/equality.py): income parity between groups
-  // and residential integration, 0–100. County-wide: both compare neighborhoods.
+  // and residential integration, 0–100. County-wide: both compare neighborhoods. Shown
+  // on the county and area pages, not a filter (NOT_IN_FILTERS).
   { key: "racial_equality", label: "Racial equality", unit: "of 100", group: "people", defaultDirection: "higher" },
   // BLS LAUS, latest annual average
   { key: "unemployment_rate", label: "Unemployment rate", unit: "%", group: "people", defaultDirection: "lower" },
@@ -120,13 +121,16 @@ const BY_KEY = new Map<string, MetricDef>(METRICS.map((m) => [m.key, m]));
  * - electricity price: part of utilities in the cost of living; shown in Laws & taxes;
  * - ratios to the local income (home price to income, rent share of income, price to
  *   rent) and income adjusted for local prices: a mover's own income is what matters,
- *   so they're context on the county page, not something to rank by.
+ *   so they're context on the county page, not something to rank by;
+ * - racial equality: only about half of counties can be rated, and a filter would have
+ *   to count the rest as average — a guess (owner, 2026-10-04). Shown on the county and
+ *   area pages instead.
  * A saved search or link that weighted one drops it (a cost-of-living part becomes
  * "Cost of living" when that isn't set) — see `sanitizePreferences`.
  */
 export const NOT_IN_FILTERS: ReadonlySet<MetricKey> = new Set<MetricKey>([
   "rpp_rents", "rpp_utilities", "rpp_goods", "rpp_services", "electricity_price_cents_kwh",
-  "home_value_to_income", "rent_to_income", "price_to_rent", "real_income",
+  "home_value_to_income", "rent_to_income", "price_to_rent", "real_income", "racial_equality",
 ]);
 
 /** Cost-of-living parts that fold into "Cost of living" when an old search weighted one. */

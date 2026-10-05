@@ -23,7 +23,7 @@ import {
 
 import { getMetric, type CountyScore, type MetricKey } from "@/lib/scoring";
 
-import { AreaDetail, bound } from "./area-detail";
+import { AreaDetail, bound, type PeopleEquality } from "./area-detail";
 import { Fingerprint } from "./area-results";
 import { scoreColor } from "./score-colors";
 import type { CountyAreasState } from "./use-tract-data";
@@ -76,6 +76,8 @@ interface Props {
   onBack: () => void;
   /** From an area page, straight back to the results list (owner: no county detour). */
   onBackToResults: () => void;
+  /** The county's racial equality, for an area's "Who lives here". */
+  countyEquality?: PeopleEquality;
 }
 
 /**
@@ -144,7 +146,9 @@ export function InsideView(props: Props & { withIdentity?: boolean }) {
           onHover={onHover}
         />
       )}
-      {areas && area && <AreaDetail area={area} county={areas} countyName={countyName} ranking={ranking} />}
+      {areas && area && (
+        <AreaDetail area={area} county={areas} countyName={countyName} ranking={ranking} countyEquality={props.countyEquality} />
+      )}
     </div>
   );
 }
