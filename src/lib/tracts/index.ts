@@ -264,6 +264,7 @@ export function formatArea(key: string, v: number | null): string {
   // areas.json rounds the Census top-code ($250,001) to $250,000; the per-county files say so
   // in `topcoded` (see formatAreaValue). Either way it means "at least this".
   if (key === "median_household_income" && v >= INCOME_TOP_CODE) return `$${INCOME_TOP_CODE.toLocaleString()}+`;
+  if (key === "diversity_index") return `${Math.round(v)} of 80`;
   const f = AREA_MEASURE.get(key)?.format ?? "number";
   switch (f) {
     case "dollars":

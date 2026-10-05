@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { formatDay, type LawSourceSummary } from "@/lib/laws";
 import {
@@ -199,11 +199,58 @@ export function FiltersModal({
 
   const sections = SECTIONS.filter((s) => mode === "musts" || !s.mustsOnly);
   const current = sections.some((s) => s.id === section) ? section : sections[0].id;
-  const currentDef = SECTIONS.find((s) => s.id === current)!;
+
+  // One page of every section (owner, 2026-10-04): scroll through them all; the list on
+  // the left jumps to a section and follows the one in view.
+  const sectionEls = useRef(new Map<SectionId, HTMLElement>());
+  const navEls = useRef(new Map<SectionId, HTMLButtonElement>());
+  const nav = useRef<HTMLElement>(null);
+  // While a jump's smooth scroll passes other sections, the clicked one stays highlighted.
+  const jumping = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inView = (): SectionId => {
+    const el = pane.current;
+    if (!el) return current;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 4) return sections[sections.length - 1].id;
+    let found = sections[0].id;
+    for (const sec of sections) {
+      const node = sectionEls.current.get(sec.id);
+      if (node && node.offsetTop - 24 <= el.scrollTop) found = sec.id;
+    }
+    return found;
+  };
+  const onPaneScroll = () => {
+    if (jumping.current) return;
+    const id = inView();
+    if (id !== section) setSection(id);
+  };
   const go = (id: SectionId) => {
     setSection(id);
-    pane.current?.scrollTo({ top: 0 });
+    const node = sectionEls.current.get(id);
+    if (!node || !pane.current) return;
+    const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const el = pane.current;
+    const top = node.offsetTop - 8;
+    const done = () => {
+      if (jumping.current) clearTimeout(jumping.current);
+      jumping.current = null;
+      el.removeEventListener("scrollend", done);
+      // A smooth scroll the browser didn't finish (paused in a background tab): land anyway.
+      const target = Math.min(top, el.scrollHeight - el.clientHeight);
+      if (Math.abs(el.scrollTop - target) > 2) el.scrollTo({ top: target });
+    };
+    if (jumping.current) clearTimeout(jumping.current);
+    jumping.current = setTimeout(done, smooth ? 1000 : 50);
+    el.addEventListener("scrollend", done);
+    el.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
   };
+  // Phones: the category chips scroll sideways; keep the highlighted one in sight.
+  useEffect(() => {
+    const chip = navEls.current.get(current);
+    const bar = nav.current;
+    if (!chip || !bar || bar.scrollWidth <= bar.clientWidth) return;
+    const left = chip.offsetLeft - bar.clientWidth / 2 + chip.clientWidth / 2;
+    bar.scrollTo({ left: Math.max(0, left), behavior: "auto" });
+  }, [current]);
 
   const setCategory = (key: CategoryKey, accept: string[] | undefined) => {
     const categories = { ...prefs.categories };
@@ -212,13 +259,6 @@ export function FiltersModal({
     onChange({ ...prefs, categories });
   };
 
-  const metrics = countyMetrics(current);
-  const areas = areaMeasures(current);
-  // Climate type gets its own picker (family cards) above the limits.
-  // Climate type and states get their own pickers.
-  const categories =
-    mode === "musts" ? sectionCategories(current).filter((c) => c.key !== "koppen" && c.key !== "state") : [];
-  const showClimatePicker = mode === "musts" && current === "climate";
 
   return (
     <Modal
@@ -260,6 +300,9 @@ export function FiltersModal({
               onClick={() => {
                 setMode(m);
                 setSavedOpen(false);
+                // Back to the top: the first section this mode shows.
+                setSection(SECTIONS.find((x) => m === "musts" || !x.mustsOnly)!.id);
+                pane.current?.scrollTo({ top: 0 });
               }}
               className={`rounded-full px-2.5 py-1.5 text-label font-medium whitespace-nowrap sm:px-3 ${
                 mode === m && !savedOpen
@@ -307,6 +350,7 @@ export function FiltersModal({
       ) : (
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <nav
+          ref={nav}
           aria-label="Categories"
           className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-neutral-200 px-gutter py-2 md:w-56 md:flex-col md:gap-0.5 md:overflow-y-auto md:border-r md:border-b-0 md:px-3 md:py-4 dark:border-neutral-800"
         >
@@ -316,6 +360,10 @@ export function FiltersModal({
             return (
               <button
                 key={s.id}
+                ref={(el) => {
+                  if (el) navEls.current.set(s.id, el);
+                  else navEls.current.delete(s.id);
+                }}
                 type="button"
                 onClick={() => go(s.id)}
                 aria-current={on ? "true" : undefined}
@@ -332,104 +380,129 @@ export function FiltersModal({
           })}
         </nav>
 
-        <div ref={pane} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-gutter py-5 md:px-6">
-          <div className="mb-4 flex items-center gap-1.5">
-            <h3 className="text-title font-semibold">{currentDef.label}</h3>
-            {SECTION_TIPS[current] && <InfoTip label={currentDef.label}>{SECTION_TIPS[current]}</InfoTip>}
-          </div>
-          {mode === "musts" && current === "states" && (
-            <StatePicker
-              accept={prefs.categories.state}
-              counts={categoryCounts.state ?? {}}
-              onChange={(accept) => setCategory("state", accept)}
-            />
-          )}
-          {showClimatePicker && (
-            <ClimatePicker
-              accept={prefs.categories.koppen}
-              counts={categoryCounts.koppen ?? {}}
-              onChange={(accept) => setCategory("koppen", accept)}
-            />
-          )}
-          {showClimatePicker && <h4 className="mt-6 mb-3 text-label font-semibold">Limits</h4>}
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] gap-3">
-            {areas.map((d) =>
-              mode === "priorities" ? (
-                <PriorityCard
-                  key={d.key}
-                  id={`area-${d.key}`}
-                  label={d.label}
-                  level="area"
-                  note={d.note}
-                  weight={prefs.area.weights[d.key] ?? 0}
-                  direction={prefs.area.directions[d.key] ?? d.defaultDirection}
-                  typical="Aiming for the typical US area"
-                  onWeight={(w) => onChange({ ...prefs, area: { ...prefs.area, weights: { ...prefs.area.weights, [d.key]: w } } })}
-                  onDirection={(dir) =>
-                    onChange({ ...prefs, area: { ...prefs.area, directions: { ...prefs.area.directions, [d.key]: dir } } })
-                  }
+        <div
+          ref={pane}
+          onScroll={onPaneScroll}
+          className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-gutter pb-5 md:px-6"
+        >
+          {sections.map(({ id }) => {
+            const def = SECTIONS.find((x) => x.id === id)!;
+            const metrics = countyMetrics(id);
+            const areas = areaMeasures(id);
+            // Climate type and states get their own pickers (family cards, a state grid).
+            const categories =
+              mode === "musts" ? sectionCategories(id).filter((c) => c.key !== "koppen" && c.key !== "state") : [];
+            const showClimatePicker = mode === "musts" && id === "climate";
+            return (
+              <section
+                key={id}
+                ref={(el) => {
+                  if (el) sectionEls.current.set(id, el);
+                  else sectionEls.current.delete(id);
+                }}
+                aria-labelledby={`filters-${id}`}
+                className="border-b border-neutral-200 pt-5 pb-6 last:border-b-0 dark:border-neutral-800"
+              >
+              <div className="mb-4 flex items-center gap-1.5">
+                <h3 id={`filters-${id}`} className="text-title font-semibold">{def.label}</h3>
+                {SECTION_TIPS[id] && <InfoTip label={def.label}>{SECTION_TIPS[id]}</InfoTip>}
+              </div>
+              {mode === "musts" && id === "states" && (
+                <StatePicker
+                  accept={prefs.categories.state}
+                  counts={categoryCounts.state ?? {}}
+                  onChange={(accept) => setCategory("state", accept)}
                 />
-              ) : (
-                <LimitCard
-                  key={`area-${d.key}-${resetKey}`}
-                  id={`area-${d.key}`}
-                  label={d.label}
-                  level="area"
-                  note={d.note}
-                  unit={d.unit}
-                  limit={prefs.area.limits[d.key]}
-                  onLimit={(bound, v) =>
-                    onChange({
-                      ...prefs,
-                      area: { ...prefs.area, limits: { ...prefs.area.limits, [d.key]: { ...prefs.area.limits[d.key], [bound]: v } } },
-                    })
-                  }
+              )}
+              {showClimatePicker && (
+                <ClimatePicker
+                  accept={prefs.categories.koppen}
+                  counts={categoryCounts.koppen ?? {}}
+                  onChange={(accept) => setCategory("koppen", accept)}
                 />
-              ),
-            )}
-            {metrics.map((m) =>
-              mode === "priorities" ? (
-                <PriorityCard
-                  key={m.key}
-                  id={m.key}
-                  label={m.label}
-                  level="county"
-                  note={COUNTY_NOTES[m.key]}
-                  weight={prefs.weights[m.key] ?? 0}
-                  direction={prefs.directions[m.key] ?? m.defaultDirection}
-                  typical={ranges[m.key] ? `Aiming for the typical county: ${formatValue(m.key, ranges[m.key]!.median)}` : undefined}
-                  source={sources[m.key]}
-                  onWeight={(w) => onChange({ ...prefs, weights: { ...prefs.weights, [m.key]: w } })}
-                  onDirection={(d) => onChange({ ...prefs, directions: { ...prefs.directions, [m.key]: d } })}
-                />
-              ) : (
-                <LimitCard
-                  key={`${m.key}-${resetKey}`}
-                  id={m.key}
-                  label={m.label}
-                  level="county"
-                  note={COUNTY_NOTES[m.key]}
-                  unit={m.unit}
-                  limit={prefs.limits[m.key]}
-                  placeholders={ranges[m.key] ? [plainNumber(ranges[m.key]!.min), plainNumber(ranges[m.key]!.max)] : undefined}
-                  source={sources[m.key]}
-                  onLimit={(bound, v) =>
-                    onChange({ ...prefs, limits: { ...prefs.limits, [m.key]: { ...prefs.limits[m.key], [bound]: v } } })
-                  }
-                />
-              ),
-            )}
-            {categories.map((def) => (
-              <CategoryCard
-                key={def.key}
-                def={def}
-                accept={prefs.categories[def.key]}
-                counts={categoryCounts[def.key] ?? {}}
-                source={sources[def.key]}
-                onChange={(accept) => setCategory(def.key, accept)}
-              />
-            ))}
-          </div>
+              )}
+              {showClimatePicker && <h4 className="mt-6 mb-3 text-label font-semibold">Limits</h4>}
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] gap-3">
+                {areas.map((d) =>
+                  mode === "priorities" ? (
+                    <PriorityCard
+                      key={d.key}
+                      id={`area-${d.key}`}
+                      label={d.label}
+                      level="area"
+                      note={d.note}
+                      weight={prefs.area.weights[d.key] ?? 0}
+                      direction={prefs.area.directions[d.key] ?? d.defaultDirection}
+                      typical="Aiming for the typical US area"
+                      onWeight={(w) => onChange({ ...prefs, area: { ...prefs.area, weights: { ...prefs.area.weights, [d.key]: w } } })}
+                      onDirection={(dir) =>
+                        onChange({ ...prefs, area: { ...prefs.area, directions: { ...prefs.area.directions, [d.key]: dir } } })
+                      }
+                    />
+                  ) : (
+                    <LimitCard
+                      key={`area-${d.key}-${resetKey}`}
+                      id={`area-${d.key}`}
+                      label={d.label}
+                      level="area"
+                      note={d.note}
+                      unit={d.unit}
+                      limit={prefs.area.limits[d.key]}
+                      onLimit={(bound, v) =>
+                        onChange({
+                          ...prefs,
+                          area: { ...prefs.area, limits: { ...prefs.area.limits, [d.key]: { ...prefs.area.limits[d.key], [bound]: v } } },
+                        })
+                      }
+                    />
+                  ),
+                )}
+                {metrics.map((m) =>
+                  mode === "priorities" ? (
+                    <PriorityCard
+                      key={m.key}
+                      id={m.key}
+                      label={m.label}
+                      level="county"
+                      note={COUNTY_NOTES[m.key]}
+                      weight={prefs.weights[m.key] ?? 0}
+                      direction={prefs.directions[m.key] ?? m.defaultDirection}
+                      typical={ranges[m.key] ? `Aiming for the typical county: ${formatValue(m.key, ranges[m.key]!.median)}` : undefined}
+                      source={sources[m.key]}
+                      onWeight={(w) => onChange({ ...prefs, weights: { ...prefs.weights, [m.key]: w } })}
+                      onDirection={(d) => onChange({ ...prefs, directions: { ...prefs.directions, [m.key]: d } })}
+                    />
+                  ) : (
+                    <LimitCard
+                      key={`${m.key}-${resetKey}`}
+                      id={m.key}
+                      label={m.label}
+                      level="county"
+                      note={COUNTY_NOTES[m.key]}
+                      unit={m.unit}
+                      limit={prefs.limits[m.key]}
+                      placeholders={ranges[m.key] ? [plainNumber(ranges[m.key]!.min), plainNumber(ranges[m.key]!.max)] : undefined}
+                      source={sources[m.key]}
+                      onLimit={(bound, v) =>
+                        onChange({ ...prefs, limits: { ...prefs.limits, [m.key]: { ...prefs.limits[m.key], [bound]: v } } })
+                      }
+                    />
+                  ),
+                )}
+                {categories.map((def) => (
+                  <CategoryCard
+                    key={def.key}
+                    def={def}
+                    accept={prefs.categories[def.key]}
+                    counts={categoryCounts[def.key] ?? {}}
+                    source={sources[def.key]}
+                    onChange={(accept) => setCategory(def.key, accept)}
+                  />
+                ))}
+              </div>
+              </section>
+            );
+          })}
         </div>
       </div>
       )}

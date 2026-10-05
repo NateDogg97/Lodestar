@@ -1979,6 +1979,10 @@ equality metric… or even racial stats on the area or county page."
 - [x] **One section "Housing, costs & taxes"**: home value, rent (by area), cost of
       living, property, income and sales tax. Filters has 8 sections (10 with the
       must-have-only ones), down from 10 (12).
+- [x] **Filters is one scrolling page** (owner, 2026-10-04): every section of the chosen
+      mode (Priorities or Must-haves) in order; the list on the left (chips on phones)
+      jumps to a section and highlights the one in view as you scroll; switching mode
+      goes back to the top. A jump that a browser doesn't finish smoothly still lands.
 - [x] **County population vs density**: kept both (owner liked both), renamed "County
       population" and "Neighborhood density", each with an "i" saying what the other is;
       density prints "2,212 /sq mi".
@@ -1994,15 +1998,23 @@ equality metric… or even racial stats on the area or county page."
       only. Counties rebuilt with `python -m etl.build --only acs` (no other column
       changed); areas with `python -m etl.tracts.backfill --demographics`. Needs the
       R2 upload to reach the live area pages (the county page is live on deploy).
-- [ ] **Diversity or income gap as a filter — owner decision.** Not built. Ranking or
-      ruling out neighborhoods by racial makeup is what the Fair Housing Act calls
-      steering when real-estate businesses do it, which is why Zillow, Redfin and
-      Realtor.com show no such filter; and the "Better: lower" toggle every priority has
-      would turn a diversity priority into "least diverse first". Options: (a) keep it
-      context only (built); (b) a "diversity" priority that only scores "more diverse is
-      better" (needs a one-direction priority in Filters, and `diversity_index` in
-      areas.json); (c) the income gap (Gini) as an ordinary priority — far less
-      sensitive. Recommendation: (a), plus (c) if wanted. Never a filter on a race share.
+- [x] **Racial diversity and racial equality as priorities** (owner, 2026-10-04, after
+      clarifying: rank by how mixed a place is, never by which groups; both directions).
+      - *Racial diversity*, by area: the diversity index, "higher" by default, either
+        direction. Group-neutral — 85% of any one group is equally "not diverse".
+        In areas.json (one decimal). Shown "75 of 80".
+      - *Racial equality*, county-wide (`etl/sources/equality.py`, `python -m etl.build
+        --only equality`), 0–100: the mean of **income parity** (lowest group's median
+        household income ÷ highest's; White, Black, American Indian and Alaska Native,
+        Asian, Hispanic; only groups with 5%+ of households and a reliably measured
+        median) and **integration** (100 × (1 − Theil's H) over the county's tracts).
+        Rated only when both are known (1,445 counties); otherwise average, like any
+        unknown. County-wide because both compare neighborhoods. Checked: Manhattan,
+        Newark, Trenton, Detroit, Chicago and Milwaukee rank low, as the segregation and
+        income-gap research would predict.
+      - Not included: "similar jobs" — occupation by race (C24010A–I) is too sparse below
+        big counties. A candidate for a third part later.
+      - Never a filter on a single race's share.
 - [ ] Not changed: unemployment stays a county-wide priority; county population stays.
 
 ### Phase 9 — First-run tutorial (added 2026-10-01) ✅ **BUILT 2026-10-04**

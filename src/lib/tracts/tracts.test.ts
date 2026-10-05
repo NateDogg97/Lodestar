@@ -70,6 +70,7 @@ describe("area data", () => {
     expect(formatArea("violent_rate", 422.3)).toBe("422 /100k");
     expect(formatArea("zhvi", null)).toBe("—");
     expect(formatArea("density_per_sq_mi", 2211.6)).toBe("2,212 /sq mi");
+    expect(formatArea("diversity_index", 74.6)).toBe("75 of 80");
     const area = parseCountyAreas({
       ...payload,
       columns: [...payload.columns, "median_gross_rent", "topcoded"],
