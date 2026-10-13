@@ -747,6 +747,30 @@ def test_pollution_grid() -> None:
           "a multi-year mean is cell by cell, and unknown in any year stays unknown")
 
 
+def test_pollution_blocks() -> None:
+    """The PL 94-171 geo header: blocks with people, by the documented field order."""
+    print("\npollution.blocks (2020 blocks: population and internal point)")
+    from .pollution.blocks import AT, FIELDS, parse_geo
+
+    def line(sumlev: str, geocode: str, pop: str, lat: str, lon: str) -> str:
+        f = [""] * len(FIELDS)
+        f[AT["SUMLEV"]], f[AT["GEOCODE"]], f[AT["POP100"]] = sumlev, geocode, pop
+        f[AT["INTPTLAT"]], f[AT["INTPTLON"]] = lat, lon
+        return "|".join(f) + "\n"
+
+    lines = [line("050", "26161", "372258", "+42.2", "-083.8"),       # a county: not a block
+             line("750", "261610001001000", "23", "+42.2808", "-083.7430"),
+             line("750", "261610001001001", "0", "+42.2810", "-083.7400")]  # nobody lives there
+    df = parse_geo(lines)
+    check(len(df) == 1 and df.iloc[0]["block"] == "261610001001000", "only populated blocks")
+    check(df.iloc[0]["pop"] == 23 and abs(df.iloc[0]["lon"] + 83.743) < 1e-9, "population and the internal point")
+    try:
+        parse_geo(["PLST|MI|750|00|00\n"])  # a block row with 5 fields, not 97
+        check(False, "a changed layout should raise")
+    except ValueError:
+        check(True, "a header with another field count raises, not misreads")
+
+
 def test_noaa_per_variable_station_selection() -> None:
     print("\nNOAA: stations are selected per variable group, not per county")
     from .sources import noaa
@@ -1290,6 +1314,7 @@ def main() -> int:
         test_crime_shared_rates()
         test_edges_and_hazard_ratings()
         test_pollution_grid()
+        test_pollution_blocks()
 
         fixtures = _make_synthetic()
         try:
