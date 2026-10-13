@@ -771,6 +771,40 @@ def test_pollution_blocks() -> None:
         check(True, "a header with another field count raises, not misreads")
 
 
+def test_pollution_exposure() -> None:
+    """Population-weighted, from blocks: a polluted corner isn't diluted; unknown stays unknown."""
+    print("\npollution.exposure (blocks -> areas and counties)")
+    from .pollution.exposure import exposure
+
+    # County 99001: tract A is big — 1,000 people in a polluted corner, 10 in clean fields;
+    # tract B is clean. County 99003: tract C mostly unknown (a sliver has a value).
+    blocks = pd.DataFrame({
+        "block": [f"b{k}" for k in range(7)],
+        "tract": ["99001000100", "99001000100", "99001000200", "99001000200",
+                  "99003000100", "99003000100", "99003000100"],
+        "pop": [1000, 10, 500, 500, 100, 100, 50],
+    })
+    blocks["county"] = blocks["tract"].str[:5]
+    values = np.array([20.0, 5.0, 6.0, 8.0, np.nan, np.nan, 9.0])
+    tracts, counties = exposure(blocks, values, "pm25", benchmark=9.0)
+    t = tracts.set_index("tract")
+    a = t.at["99001000100", "pm25"]
+    check(abs(a - (1000 * 20 + 10 * 5) / 1010) < 0.01, f"the corner where people live sets the value ({a})")
+    check(t.at["99001000100", "pm25_above"] == 99.0, "share above the benchmark is of residents (1000 of 1010)")
+    check(t.at["99001000100", "pm25_max"] == 20.0, "the worst block is kept")
+    check(pd.isna(t.at["99003000100", "pm25"]) and t.at["99003000100", "pm25_coverage"] == 20.0,
+          "a value for 20% of a place's people doesn't stand for all of them")
+    c = counties.set_index("county")
+    expect = (1000 * 20 + 10 * 5 + 500 * 6 + 500 * 8) / 2010
+    check(abs(c.at["99001", "pm25"] - expect) < 0.01, "the county is built from the same blocks")
+    check(c.at["99001", "pm25_worst_tract"] == "99001000100" and c.at["99001", "pm25_worst"] == round(a, 2),
+          "the county names its worst area")
+    # Rule 6: a county run alone gives its tracts the same values as the national run.
+    alone, _ = exposure(blocks[blocks["county"] == "99001"], values[:4], "pm25", benchmark=9.0)
+    check(alone.set_index("tract")["pm25"].equals(t.loc[alone["tract"], "pm25"]),
+          "a tract's value doesn't depend on which counties are run together")
+
+
 def test_noaa_per_variable_station_selection() -> None:
     print("\nNOAA: stations are selected per variable group, not per county")
     from .sources import noaa
@@ -1315,6 +1349,7 @@ def main() -> int:
         test_edges_and_hazard_ratings()
         test_pollution_grid()
         test_pollution_blocks()
+        test_pollution_exposure()
 
         fixtures = _make_synthetic()
         try:
