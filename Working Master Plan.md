@@ -2288,10 +2288,16 @@ re-check when the UI wording is written (2026-10-13: not yet verified).
       path (does CI get a 403, like FEMA?), resolution, latest year, file size. Ask ACAG about
       the V5.NA license. Find a radon tract source or confirm there is none. Get 2020 block
       populations and internal points. Write the acceptance numbers' starting bars here.
-- [ ] **11b — Block exposure table** (`etl/pollution/blocks.py`): block → tract and county,
+- [x] **11b — Block exposure table** (`etl/pollution/blocks.py`): block → tract and county,
       the grid sampler, offline tests with a synthetic grid in `etl/test_offline.py` (a
       polluted corner of a big tract must not be diluted; a county-line tract agrees from
-      both sides; unknown stays unknown).
+      both sides; unknown stays unknown). *Done 2026-10-13:* `grid.py` (h5py; cell
+      containing the point; −999.9 and off-grid unknown; cell-by-cell multi-year mean),
+      `blocks.py` (PL 94-171 geo headers by the documented 97-field order, populated blocks,
+      CT → planning regions, cached per state), `exposure.py` (one national pass: mean,
+      % above a benchmark, worst block, coverage, county's worst area; < 50% coverage →
+      unknown). 17 offline tests. Michigan end to end in 1.5 s: Washtenaw 2023 PM2.5 9.71
+      µg/m³, worst area 10.57, 91.6% of residents above 9 (a smoke year).
 - [ ] **11c — PM2.5 and smoke pilot** on Allegheny PA, Harris TX, Kern CA, Teton WY, Washtenaw
       MI (audit continuity) and a rural county with no monitor. Run the whole acceptance gate,
       record the numbers here, and set the scoring anchors. **Stop if it fails.**
