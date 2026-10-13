@@ -2299,7 +2299,8 @@ re-check when the UI wording is written (2026-10-13: not yet verified).
       unknown). 17 offline tests. Michigan end to end in 1.5 s: Washtenaw 2023 PM2.5 9.71
       µg/m³, worst area 10.57, 91.6% of residents above 9 (a smoke year).
 - [~] **11c — PM2.5 and smoke pilot** — *PM2.5 gate run 2026-10-13; contrast fails (below);
-      stopped for the owner as the plan says. Smoke (HMS days) not started.* on Allegheny PA, Harris TX, Kern CA, Teton WY, Washtenaw
+      remedy decided and built (monitor-disagreement doubt; all failed pairs flagged).
+      Smoke (HMS days) next.* on Allegheny PA, Harris TX, Kern CA, Teton WY, Washtenaw
       MI (audit continuity) and a rural county with no monitor. Run the whole acceptance gate,
       record the numbers here, and set the scoring anchors. **Stop if it fails.**
 - [ ] **11d — Lead paint and radon**, tract and county, with confidence flags.
@@ -2487,13 +2488,27 @@ its estimate ± the model's out-of-sample RMSE (σ = 1.7, normal): 5 → 84, 7 �
 would span 80): PM2.5 gets about half the ranking leverage a percentile gives it — about what
 its accuracy supports.
 
-**Owner — one more decision before PM2.5 ranks (11e):**
-- *Monitor disagreement caution* (recommended): where an EPA monitor within 5 mi measured
-  more than the model at that monitor by over 2 µg/m³ (> 1 RMSE), the area's PM2.5 carries
-  the low-confidence caution, and it can't score above "typical" (the 7–9 band). This uses
-  the monitor only to *doubt* the surface, never to *give* the area a value (rule 5 holds).
-  Liberty (−2.4), North Wayside (−2.7) and Portola (−6.2) would trigger it; Bakersfield-Airport
-  (−2.3) too. Alternative: show PM2.5 without ranking on it until a finer source exists.
+**Decided (owner, 2026-10-13: "continue with the recommended solution") — monitor
+disagreement caution.** Where an EPA monitor measured more than the surface at its own cell
+by over 2 µg/m³ (> 1 out-of-sample RMSE), residents within 5 mi of it are *doubted*:
+`pm25_doubt` = % of an area's (or county's) residents in that radius (`etl/pollution/doubt.py`).
+In 11e a doubted value carries the low-confidence caution and its points are capped at the
+"typical" band's (50). The monitor only *doubts* the surface; it never gives an area a value
+(rule 5). A surface reading *higher* than a monitor raises no doubt (that error doesn't flatter
+a place). Areas also get their nearest monitor (site, name, km from the population center,
+reading) for decision 2c's display.
+- *Result:* 28 monitors trigger it nationally (26 in the lower 48): wood-smoke towns (Portola,
+  Willits, Burns OR, Libby, Butte, Pinehurst, St. Maries, Frenchtown), border crossings
+  (Nogales, Anthony NM, Detroit's Gordie Howe bridge), North Pole AK, industry and ports
+  (Liberty, Houston North Wayside, Torresdale, San Pablo, Lancaster Downwind), the San Joaquin
+  Valley (Hanford, Corcoran, Bakersfield). All three failed pairs' hot sides are flagged:
+  Liberty's area (model 8.68; 100% doubted), North Wayside's (10.15; 100%), Portola's (5.84;
+  85%). 2.3% of the pilot states' areas have any doubted residents; counties: Kern 32.9%,
+  Allegheny 8.9%, Harris 4.1%, Washtenaw/Teton/Carbon 0.
+- *Still true:* an **unmonitored** hot spot stays invisible. The Data sources page says so.
+- *11e rule to write:* an area is "doubted" when `pm25_doubt` ≥ 50 (most of its residents);
+  below that the caution shows as "x% of residents live near a monitor reading higher than
+  this estimate" without the cap. County pages always show the share.
 
 #### Review notes (2026-10-13, after the Washtenaw fixes — not decisions)
 
