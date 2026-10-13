@@ -123,6 +123,91 @@ def patch_crime(payload: dict) -> dict[str, int]:
     return counts
 
 
+def patch_crime_scope(payload: dict) -> dict[str, int]:
+    """`crime_shared` and the "crime_wide" caution (crime.shared_rates), in place. Re-run
+    safe: both are recomputed from the published rates every time."""
+    import pandas as pd
+
+    from .crime import shared_rates
+
+    cols: list[str] = payload["columns"]
+    if "crime_agency" not in cols or "violent_rate" not in cols:
+        return {"wide": 0}
+    if "crime_shared" not in cols:
+        cols.append("crime_shared")
+        for r in payload["rows"]:
+            r.append(None)
+    at = {c: cols.index(c) for c in cols}
+    rows = payload["rows"]
+    col = lambda c: pd.Series([r[at[c]] for r in rows], dtype="object")  # noqa: E731
+    num = lambda c: pd.to_numeric(col(c), errors="coerce")  # noqa: E731
+    shared, wide = shared_rates(col("crime_agency"), num("density_per_sq_mi"), num("population"),
+                                num("violent_rate").notna())
+    for k, r in enumerate(rows):
+        r[at["crime_shared"]] = None if pd.isna(shared[k]) else int(shared[k])
+        flags = [f for f in (r[at["low_confidence"]] or "").split(";") if f and f != "crime_wide"]
+        if wide[k]:
+            flags.append("crime_wide")
+        r[at["low_confidence"]] = ";".join(flags)
+    return {"wide": int(wide.sum())}
+
+
+def patch_hazards(payload: dict, table: "pd.DataFrame") -> dict[str, int]:
+    """FEMA's rating words and the display-only hazards (etl/tracts/nri.py) for one published
+    county, in place; the ranked loss-rate percentiles are left as they are."""
+    import pandas as pd
+
+    cols: list[str] = payload["columns"]
+    by_geoid = table.set_index("geoid")
+    new = [c for c in table.columns if c != "geoid" and (c.endswith("_rating") or c not in cols)]
+    for c in new:
+        if c not in cols:
+            cols.append(c)
+            for r in payload["rows"]:
+                r.append(None)
+    at = {c: cols.index(c) for c in cols}
+    done = 0
+    for r in payload["rows"]:
+        g = r[at["geoid"]]
+        if g not in by_geoid.index:
+            continue
+        row = by_geoid.loc[g]
+        for c in new:
+            v = row[c]
+            r[at[c]] = None if pd.isna(v) else (v if isinstance(v, str) else round(float(v)))
+        done += 1
+    return {"hazards": done}
+
+
+EDGE_COLUMNS = ["dist_metro_mi", "nearest_metro", "dist_great_lake_mi", "nearest_town", "dist_town_mi"]
+
+
+def patch_edges(payload: dict) -> dict[str, int]:
+    """Edge distances (etl/edges.py) from each area's population center, in place."""
+    import numpy as np
+
+    from ..edges import edge_columns
+
+    cols: list[str] = payload["columns"]
+    for c in EDGE_COLUMNS:
+        if c not in cols:
+            cols.append(c)
+            for r in payload["rows"]:
+                r.append(None)
+    at = {c: cols.index(c) for c in cols}
+    rows = [r for r in payload["rows"] if r[at["pop_lat"]] is not None and r[at["pop_lon"]] is not None]
+    if not rows:
+        return {"edges": 0}
+    lat = np.array([float(r[at["pop_lat"]]) for r in rows])
+    lon = np.array([float(r[at["pop_lon"]]) for r in rows])
+    edge = edge_columns(lat, lon, with_towns=True)
+    for k, r in enumerate(rows):
+        for c in EDGE_COLUMNS:
+            v = edge[c].iloc[k]
+            r[at[c]] = v if isinstance(v, str) else float(v)
+    return {"edges": len(rows)}
+
+
 DEMOGRAPHICS_DIGITS = {"gini_index": 3}
 
 
@@ -184,6 +269,8 @@ def main() -> None:
     ap.add_argument("--state", help="two-digit state FIPS, comma-separated (default: all published)")
     ap.add_argument("--offline", action="store_true", help="only the crime and top-code rules (no Census calls)")
     ap.add_argument("--demographics", action="store_true", help="only who lives here (one Census call per state)")
+    ap.add_argument("--nri", action="store_true", help="only FEMA's ratings and the display-only hazards (NRI tract table)")
+    ap.add_argument("--edges", action="store_true", help="only the metro-edge, Great Lake and town-center distances")
     args = ap.parse_args()
     wanted = set(args.state.split(",")) if args.state else None
     files = sorted(PUBLISH_DIR.glob("[0-9][0-9][0-9][0-9][0-9].json"))
@@ -192,6 +279,26 @@ def main() -> None:
         if wanted is None or f.stem[:2] in wanted:
             by_state[f.stem[:2]].append(f)
     total = defaultdict(int)
+    if args.edges:
+        for state, paths in sorted(by_state.items()):
+            for path in paths:
+                payload = json.loads(path.read_text())
+                total["edges"] += patch_edges(payload)["edges"]
+                path.write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False))
+            log.info("state %s: %d counties", state, len(paths))
+        log.info("done: %d areas with edge distances", total["edges"])
+        return
+    if args.nri:
+        from . import nri
+
+        for state, paths in sorted(by_state.items()):
+            for path in paths:
+                payload = json.loads(path.read_text())
+                total["hazards"] += patch_hazards(payload, nri.fetch(path.stem))["hazards"]
+                path.write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False))
+            log.info("state %s: %d counties", state, len(paths))
+        log.info("done: %d areas with FEMA's ratings and the display-only hazards", total["hazards"])
+        return
     if args.demographics:
         from ..demographics import COLUMNS
 
@@ -212,13 +319,14 @@ def main() -> None:
         for state, paths in sorted(by_state.items()):
             for path in paths:
                 payload = json.loads(path.read_text())
-                counts = {**patch_crime(payload), **patch_topcodes(payload)}
+                counts = {**patch_crime(payload), **patch_topcodes(payload), **patch_crime_scope(payload)}
                 if any(counts.values()):
                     path.write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False))
                 for k, v in counts.items():
                     total[k] += v
-        log.info("done: %d areas' rates annualized, %d left without a rate (crime_note), %d top-codes noted",
-                 total["annualized"], total["unrated"], total["topcoded"])
+        log.info("done: %d areas' rates annualized, %d left without a rate (crime_note), %d top-codes noted, "
+                 "%d on a county agency's rate spread over rural and suburban areas (crime_wide)",
+                 total["annualized"], total["unrated"], total["topcoded"], total["wide"])
         return
     for state, paths in sorted(by_state.items()):
         parsed = acs.parse(acs._state_raw(state))
@@ -228,7 +336,8 @@ def main() -> None:
         }
         for path in paths:
             payload = json.loads(path.read_text())
-            for k, v in {**patch_county(payload, by_geoid), **patch_crime(payload), **patch_topcodes(payload)}.items():
+            for k, v in {**patch_county(payload, by_geoid), **patch_crime(payload), **patch_topcodes(payload),
+                         **patch_crime_scope(payload)}.items():
                 total[k] += v
             path.write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False))
         log.info("state %s: %d counties patched", state, len(paths))

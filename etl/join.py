@@ -70,6 +70,8 @@ SOURCES = [
     ("bls", "BLS unemployment (LAUS)", False),
     ("distances", "Distances to airport, coast, metro", False),
     ("equality", "Racial equality (income parity, integration)", False),
+    ("zillow_county", "Zillow county home values (today's prices)", False),
+    ("newbuyer", "New buyers' property tax vs all owners (ACS PUMS)", False),
 ]
 
 
@@ -208,6 +210,9 @@ def build() -> pd.DataFrame:
     from .rpp_local import localize
     df = localize(df)
     df = add_derived_columns(df)
+    # Today's typical home value, for the Taxes estimate's property tax (Phase 10 follow-up).
+    from .sources.zillow_county import today_values
+    df = today_values(df)
     from .climate import add_koppen  # monthly normals -> Köppen type (Phase 6)
     df = add_koppen(df)
     df = order_columns(df)

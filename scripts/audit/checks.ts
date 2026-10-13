@@ -182,7 +182,11 @@ export function automaticChecks(r: RunResult): Findings {
         const fact = r.laws.states[r.counties.state[ci]]?.[key];
         v = fact && !isGap(fact) ? fact.v : null;
       }
-      if (v !== null && !accept.includes(v)) f.hard.push(`policy filter passed a wrong value: ${areas.name[i]} ${key}=${v}, wanted ${accept.join("/")}`);
+      // A borderline climate (within 0.5 °C of a line) passes on either of its types.
+      const alt = key === "koppen" ? r.counties.koppenAlt[ci] : null;
+      if (v !== null && !accept.includes(v) && !(alt && accept.includes(alt))) {
+        f.hard.push(`policy filter passed a wrong value: ${areas.name[i]} ${key}=${v}${alt ? `/${alt}` : ""}, wanted ${accept.join("/")}`);
+      }
       if (v === null && ns.status[i] !== 1) f.hard.push(`policy value unknown but result not marked unknown: ${areas.name[i]} ${key}`);
     }
   }

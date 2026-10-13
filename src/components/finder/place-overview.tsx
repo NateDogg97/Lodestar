@@ -39,6 +39,7 @@ export function PlaceOverview({ score: s, data }: Props) {
   const metroMi = num(data.values.dist_metro_mi[i]);
   const airportMi = num(data.values.dist_airport_mi[i]);
   const coastMi = num(data.values.dist_coast_mi[i]);
+  const lakeMi = num(data.info.dist_great_lake_mi[i]);
   const mi = (v: number | null) => (v === null ? "—" : formatValue("dist_airport_mi", v));
 
   return (
@@ -91,9 +92,11 @@ export function PlaceOverview({ score: s, data }: Props) {
             coastMi !== null ? (
               <>
                 <PlaceRow name="Coast" sub="Ocean, bays, tidal water" value={mi(coastMi)} />
+                {lakeMi !== null && lakeMi <= 150 && <PlaceRow name="Great Lakes" sub="Nearest Great Lake shore" value={mi(lakeMi)} />}
                 <Note>
-                  Straight-line miles from where people in the county live. Airports: OurAirports (large, scheduled
-                  service). Coast: Natural Earth.
+                  Straight-line miles from where people in the county live. Big metros: to the edge of the metro&rsquo;s
+                  built-up area (Census 2020 urban areas), 0 inside it. Airports: OurAirports (large, scheduled service).
+                  Coast and Great Lakes: Natural Earth.
                 </Note>
               </>
             ) : undefined
@@ -102,8 +105,8 @@ export function PlaceOverview({ score: s, data }: Props) {
           {metroMi !== null && (
             <PlaceRow
               name={data.text.nearest_metro[i]?.split(",")[0] ?? "Big metro"}
-              sub="Nearest metro of 500k+"
-              value={mi(metroMi)}
+              sub="Nearest metro of 500k+, to the edge of its built-up area"
+              value={metroMi === 0 ? "In it" : mi(metroMi)}
             />
           )}
           {airportMi !== null && (
@@ -134,9 +137,10 @@ export function PlaceOverview({ score: s, data }: Props) {
       <HazardsSection
         id="county.hazards"
         get={(k) => {
-          const col = data.values[k as keyof typeof data.values];
+          const col = data.values[k as keyof typeof data.values] ?? data.info[k as keyof typeof data.info];
           return col ? num(col[i]) : null;
         }}
+        rating={(k) => data.text[k as keyof typeof data.text]?.[i] ?? null}
       />
     </div>
   );

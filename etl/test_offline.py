@@ -654,6 +654,65 @@ def test_tract_estimates() -> None:
     check(eb[4] < 1500, f"a tiny agency's spike is pulled in ({eb[4]:.0f})")
 
 
+def test_koppen_borderline() -> None:
+    """A month within 0.5 °C of a line makes the county borderline; far from one it isn't."""
+    print("\nclimate.koppen_alt (borderline climate types)")
+    from .climate import koppen, koppen_alt
+
+    # Ann Arbor-like: July mean 21.8 °C (Dfb), 0.2 °C under the 22 °C hot-summer line.
+    t = [-4.6, -3.4, 1.5, 8.4, 14.6, 19.6, 21.8, 20.8, 16.5, 9.8, 3.7, -1.7]
+    p = [64, 53, 64, 84, 91, 99, 89, 81, 76, 69, 64, 58]
+    check(koppen(t, p) == "Dfb" and koppen_alt(t, p) == "Dfa", "Dfb within 0.2 °C of Dfa is borderline")
+    hot = [x + 3 for x in t]
+    check(koppen_alt(hot, p) is None, "3 °C from every line: not borderline")
+
+
+def test_crime_shared_rates() -> None:
+    """A county sheriff's one rate over farmland and suburbs is flagged; a city's isn't."""
+    print("\ntracts.crime.shared_rates (one agency's rate over many areas)")
+    from .tracts.crime import shared_rates
+
+    sheriff, city = "Washtenaw County (sheriff or county police)", "Ann Arbor"
+    agency = pd.Series([sheriff] * 9 + [city] * 9 + [sheriff])
+    density = pd.Series([20, 40, 80, 150, 300, 900, 2000, 5000, 8900] + [3000] * 9 + [10])
+    population = pd.Series([3000] * 18 + [20])  # the last is too small to be a place to live
+    shared, wide = shared_rates(agency, density, population, pd.Series([True] * 19))
+    check(int(shared[0]) == 9 and int(shared[9]) == 9, "every rated area knows how many share its rate")
+    check(bool(wide[:9].all()), "a sheriff over 9 areas from 20 to 8,900 people/sq mi is flagged")
+    check(not bool(wide[9:18].any()), "a city's rate isn't, however many areas share it")
+    one_kind = shared_rates(pd.Series([sheriff] * 9), pd.Series([50.0] * 9), pd.Series([3000] * 9),
+                            pd.Series([True] * 9))[1]
+    check(not bool(one_kind.any()), "a sheriff over similar rural areas isn't")
+
+
+def test_edges_and_hazard_ratings() -> None:
+    """Distance to a shape's edge (0 inside), and FEMA's rating words kept beside the rates."""
+    print("\nedges.distance_to / nri.hazard_columns")
+    from shapely.geometry import box
+
+    from .edges import distance_to
+    from .sources.nri import hazard_columns
+
+    square = box(-84.0, 42.0, -83.0, 43.0)  # about 51 x 69 miles
+    lat = np.array([42.5, 42.5, 42.5])
+    lon = np.array([-83.5, -82.5, -84.25])
+    d, idx = distance_to(lat, lon, [square])
+    check(d[0] == 0.0, "a point inside the shape is 0 from it")
+    check(abs(d[1] - 0.5 * 69.17 * np.cos(np.radians(42.5))) < 0.5, f"east of it: half a degree of longitude ({d[1]:.1f} mi)")
+    check(abs(d[2] - 0.25 * 69.17 * np.cos(np.radians(42.5))) < 0.5, f"west of it: a quarter degree ({d[2]:.1f} mi)")
+
+    t = pd.DataFrame({"ALR_NPCTL": [4.2], "RISK_RATNG": ["Relatively Moderate"],
+                      **{f"{p}_ALR_NPCTL": [10.0] for p in ("HRCN", "WFIR", "IFLD", "ERQK", "TRND", "SWND", "HAIL", "WNTW", "CWAV", "HWAV")},
+                      "CFLD_ALR_NPCTL": [None],
+                      **{f"{p}_RISKR": ["Very Low"] for p in ("HRCN", "WFIR", "IFLD", "ERQK", "TRND", "SWND", "HAIL", "WNTW", "CWAV", "HWAV")},
+                      "CFLD_RISKR": ["Not Applicable"]})
+    h = hazard_columns(t)
+    check(h["hazard_rating"].iloc[0] == "Relatively Moderate", "FEMA's overall rating is kept")
+    check(h["hazard_coastal_flood"].iloc[0] == 0.0 and h["hazard_coastal_flood_rating"].iloc[0] == "Not Applicable",
+          "not applicable is zero, and says so")
+    check(h["hazard_strong_wind"].iloc[0] == 10.0, "display-only hazards come along")
+
+
 def test_noaa_per_variable_station_selection() -> None:
     print("\nNOAA: stations are selected per variable group, not per county")
     from .sources import noaa
@@ -832,8 +891,8 @@ def test_phase5_sources() -> None:
     # NRI: "Not Applicable" is a real zero; any other blank stays unknown.
     def haz(prefix: str, pct, rating) -> dict:
         return {f"{prefix}_ALR_NPCTL": pct, f"{prefix}_RISKR": rating}
-    row = {"STCOFIPS": "12086", "ALR_NPCTL": 79.8, "NRI_VER": "December 2025"}
-    for p in ("HRCN", "WFIR", "IFLD", "ERQK", "TRND"):
+    row = {"STCOFIPS": "12086", "ALR_NPCTL": 79.8, "NRI_VER": "December 2025", "RISK_RATNG": "Relatively High"}
+    for p in ("HRCN", "WFIR", "IFLD", "ERQK", "TRND", "SWND", "HAIL", "WNTW", "CWAV", "HWAV"):
         row.update(haz(p, 50.0, "Relatively Low"))
     row.update(haz("CFLD", None, "Not Applicable"))
     inland = dict(row, STCOFIPS="08031", **haz("HRCN", None, "Insufficient Data"))
@@ -1193,6 +1252,9 @@ def main() -> int:
         test_tract_crime_and_gate()
         test_rpp_local()
         test_tract_estimates()
+        test_koppen_borderline()
+        test_crime_shared_rates()
+        test_edges_and_hazard_ratings()
 
         fixtures = _make_synthetic()
         try:

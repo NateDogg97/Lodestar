@@ -282,10 +282,13 @@ PLAUSIBLE_RANGES = {
     "hazard_earthquake": (0, 100), "hazard_tornado": (0, 100),
     "dist_airport_mi": (0, 1_000),   # remote Alaska: the Aleutians are ~830 mi out
     "dist_coast_mi": (0, 1_300),     # northwest Minnesota is ~1,160 mi from tidal water
-    "dist_metro_mi": (0, 2_200),     # Alaska has no 500k+ metro: Seattle is 1,400–2,000 mi
+    "dist_metro_mi": (0, 3_000),     # Alaska has no 500k+ metro: Seattle's built-up edge is 1,400–2,800 mi
+    "dist_great_lake_mi": (0, 4_500),  # Hawaii is ~4,000 mi from Lake Michigan
     "property_tax_effective_rate": (0.0, 4.0),  # unorganized Alaska boroughs levy ~none
-    "rpp_all": (70, 140),
-    "rpp_rents": (30, 220),
+    # Phase 10a: each county's own rents, not its metro's or state's — so wider than BEA's
+    # published range (Issaquena, MS reads 63; San Mateo's rents 238).
+    "rpp_all": (55, 150),
+    "rpp_rents": (10, 260),  # Issaquena, MS: its own rents ≈ 12.6
     "rpp_utilities": (50, 220),
     "rpp_goods": (80, 130),
     "rpp_services": (60, 160),

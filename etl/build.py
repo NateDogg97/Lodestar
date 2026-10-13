@@ -71,6 +71,10 @@ PIPELINE = [
     ("distances", "etl.sources.distances", False),
     # Racial equality by county (2026-10-04): reads the tract ACS cache per state.
     ("equality", "etl.sources.equality", False),
+    # Today's county home values (Zillow), for the Taxes estimate.
+    ("zillow_county", "etl.sources.zillow_county", False),
+    # What a new buyer pays in property tax vs all owners (Census microdata), for Taxes.
+    ("newbuyer", "etl.sources.newbuyer", False),
     # Map shapes. Not joined — written as its own file and published beside
     # the data after validation confirms both cover the same counties.
     ("boundaries", "etl.sources.boundaries", False),
@@ -222,15 +226,25 @@ COLUMN_DECIMALS = {
     "property_tax_effective_rate": 3,
     "hazard_risk": 1, "hazard_hurricane": 1, "hazard_wildfire": 1, "hazard_inland_flood": 1,
     "hazard_coastal_flood": 1, "hazard_earthquake": 1, "hazard_tornado": 1,
+    "hazard_strong_wind": 1, "hazard_hail": 1, "hazard_winter": 1, "hazard_cold": 1, "hazard_heat": 1,
     "unemployment_rate": 1, "unemployment_year": 0,
     "dist_airport_mi": 1, "dist_coast_mi": 1, "dist_metro_mi": 1,
     "acs_vintage": 0, "rpp_vintage": 0,
+    "zhvi_county": 0, "home_value_today": 0, "new_buyer_sample": 0,
 }
 
 
 # Raw inputs to a derived column; the app never reads them. Kept in
 # etl/data/out/ for auditing.
-APP_EXCLUDED_COLUMNS = ("aggregate_real_estate_taxes", "aggregate_home_value")
+APP_EXCLUDED_COLUMNS = ("aggregate_real_estate_taxes", "aggregate_home_value",
+                        # Bookkeeping the app never reads (Phase 10 follow-up): the CSV keeps them.
+                        "zhvi_county", "zillow_month", "home_value_today_source", "new_buyer_sample", "nri_version")
+
+# FEMA's rating words as small codes in the app payload: twelve columns of "Relatively
+# Moderate" took 600 KB and pushed the file past the service worker's 2 MB precache limit.
+# The app decodes them with the same list (src/lib/scoring/dataset.ts FEMA_RATINGS).
+FEMA_RATINGS = ("Very Low", "Relatively Low", "Relatively Moderate", "Relatively High", "Very High",
+                "Not Applicable", "Insufficient Data", "No Rating", "No Expected Annual Losses")
 
 
 def _compact(value: object, decimals: int) -> object:
@@ -265,6 +279,12 @@ def to_app_payload(df: pd.DataFrame) -> dict:
     but are left out of the app payload (APP_EXCLUDED_COLUMNS).
     """
     df = df.drop(columns=[c for c in APP_EXCLUDED_COLUMNS if c in df.columns])
+    codes = {name: k for k, name in enumerate(FEMA_RATINGS)}
+    for c in [c for c in df.columns if c.startswith("hazard") and c.endswith("_rating")]:
+        unknown = set(df[c].dropna()) - set(codes) - set(range(len(FEMA_RATINGS)))
+        if unknown:
+            raise ValueError(f"{c}: FEMA rating words not in FEMA_RATINGS: {sorted(unknown)}")
+        df[c] = df[c].map(lambda v: codes.get(v, v) if isinstance(v, str) else v)
     columns = list(df.columns)
     decimals = [COLUMN_DECIMALS.get(c, DEFAULT_DECIMALS) for c in columns]
     rows = [

@@ -55,6 +55,8 @@ NUMBERS = {  # column -> decimals kept
     "nearby_school_pctl": 0, "nearby_hs_pctl": 0,
     "walkability": 1, "violent_rate": 0, "property_rate": 0,
     "dist_downtown_mi": 1, "dist_airport_mi": 1, "dist_coast_mi": 0, "dist_metro_mi": 1,
+    # Phase 10 follow-up (2026-10-13): the nearest Great Lake shore (etl/edges.py).
+    "dist_great_lake_mi": 0,
     "kids_share": 0, "density_per_sq_mi": 0, "commute_minutes": 0,
     # Results audit (2026-10-04): mostly group quarters → not a result; mostly mobile
     # homes → the home value gets a caution.

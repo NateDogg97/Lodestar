@@ -121,13 +121,20 @@ def build_county(fips: str, with_crime: bool = True) -> pd.DataFrame:
         none = (df["violent_rate"] == 0) & (df["property_rate"] == 0)
         df.loc[none, ["violent_rate", "property_rate"]] = np.nan
         crime_flag = crime_flag & ~none
+    # One county agency's rate over farmland and suburbs alike (crime.shared_rates).
+    if with_crime and "crime_agency" in df.columns:
+        df["crime_shared"], wide = crime.shared_rates(df["crime_agency"], df["density_per_sq_mi"], df["population"],
+                                                      df["violent_rate"].notna())
+    else:
+        wide = pd.Series(False, index=df.index)
     # A median sale price from a handful of sales is noise.
     thin = df["homes_sold"].fillna(0) < MIN_HOMES_SOLD
     # Mostly mobile homes: the home value is real but isn't a house price.
     mobile = mobile_homes(df)
     df["low_confidence"] = [
-        ";".join(x for x in (a, "crime" if c else "", "sale_price" if t else "", "mobile_homes" if m else "") if x)
-        for a, c, t, m in zip(lowc, crime_flag, thin, mobile)
+        ";".join(x for x in (a, "crime" if c else "", "crime_wide" if w else "", "sale_price" if t else "",
+                             "mobile_homes" if m else "") if x)
+        for a, c, w, t, m in zip(lowc, crime_flag, wide, thin, mobile)
     ]
 
     config.TRACT_OUT_DIR.mkdir(parents=True, exist_ok=True)

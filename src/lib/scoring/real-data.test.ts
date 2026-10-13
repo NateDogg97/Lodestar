@@ -278,4 +278,19 @@ describe("the States filter", () => {
     expect(only.get(TRAVIS).score).toBe(base.get(TRAVIS).score);
     expect(only.get(SAN_FRANCISCO).status).toBe("excluded");
   });
+
+  it("a borderline climate passes on either type (Phase 10 follow-up: Ann Arbor is Dfb by 0.2 °C)", () => {
+    const i = data.indexByFips.get("26161")!;
+    expect(data.categories.koppen[i]).toBe("Dfb");
+    expect(data.koppenAlt[i]).toBe("Dfa");
+    const scores = scoreCounties(prepareDataset(data), { weights: {}, categoryFilters: [{ category: "koppen", accept: ["Dfa"] }] });
+    expect(scores[i].status).toBe("match");
+  });
+
+  it("the county file stays under the service worker's 2 MB precache limit (offline use)", async () => {
+    // Serwist skips files over 2 MB: past it, the app loses its dataset offline. FEMA's rating
+    // words are coded for this (etl/build.py FEMA_RATINGS) — see before adding a column.
+    const { statSync } = await import("node:fs");
+    expect(statSync(join(process.cwd(), "public/data/counties.json")).size).toBeLessThan(2 * 1024 * 1024);
+  });
 });

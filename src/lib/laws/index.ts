@@ -130,7 +130,7 @@ export function formatLaw(def: LawDef, fact: LawFact): string {
 const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 const pct = (r: number) => `${Number((r * 100).toFixed(2))}%`;
 
-/** Brackets in words: "2% to 5% in 3 brackets · $3,000 deduction (single)", "None". */
+/** Brackets, short enough for a row: "1–13.3%, 10 brackets", "4.25% flat", "None". */
 function formatSchedule(v: string): string {
   const s = parseSchedule(v);
   if (s === "none") return "None";
@@ -138,13 +138,20 @@ function formatSchedule(v: string): string {
   const rates = s.single.map((b) => b.rate).filter((r) => r > 0);
   const lo = Math.min(...rates);
   const hi = Math.max(...rates);
-  const head = lo === hi ? `${pct(hi)} flat` : `${pct(lo)} to ${pct(hi)} in ${s.single.length} brackets`;
+  return lo === hi ? `${pct(hi)} flat` : `${pct(lo).replace("%", "")}–${pct(hi)}, ${s.single.length} brackets`;
+}
+
+/** The rest of a schedule, for its "i": "Single filer: $5,540 standard deduction, $153 credit." */
+export function scheduleDetail(v: string): string | null {
+  const s = parseSchedule(v);
+  if (!s || s === "none") return null;
   const extras = [
-    s.deduction[0] > 0 ? `${usd(s.deduction[0])} deduction` : null,
-    s.exemption[0] > 0 ? `${usd(s.exemption[0])} exemption` : null,
-    s.credit[0] > 0 ? `${usd(s.credit[0])} credit` : null,
+    s.deduction[0] > 0 ? `${usd(s.deduction[0])} standard deduction` : null,
+    s.exemption[0] > 0 ? `${usd(s.exemption[0])} personal exemption` : null,
+    s.credit[0] > 0 ? `${usd(s.credit[0])} personal credit` : null,
   ].filter(Boolean);
-  return extras.length ? `${head} · ${extras.join(", ")} (single)` : head;
+  const brackets = s.single.map((b) => `${pct(b.rate)} over ${usd(b.over)}`).join(", ");
+  return `Single filer: ${brackets}.${extras.length ? ` ${extras.join(", ")}.` : ""} Married couples have their own brackets.`;
 }
 
 /** Each state's income tax brackets (`income_tax_brackets`), for the Taxes estimate. */

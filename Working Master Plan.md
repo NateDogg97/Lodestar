@@ -5,9 +5,13 @@
 > If something here conflicts with what you actually built, the code is right and this file is
 > stale — fix the file.
 >
-> Last updated: 2026-10-12
+> Last updated: 2026-10-13
 >
 > **Changelog**
+> - 2026-10-13 — **Phase 11 planned: pollution, and it is NEXT** (§9; owner). Eleven rules against averaging and
+>   nearby-pollution bias, an acceptance gate per pollutant, the health risk and the risk to
+>   this plan of each type, and a tiered build order. Tier 1: PM2.5, wildfire smoke, older-housing
+>   lead paint, radon (info only). Nothing built.
 > - 2026-10-04 — **Fewer filters; who lives here.** Filters drop the cost-of-living
 >   parts, electricity, the income ratios and commute (data kept for the pages);
 >   Cost of living, Housing and Taxes are one section. Race and Hispanic origin, a
@@ -1098,7 +1102,7 @@ Build order:
 > any time after Phase 3. **Polish stays last** (decided 2026-09-22): new features and data go
 > in before finishing touches.
 
-### Phase 8 — Inside the county (census tracts) ⬅️ **NEXT** (planned 2026-09-30)
+### Phase 8 — Inside the county (census tracts) ✅ **BUILT** (8a–8f; planned 2026-09-30)
 
 **Why.** Counties proved the idea, but a county is not where you live. Travis County, TX is
 the owner's example: the east side is near the airport; the west side (Westlake, Lake Travis)
@@ -2141,6 +2145,209 @@ Explore inside). A first-time visitor should learn the main loop in under a minu
 - [ ] Maybe later: quick-start chips on the welcome card ("What matters most?") that set
       the first priorities.
 
+### Phase 11 — Pollution ⬅️ **NEXT** (planned 2026-10-13; **nothing built yet**)
+
+**Why.** "Natural hazards" (FEMA) covers disasters. Nothing in the app says what a person
+breathes, drinks or lives next to. Pollution is the next safety question after crime and
+hazards, and its public data is better than most people assume — and worse in specific,
+knowable ways. This phase is mostly about not misleading: a number that looks precise and
+isn't is worse than "unknown".
+
+**Order.** Owner decision, 2026-10-13: **this is the next phase to build**, ahead of
+Phase 10's "Reach production", which stays open. (The Washtenaw audit fixes in §12 were built
+the same day, at the owner's request, before this phase started.) 11a is research with no app
+code. Start there.
+
+#### Rules (owner, 2026-10-13: "accurate for the areas, not biased by averaging or nearby pollution")
+
+Read as two separate biases, each with a rule the ETL must obey and a test that proves it:
+
+*Averaging bias — a value diluted or hidden by a bigger unit*
+1. **Measure where people live.** Sample at every 2020 Census **block's internal point** and weight
+   by the block's population. Not the tract's polygon mean (a big rural tract holding one
+   town reads clean) and not its single population center (one point can't describe a long
+   tract). Grid cells are taken as the cell containing the point — **no interpolation**
+   (interpolating is smoothing).
+2. **No shrinkage on pollution.** Phase 10e's `*_eb` columns pull noisy values toward the
+   county. A modeled concentration has no sampling noise to remove; shrinking it would
+   re-create exactly the averaging bias. Pollution columns never get an `_eb` twin.
+3. **The county is built from the blocks, never from a county source.** County value =
+   population-weighted mean of its blocks, plus **share of residents above the benchmark**
+   and the worst area. EPA's county tables (AQS county summaries) cover only counties that
+   have a monitor and are never used.
+4. **Never average different things.** No cross-pollutant composite. Noise is averaged in
+   energy (10^(L/10)), not as dB. Water: report the share of residents served by a system
+   over the limit, never the mean of different systems' concentrations.
+
+*Nearby-pollution bias — a place credited with another place's value*
+5. **No nearest-monitor assignment, no IDW/kriging in our code.** Monitors sit where people
+   put them (cities, roads), and copying one to a neighbour is the bias. A modeled surface
+   that already fused monitors with satellite and chemistry is acceptable; our code never
+   spreads a value across tracts.
+6. **Compute nationally, then slice by county.** Counties are built one at a time (Phase 8),
+   but a tract on a county line must get the value it would get from the neighbouring
+   county's run. Check: both runs agree.
+7. **State each source's resolution and don't build below it.** A 1 km grid can't see a
+   highway's 200 m plume, so near-road NO2 stays unbuilt (see table) rather than shown as a
+   tract number that implies it can.
+8. **Facilities are located before they are counted.** A facility geocoded to its ZIP or city
+   centroid is "near" whoever lives there. Keep only coordinates with a recorded accurate
+   collection method (EPA FRS records method and accuracy per point — confirm in 11a);
+   show distance and count, never "exposure".
+
+*Everywhere*
+9. **Unknown stays unknown** (§6 item 7). Only "can't occur here" is 0. Each source gets a
+   coverage line like the hazard columns.
+10. **Store the physical value with its unit**; scoring transforms are separate and in TS.
+11. **Mirror every input** into the private R2 inputs bucket (`inputs.MIRRORED` pattern) with
+    version, retrieval date and license recorded. Federal pollution data has already been
+    taken down once (below).
+
+**Acceptance gate for each pollutant (11c onward).** A column ships only if it passes; the
+numbers go in this section.
+- **Monitor check.** Hold out each EPA AQS monitor in turn; compare the column at the
+  monitor's block with its reading. Record bias and RMSE. Starting bar (owner to confirm,
+  set *before* looking): RMSE under 1.5 µg/m³ for PM2.5 — about a third of the gap between
+  WHO's 5 and EPA's 9.
+- **Contrast check.** Pairs of nearby tracts known to differ (Allegheny PA: Liberty/Clairton
+  vs the North Hills; Harris TX: ship-channel vs west Houston; Kern CA vs coastal CA). Our
+  gap must equal the source grid's gap (we add none) and point the way the monitors do.
+- **Dilution check.** Count tracts where the population-weighted value differs from the
+  polygon mean by >10%. If it's few, say so and keep the method anyway; if it's many, that
+  is the evidence for rule 1.
+- **Edge check** (rule 6) and the **coverage line** (rule 9).
+
+#### What gets added — and what doesn't
+
+Verified in sources 2026-10-13 unless marked *(to confirm)*. Tier 1 is built first.
+
+| Type | Tier | Source and year | Resolution | Risk **to this plan** |
+|---|---|---|---|---|
+| **Fine particles (PM2.5), typical year** | 1 | WashU ACAG V6.GL.02.04, 1998–2023, **CC BY 4.0**, satellite + chemistry model calibrated to ground monitors. The North America product V5.NA.05.02 (2000–2023) also gives the biomass-burning share but its page states **no license** — ask before using. | 0.01° (~1 km) | Low–medium. Modeled, so near-source hot spots are smoothed to ~1 km. 3-year mean (2021–2023) so no single smoke year decides. EPA's 9.0 standard is in force but under federal reconsideration (below) — show µg/m³ and WHO's value, not a pass/fail we'd have to retract. |
+| **Wildfire smoke** | 1 | Biomass-burning PM2.5 from ACAG V5.NA.05.02 for *ground-level* exposure; NOAA HMS plume polygons (2005–now) only for "days with smoke overhead". | 1 km; polygons | Medium. HMS plumes are analyst-drawn and are overhead, not at the ground; never used as a concentration. Kept separate from "typical year" so people can weigh them differently and nothing double counts. |
+| **Lead paint (older housing)** | 1 | ACS B25034 (year built), already pulled with margins of error: share built before 1978 and before 1950. | Tract | Low data risk, **high interpretation risk**: an old house is not a lead hazard. Label "older housing (lead-paint risk)", never "lead exposure". Has MOEs → low-confidence icon applies. |
+| **Radon** | 1 (info only) | EPA radon zones are **county** averages. A 2025 PNAS model (Li, Coull, Vieira, Koutrakis; 6M+ tests, 2001–2021) and a Vanderbilt national **tract** map exist; neither is confirmed downloadable. | County / tract *(to confirm)* | **High.** The PNAS paper found most homes above the action level are in *low*-radon zones, so a county zone is the averaging bias in its purest form. Until a tract source clears 11a: show the zone on the county page with "county-wide, not your house; test it", and **do not rank on it**. |
+| Air toxics cancer risk, diesel PM | 2 | EPA AirToxScreen 2020 (current tool is **block** level; 2017–19 tract). Emissions-inventory model. | Block | Medium. Modeled from reported emissions, not measured; EPA says it can't give a person's exact risk; 2020 is a pandemic-affected inventory year; no newer year found; program upkeep is a federal decision. |
+| Noise | 2 | BTS National Transportation Noise Map 2020 (aviation, highway, rail — rail still prototype). | Raster | Medium. "Screening, not for individual locations or compliance" (BTS). Average in energy not dB; below the map's floor is "below map", not 0; confirm the metric (24-hr average) against WHO's before comparing. |
+| Drinking water: PFAS and violations | 2 | EPA UCMR 5 results (PFAS, lithium; ~2M results, 10,000+ systems; final release reported Aug 27 2026 — EPA pages still say "fall 2026", **confirm**), SDWIS violations, EPA water-system service-area boundaries (v2/v3). | System → block | **High.** Over 40% of boundaries come from states and over half of the rest are *EPA-modeled*; private wells are in no system; small systems are only sampled *(confirm)*; PFOA/PFOS 4 ppt stands but EPA proposes to push compliance to 2031 and rescind GenX, PFHxS, PFNA and the mixture rule. Report measured values with the date; wording can't depend on a rule that is moving. A block in no system is "no public system data", not clean. |
+| Ozone | 2 — **held** | No verified tract-level source found. | — | High. Monitors are sparse; we will not hand a tract its nearest monitor (rule 5). Build only if 11a finds a fused surface with a license. |
+| NO2 / near-road air | 2 — **held** | Only a 2000–2010 tract model (the host page says it is "under review") or a 2019–22 TROPOMI 1 km surface. | — | High. Traffic plumes are finer than 1 km and the tract model is a decade old. Noise is *not* a stand-in; don't proxy. |
+| Toxic releases, Superfund, RMP, brownfields | 3 | EPA TRI, RSEI (v2.3.12, reporting year 2022; extended microdata by request), NPL/SEMS, RMP, ACRES. | Facility | Medium–high. Pounds released ≠ risk; self-reported; coordinates vary (rule 8); a cleaned-up Superfund site isn't a live exposure. Ship as a **"Sites near here" list** (name, what, distance, source year) on the area page, not a score. |
+| Light pollution | 3 | VIIRS annual nighttime lights (Earth Observation Group). | ~500 m *(to confirm)* | Low. Radiance isn't sky brightness; amenity (stars), weakest health evidence. Optional. |
+| **Not buildable with honest accuracy** | — | Soil contamination levels (no national measured surface; Superfund covers only listed sites); private-well water quality; indoor air or mold; farm-animal odor and air (no verified national inventory found); microplastics; street-level traffic emissions. | — | Say so on the Data sources page instead of showing a number. |
+
+#### Health risk of each type (what the app should tell a person)
+
+Marked † = checked against a source on 2026-10-13. The rest are standard references to
+re-check when the UI wording is written (2026-10-13: not yet verified).
+
+| Type | Risk to people | Benchmark shown |
+|---|---|---|
+| PM2.5 | Heart and lung disease and early death; **no safe threshold seen**. † In 53–68M Medicare enrollees a 10 µg/m³ higher average went with ~5–7% higher all-cause mortality (Wang 2020, *Environ Health*; Wu 2020, *Sci Adv*). | WHO 2021 guideline 5 µg/m³ (annual). † EPA annual standard 9.0 µg/m³ (set Feb 2024); EPA asked the D.C. Circuit to vacate it on 2025-11-24 and no ruling was found, so label it "current federal standard (under review)". |
+| Wildfire smoke | The same fine particles in short, intense episodes; asthma and cardiovascular events. Not a long-run average. | Days per year; biomass share of PM2.5. |
+| Radon | † Second-leading cause of lung cancer and the leading one for never-smokers: ~21,000 US lung-cancer deaths a year (EPA 2003; ~2,900 never-smokers); EPA estimates 1 in 15 homes is at or above its 4 pCi/L action level. Risk is **per house**, whatever the area value. | 4 pCi/L. |
+| Lead | † **No safe level**; harms children's learning and behavior. CDC's 3.5 µg/dL is a *reference* (97.5th percentile of US children 2015–18), not a health threshold. Paint and plumbing, not air, in most homes. | Share of older homes; never a blood-lead claim. |
+| Air toxics | Cancer (stated as chances per million over a lifetime) and respiratory harm; diesel exhaust is the usual driver near highways and ports. | EPA's customary 1–100 per million range. |
+| Ozone | Asthma and lung irritation, worse in summer. | 70 ppb 8-hour standard. |
+| PFAS in water | Long-lived chemicals linked to cancer, immune and developmental effects; exposure is through the tap. † PFOA and PFOS limit is 4 ppt (kept in EPA's 2026 proposal); the others' limits are proposed for rescission. | 4 ppt for PFOA and PFOS; others shown as measured only. |
+| Noise | Sleep loss, annoyance and cardiovascular strain, mostly near airports, highways, rail. | WHO 2018 road and aircraft guidelines (check the metric). |
+| Toxic sites | Depends on the chemical, the pathway and whether it is cleaned up; **nearness alone is not exposure**. | Distance and count only. |
+| Light | Sleep and ecology; weak evidence. Mostly an amenity. | Relative only. |
+
+#### How it scores and shows
+
+- **A new metric group, `pollution`** (`MetricGroup` in `src/lib/scoring/metrics.ts`), lower is
+  better, each measure its own priority and must-have limit. **No combined "pollution
+  index"** (a mean would hide the one pollutant that matters — the same lesson as
+  `hazard_risk`).
+- **Scale: anchored points, not percentiles — recommended, owner to confirm.** Harm follows
+  dose, and a percentile turns a small gap in a crowded middle into a big score gap.
+  `budgetPoints` (`src/lib/tracts/scoring.ts`) is the precedent: 100 at or under a reference,
+  0 at a stated worst. Anchors come from the table above (WHO guideline → full points),
+  fixed in 11c after measuring how wide the middle half of areas is in µg/m³. Percentiles
+  stay for display ("cleaner than 62% of US areas").
+- **Pages.** A "Pollution" section on area and county pages: value and unit, the benchmark,
+  one plain sentence, and source, year and resolution (*"~1 km model, 2021–23"*) behind an
+  "i". A modeled-only or coarse value gets the existing low-confidence icon. County pages
+  also show "share of residents above the benchmark".
+- **Watch out** (10d) extends to worst-5% on any pollution measure not being weighted.
+- **Wording.** "Estimated" and "screening", never "your address is…"; no medical advice;
+  link the authoritative tool. Facilities appear as public-record entries, not "polluters".
+- **Where it lives.** `etl/pollution/` computes one **block-level table** that feeds both the
+  tract file and the county table (county columns come from the same blocks — rule 3).
+  One new dependency for NetCDF (`netCDF4` or `h5netcdf`); the grids are regular lat/lon, so
+  sampling is index arithmetic, not a GIS library. Inputs are large and change yearly, not
+  monthly: cache them in R2 by version so `tracts-refresh.yml` doesn't re-download them.
+- **Size.** `areas.json` is already 16.6 MB raw. Measure in 11f; scoring columns stay in it,
+  detail columns (benchmarks, shares, facility lists) go in the per-county files.
+
+#### Build order
+
+- [ ] **11a — Source and method check (no app code).** For each Tier 1 source: license, download
+      path (does CI get a 403, like FEMA?), resolution, latest year, file size. Ask ACAG about
+      the V5.NA license. Find a radon tract source or confirm there is none. Get 2020 block
+      populations and internal points. Write the acceptance numbers' starting bars here.
+- [ ] **11b — Block exposure table** (`etl/pollution/blocks.py`): block → tract and county,
+      the grid sampler, offline tests with a synthetic grid in `etl/test_offline.py` (a
+      polluted corner of a big tract must not be diluted; a county-line tract agrees from
+      both sides; unknown stays unknown).
+- [ ] **11c — PM2.5 and smoke pilot** on Allegheny PA, Harris TX, Kern CA, Teton WY, Washtenaw
+      MI (audit continuity) and a rural county with no monitor. Run the whole acceptance gate,
+      record the numbers here, and set the scoring anchors. **Stop if it fails.**
+- [ ] **11d — Lead paint and radon**, tract and county, with confidence flags.
+- [ ] **11e — App:** metrics, group, anchored scoring, pages, watch-outs, Data sources page,
+      unit tests, new `audit:results` scenarios (e.g. a clean-air search must not surface a
+      smoke-heavy valley; a Tier 1 filter changes the order only when weighted).
+- [ ] **11f — National run:** coverage per source, size check, mirror inputs, add to
+      `tracts-refresh.yml` as an annual step, update `AGENTS.md` and `etl/README.md`.
+- [ ] **11g — Tier 2:** air toxics, noise, drinking water; ozone and NO2 only if a source passes 11a.
+- [ ] **11h — Tier 3:** "Sites near here" lists; light pollution if asked.
+
+#### Risks across all types
+
+- **Federal data disappears.** EPA took EJScreen down on 2025-02-05 (copies: Public
+  Environmental Data Partners, Harvard, Zenodo); a CDC-hosted NO2 repository is "under
+  review". Use primary sources (NOAA, academic CC BY, EPA program files), never EJScreen as an
+  input, and mirror everything (rule 11).
+- **Regulations are moving** (PM2.5 and PFAS above). Store measurements, not pass/fail.
+- **Consequences of a label.** A neighbourhood called polluted affects prices and people.
+  Mitigation: factual wording, visible source and year, ranges not verdicts.
+- **Vintage mismatch.** Sources span 2020–2023; the page says each year. Never subtract
+  across vintages.
+- **False comfort.** A clean value is not a clean bill: radon is per house, wells and small
+  water systems may be missing, and a tract average can hide a hot street. Say so.
+
+#### Review notes (2026-10-13, after the Washtenaw fixes — not decisions)
+
+- **Correction:** B25034 (year built, by decade) is *not* pulled — the tract ACS has only
+  `median_year_built` (+ MOE). Lead paint needs B25034 added to `etl/tracts/acs.py` (one more
+  table per state; shares with MOEs by the `_share_moe` rule already there).
+- **Size budgets now:** counties.json 1.75 MB of the service worker's 2 MB (a test fails past
+  it) — room for roughly ten numeric county columns; areas.json 17.0 MB raw. Pollution's
+  county columns (value, share above the benchmark, worst area) × Tier 1 fit; Tier 2 won't
+  without moving detail to per-county files.
+- **County columns without a full rebuild:** `python -m etl.patch` (built today) is the path
+  for the county side; the block table is national (rule 6), so a pollution source module
+  can feed both the tract files and `etl.patch` from one run.
+- **Blocks — a lighter source to test in 11a:** the PL 94-171 redistricting files carry every
+  block's population and internal point in the geo header (text, per state), far smaller than
+  the TIGER `tabblock20` shapefiles. Run the dilution check at block-group centers too: if it
+  rarely differs from blocks at 1 km, the lighter input wins.
+- **Scoring:** anchored points match `budgetPoints` and Taxes' fixed direction
+  (`fixedDirection`); pollution measures should be "lower" only, like Taxes.
+- **Monitor-check bar:** read ACAG's own published cross-validation RMSE for the US before
+  fixing 1.5 µg/m³ — the bar should be no looser than the model's own validation.
+
+#### Open questions for Phase 11
+- [ ] Owner: is the reading of "not biased by nearby pollution" in rules 5–8 what was meant
+      (a place isn't credited with a neighbour's value) — or should real drift from a nearby
+      source *count*? The model surfaces include physical drift; our code adds none.
+- [ ] Owner: anchored points instead of percentiles for pollution (recommended).
+- [ ] Owner: Tier 1 as listed, with radon info-only until a tract source is confirmed.
+- [ ] Owner: the monitor-check bar (RMSE < 1.5 µg/m³ for PM2.5).
+- [ ] Which year(s) for PM2.5 — a 3-year mean (chosen) vs the latest year alone.
+- [ ] Refresh cadence for pollution inputs: annual (chosen) vs monthly with the rest.
+
 ---
 
 ## 10. Explicitly deferred
@@ -2191,6 +2398,7 @@ Not in MVP. Do not build these until the above ships.
 
 ## 11. Open questions
 
+- [ ] **Pollution** — the owner decisions are listed under §9 Phase 11, "Open questions".
 - [x] ~~Which 6–8 state law attributes actually matter?~~ Answered by `LAWS.md` (2026-09-27):
       12 laws, each marked filter / info / both.
 - [ ] At tract level, does the RPP recombination need re-weighting, or do BEA's national weights
@@ -2293,3 +2501,80 @@ Not a phase — a habit. Run real searches, note where a ranking feels wrong, an
         close to normal). Geometric and power means (p = −2) change nothing at the top: with
         84k areas, the top 25 has no weak link (worst asked part ≥ 79 points) under any of
         them. Keep percentiles and the weighted mean.
+
+- **2026-10-13 — Washtenaw County, MI, checked against outside sources.** Every value the
+  ETL fetched matches its source (ACS income $87,156 and home value $353,000; BEA RPP 100.88,
+  rents 125.3; BLS 2025 unemployment 4.3%; ACS property tax 1.486% vs published 1.44–1.56%;
+  FEMA NRI percentiles to the decimal; NOAA normals; Tax Foundation 4.25% / 6%). Tract
+  shapes are within 0.02 mi of TIGERweb, no gaps or overlaps; the county outline within
+  0.31 mi (display simplification). What misleads is method, vintage and aggregation:
+  - [x] **Taxes understate a new buyer's bill.** *(fixed 2026-10-13, option B — see below)* (a) The property-tax basis is the county's
+        2019–2023 Census median ($353k) while areas use today's prices ($444k here; nationally
+        today/Census runs 1.04–1.54×, so it also reorders counties). Fix: publish a county
+        `median_home_value_today` (population-weighted median of its areas, etl.tracts.national)
+        and use it. (b) ACS rates are long-time owners' — Michigan uncaps taxable value on
+        sale: Ann Arbor's 52.67 homestead mills on 50% of price ≈ 2.6% vs 1.49% shown
+        (≈$11.7k vs $5.2k on the typical home). Same pattern under CA Prop 13 and FL Save Our
+        Homes. Fix (owner's call): a cited law `assessment_resets_on_sale` + a caution, then
+        new-buyer rates from state millage tables (MI Treasury, FL DOR) where machine-readable.
+        Measured 2026-10-13 from ACS PUMS 2019–2023 (taxes ÷ value, owners who moved in 1–4
+        years ago vs all owners): CA 1.18×, TX 1.07×, FL 1.07×, MI 1.04×, OR 1.02×; OH, IL,
+        MA 1.00× (no reset — the method's control). Washtenaw's 3 PUMAs: 1.42% all, 1.62% at
+        13–23 months. The survey under-reads the reset (first bill lags the sale, self-reported
+        values, small samples) vs ≈1.5×+ from Michigan's statute. Options were A (caution
+        only), B (measured from PUMS), C (statutory, per state), D (B + C). **Decided: B**,
+        with A's caution driven by the measurement (owner, 2026-10-13).
+  - [x] **Hazard words aren't FEMA's ratings.** *(fixed 2026-10-13)* The app ranks loss *rate* (ALR_NPCTL): overall
+        4th pctl → "Very low", where FEMA rates Washtenaw "Relatively Moderate"; inland flood
+        13th → "Very low" vs FEMA "Relatively Moderate" (2021 disaster declaration). Fix: show
+        FEMA's own `*_RISKR` beside it (ETL already reads the table), word ours as "loss rate";
+        add strong wind (FEMA "Relatively High" here), hail and winter weather as display.
+  - [x] **Köppen borderline.** *(fixed 2026-10-13)* July mean 21.8°C from the 3 nearest stations (IDW) → Dfb; the
+        U-M station alone (what published sources use) is 22.2°C → Dfa. Fix: within ±0.5°C of
+        a threshold, label both ("Dfa/Dfb, borderline") and let either climate card match.
+  - [x] **Sheriff crime spread over 40 areas** *(fixed 2026-10-13)* — farmland at 21/sq mi and Ypsilanti Township at
+        8,905/sq mi share 305/100k. Fix: flag "county sheriff average across N areas"; look
+        for Michigan MICR data by contract township.
+  - [x] **Labels:** *(fixed 2026-10-13)* "Distance to a 500k+ metro" is to the metro's population center (31.7 mi to
+        Detroit's) though Washtenaw borders Wayne — rename or measure to the urban area's edge;
+        "downtown" is only metro principal cities (Ypsilanti measures to Ann Arbor); "coast"
+        excludes the Great Lakes (419 mi) — offer a Great Lakes shoreline option.
+  **Built 2026-10-13 (owner: "move forward with your recommended fixes"; fix 2 = option B):**
+  - *Today's home value* (`etl/sources/zillow_county.py`): Zillow's county ZHVI (3,063
+    counties; else the Census median × the state's Zillow/Census ratio). Taxes charge
+    property tax on it: Washtenaw $353k → $417k.
+  - *New-buyer rate* (`etl/sources/newbuyer.py`, PUMS 2019–2023): per PUMA, owners who moved
+    in 1–4 years ago vs all owners, bootstrap variance, Fay–Herriot toward the state, tract-
+    weighted to counties; CT's planning regions take the state's. Median 1.018 (p10 0.98,
+    p90 1.09); Santa Clara 1.28, LA 1.18, Miami-Dade 1.08, Washtenaw 1.05, Cuyahoga 1.00.
+    The county page's Laws & taxes shows "Taxes here (estimate)" with its parts and, at
+    ≥1.05, "New buyers pay ~X% more property tax" (option A's caution, measured).
+    Washtenaw: $10,507/yr, higher than 97% of counties (US median $5,465).
+  - *FEMA ratings*: `hazard_rating` and `<hazard>_rating` (FEMA's words) beside our loss
+    rate ("Very low loss rate overall · FEMA: Relatively Moderate"); strong wind, hail,
+    winter storms, cold and heat waves shown (not ranked); "None (FEMA: can't happen
+    here)". Counties via `etl.patch nri`; areas via `etl.tracts.backfill --nri`.
+  - *Borderline climate*: `koppen_alt` when a ±0.5 °C shift changes the type (495 counties;
+    `python -m etl.climate --koppen-alt`); a climate must-have accepts either; the page
+    says "Borderline". Washtenaw Dfb/Dfa.
+  - *Sheriff rates*: `crime_shared` on every rated area (the page says "the same rate for all
+    N areas policed by …"); "crime_wide" caution for a county agency over 8+ areas with a
+    10× density spread (9,064 areas). City rates aren't flagged — they'd flag half the
+    country; noted on the page instead.
+  - *Edges* (`etl/edges.py`): `dist_metro_mi` is now to the edge of the metro's largest 2020
+    Census urban area (0 inside; Washtenaw 31.7 → 9.4); `dist_great_lake_mi` (a new area
+    priority, "Distance to a Great Lake"); `nearest_town`/`dist_town_mi` (15k+ places,
+    GeoNames) shown on the area page when nearer than the metro's downtown — ranking still
+    uses the metro's downtowns.
+  - *Plumbing*: `python -m etl.patch <source…>` refreshes sources' columns in the published
+    county file without a full rebuild (validated with the build's checks). FEMA's rating
+    words are coded 0–8 in counties.json (`FEMA_RATINGS`): twelve word columns took it to
+    2.34 MB, past the service worker's 2 MB precache cap; now 1.75 MB, with a test
+    guarding it. Validation bounds widened for the localized RPP and edge distances.
+  - Tests: unit 158, ETL offline 222, laws 78 + 33, results audit 80 searches (the audit's
+    climate check knows borderline types). Live on localhost: Washtenaw and Santa Clara
+    county pages, an Ypsilanti-area page.
+  - [ ] **Reach production** — same path as Phase 10: a PR to the parent ships counties.json
+        and laws.json; the area files (public/data/tracts/, patched locally by
+        `backfill --nri / --edges / --offline`) reach R2 with the parent's monthly refresh,
+        which now builds all of it, or `etl.tracts.upload` with the parent's keys.

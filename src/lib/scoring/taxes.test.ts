@@ -42,6 +42,15 @@ describe("Taxes on the real data", () => {
     expect(Object.values(schedules).filter((v) => v && parseSchedule(v) !== null)).toHaveLength(51);
   });
 
+  it("buyers pay the new-buyer rate on today's typical home (Washtenaw)", () => {
+    const i = at("26161");
+    const t = countyTaxes(base, i, parseSchedule(schedules.MI))!;
+    expect(t.home).toBe(base.info.home_value_today[i]); // Zillow, not the 2019–2023 Census median
+    expect(t.home!).toBeGreaterThan(base.values.median_home_value[i]);
+    expect(t.newBuyer).toBeGreaterThan(1); // Michigan's capped assessments reset on sale
+    expect(t.property).toBeCloseTo((base.values.property_tax_effective_rate[i] / 100) * t.newBuyer * t.home!, 6);
+  });
+
   it("Jackson Hole's low rate on $1.4M homes is a big bill; Wyoming elsewhere is cheap", () => {
     const sched = (st: string) => parseSchedule(schedules[st]);
     const teton = countyTaxes(base, at("56039"), sched("WY"))!;

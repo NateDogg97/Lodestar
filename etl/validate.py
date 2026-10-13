@@ -307,7 +307,9 @@ def _check_derived_sanity(df: pd.DataFrame) -> list[Finding]:
         mask = df["price_to_rent"].notna()
         expected = df.loc[mask, "median_home_value"] / (df.loc[mask, "median_gross_rent"] * 12.0)
         diff = (df.loc[mask, "price_to_rent"] - expected).abs()
-        if (diff > 1e-6).any():
+        # Half a unit of the published precision (3 decimals): `etl.patch` validates the
+        # rounded published file. A formula change moves it by far more than this.
+        if (diff > 0.00051).any():
             findings.append(Finding("FAIL", "price_to_rent does not match its definition"))
 
     if "price_to_rent" in df.columns:

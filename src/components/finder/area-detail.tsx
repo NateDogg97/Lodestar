@@ -315,11 +315,14 @@ function MiniStat({ label, value, typical }: { label: string; value: string; typ
   );
 }
 
-/** A FEMA risk percentile: longer and redder is more risk. */
-function RiskRow({ label, p }: { label: string; p: number }) {
+/** A FEMA loss-rate percentile: longer and redder is more risk; FEMA's own rating under the name. */
+function RiskRow({ label, p, rating }: { label: string; p: number; rating?: string | null }) {
   return (
     <div className="grid grid-cols-[7rem_minmax(0,1fr)_6rem] items-center gap-2.5 text-label">
-      <span className="font-medium">{label}</span>
+      <span className="font-medium">
+        {label}
+        {rating && <span className="block text-caption font-normal text-neutral-500">FEMA: {rating}</span>}
+      </span>
       <Track>
         <span className="block h-full rounded-full" style={{ width: `${Math.max(2, p)}%`, backgroundColor: scoreColor(100 - p) }} />
       </Track>
@@ -572,6 +575,13 @@ const HAZARDS = [
   { key: "hazard_inland_flood", label: "Inland flooding" },
   { key: "hazard_coastal_flood", label: "Coastal flooding" },
   { key: "hazard_earthquake", label: "Earthquakes" },
+  // Shown, never ranked (Phase 10 follow-up, 2026-10-13): FEMA rates them, and in much of the
+  // country they're what happens (strong wind in Washtenaw, MI: "Relatively High").
+  { key: "hazard_strong_wind", label: "Strong wind" },
+  { key: "hazard_hail", label: "Hail" },
+  { key: "hazard_winter", label: "Winter storms" },
+  { key: "hazard_cold", label: "Cold waves" },
+  { key: "hazard_heat", label: "Heat waves" },
 ] as const;
 
 const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v)}%`);
@@ -615,7 +625,7 @@ export function AreaDetail({
         <PriceStat area={area} ranking={ranking} label="Home value" census="median_home_value" zillow="zhvi" />
         <PriceStat area={area} ranking={ranking} label="Rent" census="median_gross_rent" zillow="zori" />
         <Stat k="median_household_income" text={formatAreaValue(area, "median_household_income")} flagged={flagged.has("median_household_income")} />
-        <Stat k="violent_rate" text={formatAreaValue(area, "violent_rate")} flagged={flagged.has("crime")} />
+        <Stat k="violent_rate" text={formatAreaValue(area, "violent_rate")} flagged={flagged.has("crime") || flagged.has("crime_wide")} />
         <Stat k="commute_minutes" text={formatAreaValue(area, "commute_minutes")} flagged={flagged.has("commute_minutes")} />
         <Stat k="walkability" text={formatAreaValue(area, "walkability")} flagged={flagged.has("walkability")} />
       </dl>
@@ -676,8 +686,15 @@ export function AreaDetail({
               typicalText={US_TYPICAL.property_rate.toLocaleString()}
               max={4000}
               maxText="4,000+"
-              flagged={flagged.has("crime")}
+              flagged={flagged.has("crime") || flagged.has("crime_wide")}
             />
+            {typeof r.crime_shared === "number" && r.crime_shared > 1 && (
+              <Note>
+                {flagged.has("crime_wide")
+                  ? `One rate for all ${r.crime_shared} areas policed by ${String(r.crime_agency)}, from farmland to suburbs: the FBI reports crime by police agency, so it can't tell them apart. Treat it as the county's, not this area's.`
+                  : `The same rate for all ${r.crime_shared} areas policed by ${String(r.crime_agency)}: the FBI reports crime by police agency, not by neighborhood.`}
+              </Note>
+            )}
             <Note>
               {r.crime_agency && r.crime_note
                 ? `${String(r.crime_agency)} ${String(r.crime_note)}. `
@@ -699,7 +716,7 @@ export function AreaDetail({
           typicalText={String(US_TYPICAL.violent_rate)}
           max={800}
           maxText="800+"
-          flagged={flagged.has("crime")}
+          flagged={flagged.has("crime") || flagged.has("crime_wide")}
         />
       </AreaSection>
 
@@ -787,11 +804,14 @@ export function AreaDetail({
             {v("dist_metro_mi") !== null && (
               <PlaceRow
                 name={r.nearest_metro ? String(r.nearest_metro).split(",")[0] : "Big metro"}
-                sub="Nearest metro of 500k+"
-                value={formatArea("dist_metro_mi", v("dist_metro_mi"))}
+                sub="Nearest metro of 500k+, to the edge of its built-up area"
+                value={v("dist_metro_mi") === 0 ? "In it" : formatArea("dist_metro_mi", v("dist_metro_mi"))}
               />
             )}
             {v("dist_coast_mi") !== null && <PlaceRow name="Coast" sub="Ocean, bays, tidal water" value={formatArea("dist_coast_mi", v("dist_coast_mi"))} />}
+            {v("dist_great_lake_mi") !== null && v("dist_great_lake_mi")! <= 150 && (
+              <PlaceRow name="Great Lakes" sub="Nearest Great Lake shore" value={formatArea("dist_great_lake_mi", v("dist_great_lake_mi"))} />
+            )}
             <CompareBar
               label="Work from home"
               value={v("work_from_home_share")}
@@ -808,9 +828,22 @@ export function AreaDetail({
       >
         <PlaceRow
           name={r.nearest_downtown ? `Downtown ${String(r.nearest_downtown)}` : county.downtownMetro?.split(",")[0].split("-")[0] ?? "Downtown"}
-          sub="Nearest downtown"
+          sub="Nearest downtown of the metro's main cities"
           value={formatArea("dist_downtown_mi", v("dist_downtown_mi"))}
         />
+        {/* A town of its own, nearer than the metro's downtown (Phase 10 follow-up: Ypsilanti
+            measured only to Ann Arbor). Shown, never ranked. */}
+        {r.nearest_town &&
+          r.nearest_town !== r.nearest_downtown &&
+          v("dist_town_mi") !== null &&
+          v("dist_downtown_mi") !== null &&
+          v("dist_town_mi")! < v("dist_downtown_mi")! && (
+            <PlaceRow
+              name={String(r.nearest_town)}
+              sub="Nearest town or city center (15,000+ people)"
+              value={formatArea("dist_town_mi", v("dist_town_mi"))}
+            />
+          )}
         <CompareBar
           label="Average commute"
           value={v("commute_minutes")}
@@ -868,7 +901,7 @@ export function AreaDetail({
         )}
       </AreaSection>
 
-      <HazardsSection id="hazards" get={v} />
+      <HazardsSection id="hazards" get={v} rating={(k) => (typeof r[k] === "string" ? String(r[k]) : null)} />
     </div>
   );
 }
@@ -980,10 +1013,25 @@ export function PeopleSection({
  * Natural hazards (FEMA National Risk Index percentiles), for an area or a county:
  * the overall risk and the worst hazard up front, the others on tap.
  */
-export function HazardsSection({ id, get }: { id: string; get: (key: string) => number | null }) {
+export function HazardsSection({
+  id,
+  get,
+  rating = () => null,
+}: {
+  id: string;
+  get: (key: string) => number | null;
+  /** FEMA's own rating word for a column (`<key>_rating`, `hazard_rating` overall), if known. */
+  rating?: (key: string) => string | null;
+}) {
   const overall = get("hazard_risk");
-  const hazards = HAZARDS.map((h): { label: string; p: number | null } => ({ label: h.label, p: get(h.key) }));
-  const risky = hazards.filter((h): h is { label: string; p: number } => h.p !== null && h.p > 0).sort((a, b) => b.p - a.p);
+  const hazards = HAZARDS.map((h): { label: string; p: number | null; rating: string | null } => ({
+    label: h.label,
+    p: get(h.key),
+    rating: rating(`${h.key}_rating`),
+  }));
+  const risky = hazards
+    .filter((h): h is { label: string; p: number; rating: string | null } => h.p !== null && h.p > 0)
+    .sort((a, b) => b.p - a.p);
   const none = hazards.filter((h) => h.p === 0).map((h) => h.label.toLowerCase());
   const overallWord = overall === null ? null : hazardWord(overall);
   if (overall === null && risky.length === 0) return null;
@@ -992,17 +1040,19 @@ export function HazardsSection({ id, get }: { id: string; get: (key: string) => 
       id={id}
       icon="alert"
       title="Natural hazards"
-      lead={hazardsVerdict(overall, hazards)}
+      lead={hazardsVerdict(overall, hazards, rating("hazard_rating"))}
       details={
         risky.length > 1 || none.length > 0 ? (
           <>
             {risky.slice(1).map((h) => (
-              <RiskRow key={h.label} label={h.label} p={h.p} />
+              <RiskRow key={h.label} label={h.label} p={h.p} rating={h.rating} />
             ))}
-            {none.length > 0 && <Note>None: {none.join(", ")}.</Note>}
+            {none.length > 0 && <Note>None (FEMA: can&rsquo;t happen here): {none.join(", ")}.</Note>}
             <Note>
-              FEMA National Risk Index (Dec 2025): where this place ranks nationally on the share of its buildings, people and
-              farms expected to be lost to each hazard in a typical year. Longer bar = more risk.
+              FEMA National Risk Index (Dec 2025). The bars and words are the <strong>loss rate</strong>: where this place
+              ranks nationally on the share of its buildings, people and farms expected to be lost to each hazard in a
+              typical year — what ranks results. &ldquo;FEMA:&rdquo; is FEMA&rsquo;s own rating, which ranks dollars at
+              risk with how vulnerable and resilient the community is, so a well-off county can rate higher there.
             </Note>
           </>
         ) : undefined
@@ -1018,10 +1068,10 @@ export function HazardsSection({ id, get }: { id: string; get: (key: string) => 
                 : "bg-rose-50 text-rose-900 dark:bg-rose-950 dark:text-rose-200"
           }`}
         >
-          Overall: {overallWord.toLowerCase()} · {ordinal(Math.round(overall))} percentile
+          Overall loss rate: {overallWord.toLowerCase()} · {ordinal(Math.round(overall))} percentile
         </span>
       )}
-      {risky[0] && <RiskRow label={risky[0].label} p={risky[0].p} />}
+      {risky[0] && <RiskRow label={risky[0].label} p={risky[0].p} rating={risky[0].rating} />}
     </AreaSection>
   );
 }

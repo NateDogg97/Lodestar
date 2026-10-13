@@ -3,7 +3,8 @@ SOURCE: FEMA National Risk Index, census tract table — natural hazards by trac
 
 WHAT THIS PRODUCES
     geoid, hazard_risk, hazard_hurricane, hazard_wildfire, hazard_inland_flood,
-    hazard_coastal_flood, hazard_earthquake, hazard_tornado
+    hazard_coastal_flood, hazard_earthquake, hazard_tornado, the display-only hazards and
+    FEMA's rating words (etl/sources/nri.py `hazard_columns`)
 
     The same measures as the county data (etl/sources/nri.py): FEMA's NATIONAL
     percentile of each hazard's expected annual loss RATE, 0–100, among all US
@@ -30,7 +31,7 @@ import zipfile
 import pandas as pd
 
 from .. import config
-from ..sources.nri import HAZARDS, _is_zip
+from ..sources.nri import ALL_HAZARDS, _is_zip, hazard_columns
 from ..util import get_logger, http_get
 
 log = get_logger("tracts.nri")
@@ -43,11 +44,13 @@ CACHE = config.INTERIM_DIR / "nri_tracts.csv"
 def _national() -> pd.DataFrame:
     """The columns used here, for every US tract: read from the 635 MB zip once,
     then from data/interim/nri_tracts.csv."""
-    cols = ["TRACTFIPS", "STCOFIPS", "ALR_NPCTL"] + [
-        f"{p}_{s}" for p in HAZARDS.values() if p for s in ("ALR_NPCTL", "RISKR")
+    cols = ["TRACTFIPS", "STCOFIPS", "ALR_NPCTL", "RISK_RATNG"] + [
+        f"{p}_{s}" for p in ALL_HAZARDS.values() if p for s in ("ALR_NPCTL", "RISKR")
     ]
     if CACHE.exists():
-        return pd.read_csv(CACHE, dtype={"TRACTFIPS": str, "STCOFIPS": str}, low_memory=False)
+        cached = pd.read_csv(CACHE, dtype={"TRACTFIPS": str, "STCOFIPS": str}, low_memory=False)
+        if set(cols) <= set(cached.columns):  # an older cache without the ratings: re-read the zip
+            return cached
     body = http_get(config.NRI_TRACTS_URL, binary=True, cache_hint="nri_tracts",
                     user_agent=config.BROWSER_USER_AGENT, check=_is_zip)
     assert isinstance(body, bytes)
@@ -69,13 +72,9 @@ def fetch(county_fips: str) -> pd.DataFrame:
         nat = nat.assign(STCOFIPS=nat["TRACTFIPS"].str[:5])
     table = nat[nat["STCOFIPS"] == county_fips].reset_index(drop=True)
 
-    out = pd.DataFrame({"geoid": table["TRACTFIPS"].str.zfill(11)})
-    for col, prefix in HAZARDS.items():
-        pct = pd.to_numeric(table[f"{prefix}_ALR_NPCTL" if prefix else "ALR_NPCTL"], errors="coerce")
-        if prefix:
-            na = table[f"{prefix}_RISKR"].astype(str).str.strip().eq("Not Applicable")
-            pct = pct.where(~(pct.isna() & na), 0.0)
-        out[col] = pct.clip(0, 100)
+    # The same columns as the county table (etl/sources/nri.py): loss-rate percentiles, the
+    # display-only hazards, and FEMA's rating words.
+    out = pd.DataFrame({"geoid": table["TRACTFIPS"].str.zfill(11)}).join(hazard_columns(table))
     log.info("NRI tracts: %d rows for %s", len(out), county_fips)
     return out
 

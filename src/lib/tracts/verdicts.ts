@@ -86,7 +86,11 @@ export function standing(p: {
   return `${word} than ${Math.round(p.beats)}% of ${of}`;
 }
 
-/** FEMA risk percentile in words — the same cutoffs as the county page. */
+/**
+ * A loss-rate percentile in words (FEMA NRI `*_ALR_NPCTL`: the share of what's there lost in
+ * a typical year, ranked nationally). Not FEMA's own rating, which ranks dollars at risk with
+ * social vulnerability — shown beside it, in FEMA's words ("Relatively Moderate").
+ */
 export function hazardWord(p: number): string {
   return p < 20 ? "Very low" : p < 40 ? "Low" : p < 60 ? "Moderate" : p < 80 ? "High" : "Very high";
 }
@@ -151,13 +155,21 @@ export function marketVerdict(yoy: number | null): string {
   return Math.abs(yoy) < 0.5 ? `Prices flat this year (${typical})` : `Prices ${yoy > 0 ? "up" : "down"} ${pct} in a year (${typical})`;
 }
 
-/** Overall risk, and the worst single hazard when it stands out. */
-export function hazardsVerdict(overall: number | null, hazards: { label: string; p: number | null }[]): string {
+/**
+ * Overall loss rate, and the worst single hazard when it stands out; FEMA's own overall rating
+ * when given ("Very low loss rate · FEMA: Relatively Moderate").
+ */
+export function hazardsVerdict(
+  overall: number | null,
+  hazards: { label: string; p: number | null }[],
+  femaRating?: string | null,
+): string {
   const worst = hazards.filter((h): h is { label: string; p: number } => h.p !== null).sort((a, b) => b.p - a.p)[0];
-  if (overall === null) return worst ? `Highest: ${worst.label.toLowerCase()}` : "No hazard data";
+  const fema = femaRating ? ` · FEMA: ${femaRating}` : "";
+  if (overall === null) return worst ? `Highest: ${worst.label.toLowerCase()}${fema}` : "No hazard data";
   const word = hazardWord(overall);
-  if (worst && worst.p >= 80 && overall < 60) return `${word} overall — but ${worst.label.toLowerCase()}`;
-  return `${word} risk overall`;
+  if (worst && worst.p >= 80 && overall < 60) return `${word} loss rate overall — but ${worst.label.toLowerCase()}${fema}`;
+  return `${word} loss rate overall${fema}`;
 }
 
 /**
@@ -182,11 +194,15 @@ export function metroCity(metro: string): string {
   return HYPHENATED.find((c) => head.startsWith(c)) ?? head.split("-")[0].trim();
 }
 
-/** A county's distance to the nearest 500k+ metro ("Minneapolis-St. Paul-Bloomington, MN-WI"). */
+/**
+ * A county's distance to the EDGE of the nearest 500k+ metro's built-up area (etl/edges.py:
+ * 0 inside it) — "Minneapolis-St. Paul-Bloomington, MN-WI".
+ */
 export function locationVerdict(metroMi: number | null, metro: string | null): string {
   if (metroMi === null) return "Distances below";
   const city = metro ? metroCity(metro) : "a big metro";
-  if (metroMi <= 25) return `In or near the ${city} metro`;
-  if (metroMi <= 75) return `${Math.round(metroMi)} mi to ${city}`;
+  if (metroMi < 1) return `In the ${city} metro`;
+  if (metroMi <= 15) return `Next to the ${city} metro · ${Math.round(metroMi)} mi from its edge`;
+  if (metroMi <= 60) return `${Math.round(metroMi)} mi from the ${city} metro`;
   return `Far from big metros · ${Math.round(metroMi)} mi to ${city}`;
 }

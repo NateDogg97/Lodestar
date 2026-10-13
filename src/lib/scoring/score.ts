@@ -190,8 +190,10 @@ export function scoreCounties(prepared: PreparedDataset, input: ScoringInput): C
     // Policy filters follow the same rule: no value is unknown, never a guess.
     for (const f of categoryFilters) {
       const v = data.categories[f.category][i];
+      // A borderline climate passes on either of its types (koppenAlt).
+      const alt = f.category === "koppen" ? data.koppenAlt?.[i] : null;
       if (v === null) unknownFilters.push(f.category);
-      else if (!f.accept.has(v)) failedFilters.push(f.category);
+      else if (!f.accept.has(v) && !(alt && f.accept.has(alt))) failedFilters.push(f.category);
     }
     const status: CountyStatus = failedFilters.length
       ? "excluded"

@@ -268,7 +268,8 @@ export function areaPercentiles(areas: NationalAreas, column: string): Float64Ar
 export function flaggedColumns(areas: NationalAreas, i: number): Set<string> {
   const out = new Set<string>();
   for (const f of areas.lowConfidence[i]) {
-    if (f === "crime") out.add("violent_rate").add("property_rate");
+    // "crime_wide": a county agency's one rate over rural and suburban areas alike (Phase 10 follow-up).
+    if (f === "crime" || f === "crime_wide") out.add("violent_rate").add("property_rate");
     else if (f === "mobile_homes") out.add("median_home_value");
     else out.add(f);
   }

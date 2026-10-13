@@ -98,9 +98,9 @@ function taxesNote(h: Household): string {
   const home =
     h.tenure === "rent"
       ? "Renting: property tax is in the rent, so it isn’t counted."
-      : h.tenure === "buy" && h.budget
-        ? `Property tax: the county’s rate on your ${usd(h.budget)} budget.`
-        : "Property tax: the county’s rate on its typical home (set a budget in What I’m looking for to use yours).";
+      : `Property tax: the county’s rate for a new buyer — where assessments are capped until a sale (California, Florida, Michigan, Texas…), recent buyers pay more than the average owner, measured from Census microdata — on ${
+          h.tenure === "buy" && h.budget ? `your ${usd(h.budget)} budget` : "its typical home at today’s prices (Zillow; set a budget in What I’m looking for to use yours)"
+        }.`;
   return `Dollars a year, in each county: ${home} State income tax on ${who}, filing ${
     h.filing === "single" ? "single" : "jointly"
   }, from the state’s brackets (Tax Foundation). Sales tax at the state and average local rate on about ${Math.round(

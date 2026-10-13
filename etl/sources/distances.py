@@ -19,10 +19,11 @@ WHAT THIS PRODUCES
                       129°W (Hudson Bay, the Arctic) and the St. Lawrence above
                       Quebec City (a freshwater river). Alaska, the Maritimes
                       and the Gulf of California stay.
-    dist_metro_mi     population-weighted center of the nearest METRO area
-                      with 500k+ people (OMB CBSA delineation, the one BEA
-                      uses, + ACS county populations). A county inside such a
-                      metro gets the distance to that metro's center.
+    dist_metro_mi     the EDGE of the nearest 500k+ metro's built-up area — its
+                      largest 2020 Census urban area (etl/edges.py) — 0 inside it.
+                      Was the metro's population-weighted center until 2026-10-13
+                      (Washtenaw, next to Wayne County, read 31.7 mi; now 9.4).
+    dist_great_lake_mi  the nearest Great Lake shore (the coast leaves them out).
 
     Distances are to the nearest vertex of the (densified) coastline, so they
     are accurate to about a mile — far finer than a county.
@@ -193,11 +194,12 @@ def fetch() -> pd.DataFrame:
     out["dist_coast_mi"] = nearest_distance(lat, lon, clat, clon)
     log.info("coast: %d coastline points after densifying", len(clat))
 
-    metros = big_metros(load_cbsa_crosswalk(), pts, read_interim("acs"))
-    idx, dist = nearest_points(lat, lon, metros["lat"].to_numpy(), metros["lon"].to_numpy())
-    out["dist_metro_mi"] = dist[:, 0]
-    out["nearest_metro"] = metros["cbsa_name"].to_numpy()[idx[:, 0]]
-    log.info("metros: %d metro areas with %d+ people", len(metros), config.METRO_MIN_POPULATION)
+    # To the EDGE of the nearest 500k+ metro's built-up area, and to the Great Lakes
+    # (etl/edges.py, Phase 10 follow-up): the metro's center undersold a county next door.
+    from ..edges import edge_columns
+
+    out = pd.concat([out.reset_index(drop=True), edge_columns(lat, lon)], axis=1)
+    log.info("metros: distance to the edge of %d metros' urban areas", out["nearest_metro"].nunique())
     return out
 
 

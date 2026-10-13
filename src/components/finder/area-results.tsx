@@ -286,8 +286,8 @@ function PriorityCaution({ parts }: { parts: AreaPart[] }) {
           ))}
         </ul>
         <p className="mt-2 text-caption text-neutral-500 dark:text-neutral-400">
-          A small area sampled by the Census (a wide margin of error), or a small police agency. It still counts in the
-          score.
+          A small area sampled by the Census (a wide margin of error), a small police agency, or a county
+          sheriff&rsquo;s one rate for farmland and suburbs alike. It still counts in the score.
         </p>
       </InfoTip>
     </span>

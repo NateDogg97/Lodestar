@@ -7,9 +7,12 @@
  * home is higher than about 90% of them — and three priorities made one wish count three
  * times. Now Taxes is one county-wide measure: what a household pays a year in
  *
- * - property tax: the county's effective rate × the home price — the person's budget
- *   when they're buying with one, else the county's typical (median) home. Renters pay
- *   it through rent, which rent already covers, so it isn't counted for them;
+ * - property tax: the county's effective rate × what a new buyer pays over the average
+ *   owner (`new_buyer_ratio`: assessments capped until a sale — Michigan, California,
+ *   Florida, Texas… — make a buyer's bill higher) × the home price — the person's budget
+ *   when they're buying with one, else the county's typical home at today's prices
+ *   (`home_value_today`, Zillow). Renters pay it through rent, which rent already covers,
+ *   so it isn't counted for them;
  * - state income tax: the state's brackets (`income_tax_brackets`, Tax Foundation) on
  *   the household's income — the person's, else the US median household income;
  * - sales tax: the combined state and average local rate on the taxable part of
@@ -114,6 +117,8 @@ export function incomeTax(schedule: Schedule | "none", income: number, filing: F
 
 export interface TaxParts {
   property: number;
+  /** The county rate's multiplier for a new buyer (1 where none is known). */
+  newBuyer: number;
   income: number;
   sales: number;
   total: number;
@@ -135,19 +140,22 @@ export function countyTaxes(
 ): TaxParts | null {
   const income = household.income && household.income > 0 ? household.income : US_MEDIAN_HOUSEHOLD_INCOME;
   const renting = household.tenure === "rent";
+  const today = data.info.home_value_today?.[i];
   const home = renting
     ? null
     : household.tenure === "buy" && household.budget && household.budget > 0
       ? household.budget
-      : data.values.median_home_value[i];
+      : Number.isFinite(today) ? today : data.values.median_home_value[i];
+  const ratio = data.info.new_buyer_ratio?.[i];
+  const newBuyer = Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
   const rate = data.values.property_tax_effective_rate[i];
   const sales = data.values.sales_tax_combined[i];
   if (schedule === null || !Number.isFinite(sales)) return null;
   if (home !== null && !(Number.isFinite(home) && Number.isFinite(rate))) return null;
-  const property = home === null ? 0 : (rate / 100) * home;
+  const property = home === null ? 0 : (rate / 100) * newBuyer * home;
   const inc = incomeTax(schedule, income, household.filing ?? "joint");
   const sale = (sales / 100) * TAXABLE_SPENDING_SHARE * income;
-  return { property, income: inc, sales: sale, total: property + inc + sale, home, householdIncome: income };
+  return { property, newBuyer, income: inc, sales: sale, total: property + inc + sale, home, householdIncome: income };
 }
 
 /**
