@@ -2298,7 +2298,8 @@ re-check when the UI wording is written (2026-10-13: not yet verified).
       % above a benchmark, worst block, coverage, county's worst area; < 50% coverage →
       unknown). 17 offline tests. Michigan end to end in 1.5 s: Washtenaw 2023 PM2.5 9.71
       µg/m³, worst area 10.57, 91.6% of residents above 9 (a smoke year).
-- [ ] **11c — PM2.5 and smoke pilot** on Allegheny PA, Harris TX, Kern CA, Teton WY, Washtenaw
+- [~] **11c — PM2.5 and smoke pilot** — *PM2.5 gate run 2026-10-13; contrast fails (below);
+      stopped for the owner as the plan says. Smoke (HMS days) not started.* on Allegheny PA, Harris TX, Kern CA, Teton WY, Washtenaw
       MI (audit continuity) and a rural county with no monitor. Run the whole acceptance gate,
       record the numbers here, and set the scoring anchors. **Stop if it fails.**
 - [ ] **11d — Lead paint and radon**, tract and county, with confidence flags.
@@ -2446,6 +2447,53 @@ above 4 pCi/L; 5 → lead paint "built before 1960", before-1980 shown; 6 → sm
 4. Radon from the ZIP-level OSF data (exceedance share), not EPA's county zones.
 5. Lead paint as "built before 1960" (EJScreen's definition), with before-1980 shown.
 6. Send the ACAG note for V5.NA.05.02 (biomass), or keep smoke as HMS days.
+
+#### 11c gate results (2026-10-13; `python -m etl.pollution.gate`, V6.GL.03 2022–2024 mean)
+
+Built: `monitors.py` (908 EPA sites, 2022–2024 complete-year means, smoke events kept),
+`pm25.py` (three years averaged a year at a time; pilot states MI, PA, TX, CA, WY: 1.32M
+blocks, 100% coverage, 82 s with downloads), `gate.py`.
+
+| Check | Result |
+|---|---|
+| Monitor (888, lower 48, in-sample) | **Pass** — bias +0.23, RMSE 1.22, MAE 0.93 µg/m³, r 0.755 |
+| Contrast: Kern vs coast (Bakersfield 14.8 vs Santa Barbara 7.8) | **Pass** — model gap 4.0 of 7.1 |
+| Contrast: Bakersfield vs Ridgecrest | **Pass** — 6.0 of 10.6 |
+| Contrast: Liberty (Clairton coke works) vs South Fayette | **Fail** — 0.8 of 4.2 |
+| Contrast: Houston North Wayside vs Westhollow | **Fail** — 0.1 of 3.8 |
+| Contrast: Portola (wood smoke) vs Reno | **Fail, wrong sign** — measured +5.8, model −2.2 |
+| Dilution: one point vs blocks | median 0.05, max 1.59 µg/m³ (Kern) |
+| Dilution: polygon mean vs blocks | off > 10% in Kern (8 of 213, up to 37%), Teton WY (3 of 7), Carbon WY (1 of 5); 0 in Allegheny, Harris, Washtenaw |
+| Edge (Allegheny alone = national) | **Pass** |
+| Coverage | 100% of pilot residents |
+
+**Decision 3 settled: blocks.** Polygon means dilute big rural and mountain areas by up to
+37%, and blocks cost nothing extra once downloaded (2020 blocks don't change).
+
+**What the failures mean.** The ~1 km surface reproduces regional contrasts (valley vs
+coast, basin vs desert) but not local sources: industrial (Clairton), port and refinery
+(Houston ship channel), and wood smoke in mountain valleys (Portola reads *cleaner* than
+Reno). These are the places a pollution search exists to catch. Decision 2's remedy (bands
++ the nearest monitor's reading shown) softens it: a monitored hot spot shows its reading.
+An **unmonitored** hot spot stays invisible, and a monitored one still scores clean.
+
+**Band anchors (for 11e).** National distribution of the 2022–2024 mean at areas' population
+centers: percentiles 1/5/10/25/50/75/90/95/99 = 4.3 / 5.7 / 6.2 / 7.0 / 7.8 / 8.7 / 9.6 /
+10.3 / 12.6 µg/m³. Bands ≤ 5 (WHO), 5–7, 7–9 (EPA 9), 9–12 (the 2012 standard), > 12 hold 2%,
+22%, 57%, 17%, 2% of areas; points 100 / 75 / 50 / 25 / 0. Hard band edges would put 8.99 and
+9.01 25 points apart inside the error, so each area scores the **expected** band points given
+its estimate ± the model's out-of-sample RMSE (σ = 1.7, normal): 5 → 84, 7 → 62, 8 → 51,
+9 → 40, 10 → 30, 12 → 14, 15 → 1. The middle 80% of areas spans 33–72 points (percentiles
+would span 80): PM2.5 gets about half the ranking leverage a percentile gives it — about what
+its accuracy supports.
+
+**Owner — one more decision before PM2.5 ranks (11e):**
+- *Monitor disagreement caution* (recommended): where an EPA monitor within 5 mi measured
+  more than the model at that monitor by over 2 µg/m³ (> 1 RMSE), the area's PM2.5 carries
+  the low-confidence caution, and it can't score above "typical" (the 7–9 band). This uses
+  the monitor only to *doubt* the surface, never to *give* the area a value (rule 5 holds).
+  Liberty (−2.4), North Wayside (−2.7) and Portola (−6.2) would trigger it; Bakersfield-Airport
+  (−2.3) too. Alternative: show PM2.5 without ranking on it until a finer source exists.
 
 #### Review notes (2026-10-13, after the Washtenaw fixes — not decisions)
 
