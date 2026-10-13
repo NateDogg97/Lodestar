@@ -478,6 +478,15 @@ shows its source and dates.
 - Monthly GitHub Actions workflow (runs once the repo is on GitHub).
 - The app's Laws & taxes section with sources and dates, and law filters (§10).
 
+**Added 2026-10-12 (plan Phase 10b)**
+- `income_tax_brackets` (info, value type `schedule`): each state's single and joint brackets,
+  standard deduction and personal exemption or credit, parsed from Tax Foundation's
+  standalone bracket table (the only one with all of them; F&F Table 11 is single-filer
+  rates only), so the schedule carries that table's date. Where the later F&F table lists a
+  different top rate (SC, 2026), the schedule is marked low confidence and the note says so.
+  It feeds the app's Taxes estimate (`src/lib/scoring/taxes.ts`); local income taxes are not
+  in it. 6 parser tests.
+
 **Not done**
 - Second sources for sales tax, groceries and abortion.
 - County overrides (§7).

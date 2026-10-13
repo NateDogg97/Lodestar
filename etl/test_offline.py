@@ -589,6 +589,71 @@ def test_missing_source_degrades(fixtures: dict[str, pd.DataFrame]) -> None:
           "the absent source's column is simply missing, not null-filled")
 
 
+def test_rpp_local() -> None:
+    """Phase 10a: a county's own rent moves its cost of living; parents keep their level."""
+    print("\nrpp_local (cost of living below the metro)")
+    from . import rpp_local
+
+    rows = []
+    # Six metros of two counties each, on a clean power law, so the fit is known.
+    for k, base in enumerate((700, 900, 1100, 1400, 1800, 2300)):
+        rents = 100 * (base / 1200) ** 1.2
+        total = 100 * (rents / 100) ** 0.2
+        for j, rent in enumerate((base * 0.8, base * 1.25)):
+            rows.append({"fips": f"9{k}00{j}", "state": "AA", "rpp_geo_level": "metro",
+                         "rpp_source_geo": f"Metro {k}", "rpp_all": total, "rpp_rents": rents,
+                         "median_gross_rent": rent, "population": 100_000,
+                         "median_household_income": 70_000})
+    # A state's non-metro counties: a resort town, a poor one, and one with no rent.
+    for j, rent in enumerate((2400.0, 500.0, None)):
+        rows.append({"fips": f"9900{j}", "state": "BB", "rpp_geo_level": "state",
+                     "rpp_source_geo": "BB", "rpp_all": 92.0, "rpp_rents": 70.0,
+                     "median_gross_rent": rent, "population": 20_000,
+                     "median_household_income": 60_000})
+    df = pd.DataFrame(rows)
+    out = rpp_local.localize(df)
+    by = out.set_index("fips")
+    metro0 = out[out["rpp_source_geo"] == "Metro 0"]
+    check(abs(metro0["rpp_all"].mean() - metro0["rpp_all_parent"].iloc[0]) < 0.5,
+          f"a metro's counties average back to its published value ({metro0['rpp_all'].mean():.2f})")
+    check(by.loc["99000", "rpp_all"] > 92.0 > by.loc["99001", "rpp_all"],
+          f"resort county above its state, poor county below "
+          f"({by.loc['99000', 'rpp_all']:.1f} / {by.loc['99001', 'rpp_all']:.1f})")
+    check(by.loc["99002", "rpp_all"] == 92.0, "no ACS rent keeps the state's value")
+    again = rpp_local.localize(out)
+    check(bool((again["rpp_all"] - out["rpp_all"]).abs().max() < 1e-9), "running it twice changes nothing")
+    check(abs(by.loc["99000", "real_income"] - 60_000 / (by.loc["99000", "rpp_all"] / 100)) < 1e-6,
+          "real_income follows the localized index")
+
+
+def test_tract_estimates() -> None:
+    """Phase 10e: noisy values move toward what's typical nearby; precise ones barely move."""
+    print("\ntracts.shrink (empirical-Bayes scoring estimates)")
+    from .tracts.shrink import shrink_log_medians, shrink_rates
+
+    # One county of six areas around $300k, plus a precise and a noisy outlier at $900k.
+    est = [300e3, 280e3, 320e3, 310e3, 290e3, 305e3, 900e3, 900e3, 2_000_001.0]
+    moe = [20e3, 20e3, 20e3, 20e3, 20e3, 20e3, 30e3, 600e3, None]
+    county = ["99001"] * 9
+    state = ["99"] * 9
+    keep = [False] * 8 + [True]  # a top-code floor is left as is
+    out = shrink_log_medians(est, moe, county, state, [True] * 9, keep)
+    check(abs(out[6] - 900e3) / 900e3 < 0.05, f"a precise outlier stays ({out[6]:,.0f})")
+    check(out[7] < 700e3, f"a noisy outlier moves toward its county ({out[7]:,.0f})")
+    check(out[8] == 2_000_001.0, "a top-coded value is left as published")
+    check(abs(out[0] - 300e3) / 300e3 < 0.05, "a typical value barely moves")
+
+    # Crime: a big agency at its true rate, a tiny one reporting zero, one tiny and high.
+    rate = [250.0, 260.0, 240.0, 0.0, 3000.0]
+    pop = [500_000, 400_000, 300_000, 900, 900]
+    months = [12, 12, 12, 12, 3]
+    agency = ["A", "B", "C", "D", "E"]
+    eb = shrink_rates(rate, pop, months, agency, ["99"] * 5)
+    check(abs(eb[0] - 250) < 5, f"a large agency keeps its rate ({eb[0]:.0f})")
+    check(eb[3] > 50, f"zero crimes in 900 person-years isn't a perfect record ({eb[3]:.0f})")
+    check(eb[4] < 1500, f"a tiny agency's spike is pulled in ({eb[4]:.0f})")
+
+
 def test_noaa_per_variable_station_selection() -> None:
     print("\nNOAA: stations are selected per variable group, not per county")
     from .sources import noaa
@@ -1126,6 +1191,8 @@ def main() -> int:
         test_demographics()
         test_racial_equality()
         test_tract_crime_and_gate()
+        test_rpp_local()
+        test_tract_estimates()
 
         fixtures = _make_synthetic()
         try:

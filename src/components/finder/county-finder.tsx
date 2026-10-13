@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
-import { applyStateLaws, lawSource, type LawData, type LawSourceSummary } from "@/lib/laws";
+import { applyStateLaws, lawSource, taxSchedules, type LawData, type LawSourceSummary } from "@/lib/laws";
 import {
   CATEGORY_KEYS,
   COUNTY_CATEGORY_KEYS,
@@ -15,7 +15,9 @@ import {
   rankCounties,
   scoreCounties,
   subsetDataset,
+  countyWatchOuts,
   topRelativeScores,
+  withTaxes,
   type CategoryKey,
   type CountyDataset,
   type MetricKey,
@@ -51,6 +53,7 @@ import {
   AREA_MEASURE,
   areaCriteria,
   areaValue,
+  areaWatchOuts,
   countiesOf,
   countyMatches,
   notResidential,
@@ -245,10 +248,14 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   // computed, so they have no influence at all. Everything below works on
   // `scoped`; `data` (all counties) is only used by the map for names/shapes.
   const excludedKey = excludedStates(deferred).join(",");
+  // Taxes in dollars depend on the household (Phase 10b/10c): recomputed when it changes.
+  const schedules = useMemo(() => taxSchedules(laws), [laws]);
+  const householdKey = JSON.stringify(deferred.household);
   const scoped = useMemo(() => {
     const out = excludedKey ? excludedKey.split(",") : [];
-    return out.length ? subsetDataset(data, (i) => !out.includes(data.state[i])) : data;
-  }, [data, excludedKey]);
+    const kept = out.length ? subsetDataset(data, (i) => !out.includes(data.state[i])) : data;
+    return withTaxes(kept, schedules, JSON.parse(householdKey));
+  }, [data, excludedKey, schedules, householdKey]);
 
   const prepared = useMemo(() => prepareDataset(scoped), [scoped]);
   // Option counts beside each category filter: states for policies, counties for climate type.
@@ -318,6 +325,19 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     () => (national ? resultBadges(national, topIdx, nationalSearch) : new Map<number, ResultBadges>()),
     [national, topIdx, nationalSearch],
   );
+  // "Watch out" on results (Phase 10d): an area's own measures, and its county's taxes.
+  const areaWatch = useCallback(
+    (i: number) => {
+      if (!national) return [];
+      const ci = scoped.indexByFips.get(national.county[i]);
+      return [
+        ...areaWatchOuts(national, i, nationalSearch),
+        ...(ci === undefined ? [] : countyWatchOuts(prepared, ci, scoringInput, ["taxes"])),
+      ];
+    },
+    [national, nationalSearch, scoped, prepared, scoringInput],
+  );
+  const countyWatch = useCallback((i: number) => countyWatchOuts(prepared, i, scoringInput), [prepared, scoringInput]);
   const [viewChoice, setViewChoice] = useState<"areas" | "counties" | null>(null);
   const resultsView = viewChoice ?? (hasAreaFilters ? "areas" : "counties");
   // The map in area mode: the counties holding your top areas, colored by their best area.
@@ -477,8 +497,9 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       onReveal: setInsideAll,
       ruledOut,
       hiddenCount: areasState.data.areas.areas.length - matches.length,
+      watchOuts: areaWatch,
     };
-  }, [insideOpen, areasState, national, nscores, nationalSearch, scoresByFips, deferred.includeUnknown, topIdx, resultCap, insideAll]);
+  }, [insideOpen, areasState, national, nscores, nationalSearch, scoresByFips, deferred.includeUnknown, topIdx, resultCap, insideAll, areaWatch]);
 
   const baseInsideLayer = useMemo<Omit<InsideLayer, "highlight"> | null>(() => {
     if (!insideOpen || areasState.status !== "ready") return null;
@@ -551,7 +572,8 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   const openSearch = (next: Preferences) => {
     addRecent(prefs);
     addRecent(next);
-    reset(next);
+    // The household is this device's, not the search's (Phase 10c).
+    reset({ ...next, household: prefs.household });
   };
 
   // Escape leaves the place view (unless typing in a field).
@@ -667,7 +689,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       }}
       prefs={prefs}
       onChange={setPrefs}
-      onDefaults={() => reset(DEFAULT_PREFERENCES)}
+      onDefaults={() => reset({ ...DEFAULT_PREFERENCES, household: prefs.household })}
       onClearAll={() => reset(EMPTY_PREFERENCES)}
       resetKey={resetKey}
       matchCount={areaMode ? matchingAreas : ranked.length}
@@ -718,6 +740,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
               countyName={countyName}
               onOpenArea={openArea}
               onPreview={preview}
+              watchOuts={areaWatch}
             />
           ) : (
             <CountyResultsList
@@ -731,6 +754,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
               countyName={countyName}
               onOpenArea={openArea}
               onPreview={preview}
+              watchOuts={areaWatch}
             />
           )}
         </>
@@ -768,6 +792,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         relative={relative}
         selectedFips={selectedFips}
         onSelect={selectFromList}
+        watchOuts={countyWatch}
       />
     </div>
   );

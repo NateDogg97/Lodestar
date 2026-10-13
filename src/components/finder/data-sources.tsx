@@ -21,7 +21,7 @@ const COUNTY_SOURCES: { name: string; url: string; vintage: string; covers: stri
     name: "BEA Regional Price Parities",
     url: "https://www.bea.gov/data/prices-inflation/regional-price-parities-state-and-metro-area",
     vintage: "2024",
-    covers: "Cost of living (100 = US average). Published for metros and states; a county outside a metro takes its statewide value",
+    covers: "Cost of living (100 = US average). Published for metros and states; each county's rent part is its own Census rent against its metro's or state's",
   },
   {
     name: "Stanford Education Data Archive (SEDA)",

@@ -8,7 +8,7 @@
  */
 
 import { CATEGORY_KEYS, COUNTY_CATEGORY_KEYS, type CategoryKey } from "./categories";
-import { METRIC_KEYS, STATE_METRIC_KEYS, type MetricKey } from "./metrics";
+import { COMPUTED_METRIC_KEYS, METRIC_KEYS, STATE_METRIC_KEYS, type MetricKey } from "./metrics";
 
 export const PAYLOAD_FORMAT = "counties-columnar-v1";
 
@@ -26,6 +26,8 @@ export const INFO_COLUMNS = [
   "white_share", "hispanic_share", "black_share", "asian_share", "other_race_share", "diversity_index", "gini_index",
   // The two parts of racial equality (etl/sources/equality.py).
   "income_parity", "integration",
+  // The metro's or state's published cost of living, before the county's own rents (etl/rpp_local.py).
+  "rpp_all_parent",
 ] as const;
 export type InfoColumn = (typeof INFO_COLUMNS)[number];
 
@@ -87,7 +89,9 @@ export function parseCountyPayload(payload: unknown): CountyDataset {
   }
   // A missing metric is unknown for every county — never a crash. See `missingColumns`.
   // State-level metrics are never in this file; `applyStateLaws` fills them.
-  const missingColumns = METRIC_KEYS.filter((k) => !col.has(k) && !STATE_METRIC_KEYS.includes(k));
+  const missingColumns = METRIC_KEYS.filter(
+    (k) => !col.has(k) && !STATE_METRIC_KEYS.includes(k) && !COMPUTED_METRIC_KEYS.includes(k),
+  );
 
   const rows = payload.rows;
   const n = rows.length;

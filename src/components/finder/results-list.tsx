@@ -7,12 +7,14 @@ import {
   filterLabel,
   formatValue,
   getMetric,
+  rankLabels,
   type CountyDataset,
   type CountyScore,
   type FilterKey,
   type MetricContribution,
 } from "@/lib/scoring";
 
+import { WatchLine } from "./area-results";
 import { scoreColor, UNKNOWN_COLOR } from "./score-colors";
 
 const PAGE_SIZE = 50;
@@ -24,9 +26,11 @@ interface ListProps {
   relative: Map<string, number | null>;
   selectedFips: string | null;
   onSelect: (fips: string) => void;
+  /** What a county is among the worst in the US at, unasked (Phase 10d). */
+  watchOuts: (index: number) => { key: string; text: string }[];
 }
 
-export function ResultsList({ ranked, data, relative, selectedFips, onSelect }: ListProps) {
+export function ResultsList({ ranked, data, relative, selectedFips, onSelect, watchOuts }: ListProps) {
   const [visible, setVisible] = useState(PAGE_SIZE);
 
   if (ranked.length === 0) {
@@ -38,13 +42,15 @@ export function ResultsList({ ranked, data, relative, selectedFips, onSelect }: 
   }
 
   const shown = ranked.slice(0, visible);
+  const labels = rankLabels(shown.map((s) => s.score ?? NaN));
   return (
     <div>
       <ol className="divide-y divide-neutral-200 dark:divide-neutral-800">
         {shown.map((s, i) => (
           <ResultRow
             key={s.fips}
-            rank={i + 1}
+            rank={labels[i]}
+            watch={watchOuts(s.index)}
             score={s}
             data={data}
             rel={relative.get(s.fips)}
@@ -68,13 +74,15 @@ export function ResultsList({ ranked, data, relative, selectedFips, onSelect }: 
 
 function ResultRow({
   rank,
+  watch,
   score: s,
   data,
   rel,
   selected,
   onSelect,
 }: {
-  rank: number;
+  rank: string;
+  watch: { key: string; text: string }[];
   score: CountyScore;
   data: CountyDataset;
   rel: number | null | undefined;
@@ -97,13 +105,16 @@ function ResultRow({
         aria-pressed={selected}
         className="grid w-full grid-cols-[2rem_1fr_auto] items-start gap-2 px-2 py-3.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-900"
       >
-        <span className="pt-0.5 text-label tabular-nums text-neutral-500">{rank}</span>
+        <span className="pt-0.5 text-label tabular-nums text-neutral-500" title={rank.startsWith("=") ? `Tied for ${rank.slice(1)}` : undefined}>
+          {rank}
+        </span>
 
         <span className="min-w-0">
           <span className="block text-body font-medium">
             {data.countyName[s.index]}, {data.state[s.index]}
             <StatusBadges score={s} />
           </span>
+          <WatchLine items={watch} />
           <Reasons score={s} />
         </span>
 

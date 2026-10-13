@@ -167,7 +167,7 @@ COLUMN_ORDER = [
     "population", "median_home_value", "median_household_income", "median_gross_rent",
     # BEA
     "rpp_all", "rpp_rents", "rpp_utilities", "rpp_goods", "rpp_services",
-    "rpp_geo_level", "rpp_source_geo",
+    "rpp_geo_level", "rpp_source_geo", "rpp_all_parent", "rpp_rents_parent",
     # SEDA
     "school_achievement",
     # NOAA
@@ -204,6 +204,9 @@ def order_columns(df: pd.DataFrame) -> pd.DataFrame:
 def build() -> pd.DataFrame:
     """Full join + derive pipeline."""
     df = build_wide_table()
+    # Each county's own rents in its cost of living (Phase 10a), before real_income uses it.
+    from .rpp_local import localize
+    df = localize(df)
     df = add_derived_columns(df)
     from .climate import add_koppen  # monthly normals -> Köppen type (Phase 6)
     df = add_koppen(df)

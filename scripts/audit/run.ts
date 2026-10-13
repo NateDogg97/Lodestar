@@ -2,12 +2,13 @@
  * One search run through the app's own code over the real data — what the checks and
  * the report read. Shared by `results.audit.ts` (the runner) and `checks.ts`.
  */
-import { applyStateLaws, type LawData } from "@/lib/laws";
+import { applyStateLaws, taxSchedules, type LawData } from "@/lib/laws";
 import {
   prepareDataset,
   rankCounties,
   scoreCounties,
   subsetDataset,
+  withTaxes,
   type CountyDataset,
   type CountyScore,
   type MetricKey,
@@ -60,7 +61,11 @@ export interface RunResult {
 
 export function run(prefs: Preferences, all: CountyDataset, laws: LawData, areas: NationalAreas, cap = 100): RunResult {
   const excluded = excludedStates(prefs);
-  const scoped = applyStateLaws(subsetDataset(all, (i) => !excluded.includes(all.state[i])), laws);
+  const scoped = withTaxes(
+    applyStateLaws(subsetDataset(all, (i) => !excluded.includes(all.state[i])), laws),
+    taxSchedules(laws),
+    prefs.household,
+  );
   const prepared = prepareDataset(scoped);
   const countyScores = scoreCounties(prepared, toScoringInput(prefs));
   const byFips = new Map(countyScores.map((s) => [s.fips, s]));

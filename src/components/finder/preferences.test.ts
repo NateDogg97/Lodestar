@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_PREFERENCES, sanitizePreferences } from "./preferences";
+import { DEFAULT_PREFERENCES, EMPTY_PREFERENCES, sanitizePreferences, withHousehold } from "./preferences";
 
 describe("sanitizePreferences", () => {
   it("round-trips a valid saved search", () => {
@@ -33,6 +33,7 @@ describe("sanitizePreferences", () => {
       includeStates: { AK: false, HI: true },
       // Area-only priorities: only known area keys; a county metric isn't one.
       area: { weights: { walkability: 5 }, directions: {}, limits: { violent_rate: { max: 300 } } },
+      household: {},
     });
   });
 
@@ -67,6 +68,34 @@ describe("sanitizePreferences", () => {
     expect(p.area.limits).toEqual({});
     // Cost of living already set: the part doesn't override it.
     expect(sanitizePreferences({ weights: { rpp_all: 1, rpp_goods: 5 } })!.weights).toEqual({ rpp_all: 1 });
+  });
+
+  it("folds the three tax rates into one Taxes priority; their limits stay (Phase 10b)", () => {
+    const p = sanitizePreferences({
+      weights: { income_tax_top_rate: 4, sales_tax_combined: 2, property_tax_effective_rate: 3 },
+      directions: { income_tax_top_rate: "higher", taxes: "higher" },
+      limits: { income_tax_top_rate: { max: 0 } },
+    })!;
+    expect(p.weights).toEqual({ taxes: 4 });
+    expect(p.directions).toEqual({}); // Taxes has one direction
+    expect(p.limits).toEqual({ income_tax_top_rate: { max: 0 } });
+    // Taxes already set wins.
+    expect(sanitizePreferences({ weights: { taxes: 1, sales_tax_combined: 5 } })!.weights).toEqual({ taxes: 1 });
+  });
+
+  it("keeps a sane household and drops the rest (Phase 10c)", () => {
+    const ok = sanitizePreferences({ household: { tenure: "buy", budget: 450_000, income: 90_000, filing: "joint" } })!;
+    expect(ok.household).toEqual({ tenure: "buy", budget: 450_000, income: 90_000, filing: "joint" });
+    const bad = sanitizePreferences({ household: { tenure: "lease", budget: -5, income: "lots", filing: "x" } })!;
+    expect(bad.household).toEqual({});
+  });
+
+  it("a new budget turns its measure on, once (Phase 10c)", () => {
+    const set = withHousehold(EMPTY_PREFERENCES, { tenure: "buy", budget: 400_000 });
+    expect(set.area.weights.median_home_value).toBe(3);
+    const off = withHousehold({ ...set, area: { ...set.area, weights: {} } }, { tenure: "buy", budget: 410_000 });
+    expect(off.area.weights.median_home_value).toBeUndefined(); // turned off on purpose: stays off
+    expect(withHousehold(EMPTY_PREFERENCES, { tenure: "rent", budget: 1800 }).area.weights.median_gross_rent).toBe(3);
   });
 
   it("rejects non-objects", () => {

@@ -19,8 +19,11 @@ describe("search URLs", () => {
         directions: { density_per_sq_mi: "higher" },
         limits: { violent_rate: { max: 400 } },
       },
+      household: { tenure: "buy", budget: 450_000, income: 95_000, filing: "single" },
     };
     const q = encodeSearch(prefs, "24027");
+    // Budget and income stay on the device (Phase 10c): never in a link.
+    expect(q).not.toMatch(/450000|95000|budget|income|buy/);
     expect(q).toBe(
       "v=1&w=population:1,rpp_all:3,school_achievement:5&dir=population:middle,days_above_90f:higher" +
         "&lim=population:10000~,median_gross_rent:~2000,hottest_month_high_f:70.5~92" +
@@ -31,6 +34,7 @@ describe("search URLs", () => {
     expect(decode(q)).toEqual({
       prefs: {
         ...prefs,
+        household: {},
         weights: { rpp_all: 3, population: 1 },
         limits: { population: { min: 10000 }, hottest_month_high_f: { min: 70.5, max: 92 } },
         area: {

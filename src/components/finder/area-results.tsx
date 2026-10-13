@@ -13,8 +13,9 @@ import {
   type NationalScores,
   type NationalSearch,
   type ResultBadges,
+  type WatchOut,
 } from "@/lib/tracts";
-import { formatValue, type CountyScore, type MetricKey } from "@/lib/scoring";
+import { formatValue, rankLabels, type CountyScore, type MetricKey } from "@/lib/scoring";
 
 import { Icon } from "@/components/ui/icons";
 import { InfoTip } from "@/components/ui/info-tip";
@@ -40,6 +41,8 @@ interface Common {
   onOpenArea: (i: number) => void;
   /** Show an area on the map; `fly` moves the map there (a summary opened by hand). */
   onPreview: (i: number | null, fly: boolean) => void;
+  /** What an area is among the worst in the US at, unasked (Phase 10d). */
+  watchOuts: (i: number) => WatchOut[];
 }
 
 /** "Areas | Counties" and "Top 100 · 250 · 500". */
@@ -170,12 +173,12 @@ export function Fingerprint({ parts }: { parts: AreaPart[] }) {
   );
 }
 
-function Badges({ badges, first }: { badges: ResultBadges | undefined; first: boolean }) {
+function Badges({ badges, first, tied }: { badges: ResultBadges | undefined; first: boolean; tied?: boolean }) {
   return (
     <>
       {first && (
         <span className="rounded-full bg-neutral-900 px-2 py-px text-caption font-semibold text-white dark:bg-neutral-100 dark:text-neutral-900">
-          #1 best match
+          {tied ? "Tied for #1" : "#1 best match"}
         </span>
       )}
       {badges?.top1.map((b) => (
@@ -197,6 +200,61 @@ function Badges({ badges, first }: { badges: ResultBadges | undefined; first: bo
 
 const partValue = (p: AreaPart) =>
   p.level === "county" ? formatValue(p.key as MetricKey, p.value) : formatArea(p.key, p.value);
+
+/** A result's rank; "=4" when its shown score ties a neighbour's (Phase 10f). */
+export function RankLabel({ label }: { label: string }) {
+  const tied = label.startsWith("=");
+  return (
+    <span className="w-7 pt-0.5 text-label tabular-nums text-neutral-500" title={tied ? `Tied for ${label.slice(1)}` : undefined}>
+      {label}
+    </span>
+  );
+}
+
+/**
+ * Cautions under a result (Phase 10d, 2026-10-12): measures the search doesn't weigh
+ * where the place is among the worst 5% in the US — "Homes cost more than in 99% of US
+ * areas". Says nothing about the ranking; makes sure a #1 can't hide its catch.
+ */
+export function WatchLine({ items }: { items: { key: string; text: string }[] }) {
+  if (items.length === 0) return null;
+  return (
+    <p className="mt-0.5 flex items-start gap-1 text-caption text-amber-800 dark:text-amber-300">
+      <Icon name="warning" className="mt-[3px] h-3 w-3 shrink-0" />
+      <span>
+        <span className="sr-only">Watch out: </span>
+        {items.map((w) => w.text).join(" · ")}
+      </span>
+    </p>
+  );
+}
+
+/** Under a summary's bars: how a budget scored, and which values were ranked on an estimate. */
+function PartNotes({ parts }: { parts: AreaPart[] }) {
+  const budget = parts.find((p) => p.budget);
+  const scored = parts.filter((p) => p.scored !== undefined);
+  if (!budget && scored.length === 0) return null;
+  const money = (key: string, v: number) => formatArea(key, v);
+  return (
+    <div className="space-y-1 text-caption text-neutral-600 dark:text-neutral-400">
+      {budget && budget.value !== null && (
+        <p>
+          {budget.label}: {money(budget.key, budget.value)},{" "}
+          {budget.value <= budget.budget!
+            ? `within your ${money(budget.key, budget.budget!)} budget`
+            : `${(budget.value / budget.budget!).toFixed(1)}× your ${money(budget.key, budget.budget!)} budget`}
+          . Full marks at or under it, none at 1.5× it.
+        </p>
+      )}
+      {scored.length > 0 && (
+        <p>
+          Ranked on {scored.map((p) => `${p.label.toLowerCase()} ≈ ${money(p.key, p.scored!)}`).join(", ")}: a small
+          sample here, so the estimate is weighed toward the county&rsquo;s typical area.
+        </p>
+      )}
+    </div>
+  );
+}
 
 /** The small amber mark beside a low-confidence value. */
 function Flag({ on }: { on: boolean }) {
@@ -271,6 +329,7 @@ function Summary({ i, parts, common }: { i: number; parts: AreaPart[]; common: C
       {/* One list that grows; the toggle stays below it. */}
       {/* Rows share columns (subgrid), so the bars line up whatever each value's width. */}
       <ul className="grid grid-cols-[7.5rem_minmax(3rem,1fr)_auto] gap-x-2.5 gap-y-1.5">{bars(all ? [...top, ...rest] : top)}</ul>
+      <PartNotes parts={all ? parts : top} />
       {rest.length > 0 && parts.length > 3 && (
         <button type="button" onClick={() => setAll((a) => !a)} aria-expanded={all} className="text-label font-medium text-emerald-700 hover:underline dark:text-emerald-400">
           {all ? `Hide the other ${rest.length}` : `Show the other ${rest.length} ${rest.length === 1 ? "priority" : "priorities"}`}
@@ -317,6 +376,7 @@ export function AreaResultsList({
       </p>
     );
   }
+  const labels = rankLabels(top.map((i) => common.scores.score[i]));
   return (
     <ol className="divide-y divide-neutral-200 dark:divide-neutral-800">
       {top.map((i, rank) => {
@@ -329,7 +389,7 @@ export function AreaResultsList({
             className={isOpen ? "bg-neutral-50 dark:bg-neutral-900/50" : ""}
           >
             <div className="flex items-start gap-2 py-3 pl-1">
-              <span className="w-7 pt-0.5 text-label tabular-nums text-neutral-500">{rank + 1}</span>
+              <RankLabel label={labels[rank]} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <button
@@ -341,9 +401,14 @@ export function AreaResultsList({
                     {common.areas.name[i]}
                   </button>
                   <PriorityCaution parts={parts} />
-                  <Badges badges={badges.get(i)} first={rank === 0 && !Number.isNaN(common.scores.score[i])} />
+                  <Badges
+                    badges={badges.get(i)}
+                    first={rank === 0 && !Number.isNaN(common.scores.score[i])}
+                    tied={labels[0]?.startsWith("=")}
+                  />
                 </div>
                 <p className="text-caption text-neutral-500">{common.countyName(common.areas.county[i])}</p>
+                <WatchLine items={common.watchOuts(i)} />
                 <Fingerprint parts={parts} />
               </div>
               <span className="pt-0.5">
@@ -389,6 +454,7 @@ export function CountyResultsList({
       </p>
     );
   }
+  const labels = rankLabels(counties.map((c) => c.bestScore));
   return (
     <ol className="divide-y divide-neutral-200 dark:divide-neutral-800">
       {counties.map((c, rank) => {
@@ -396,7 +462,7 @@ export function CountyResultsList({
         return (
           <li key={c.fips} data-tour={rank === 0 ? "first-result" : undefined} className={isOpen ? "bg-neutral-50 dark:bg-neutral-900/50" : ""}>
             <div className="flex items-start gap-2 py-3 pl-1">
-              <span className="w-7 pt-0.5 text-label tabular-nums text-neutral-500">{rank + 1}</span>
+              <RankLabel label={labels[rank]} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <button
@@ -409,13 +475,14 @@ export function CountyResultsList({
                   </button>
                   {rank === 0 && !Number.isNaN(c.bestScore) && (
                     <span className="rounded-full bg-neutral-900 px-2 py-px text-caption font-semibold text-white dark:bg-neutral-100 dark:text-neutral-900">
-                      #1 best match
+                      {labels[0]?.startsWith("=") ? "Tied for #1" : "#1 best match"}
                     </span>
                   )}
                 </div>
                 <p className="text-caption text-neutral-700 dark:text-neutral-300">
                   {c.areas.length} of your top areas · best: {common.areas.name[c.areas[0]]}
                 </p>
+                <WatchLine items={common.watchOuts(c.areas[0])} />
               </div>
               <span className="pt-0.5">
                 <ScoreNumber score={c.bestScore} />

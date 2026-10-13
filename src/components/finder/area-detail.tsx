@@ -35,6 +35,7 @@ import {
 import { formatValue, type MetricKey } from "@/lib/scoring";
 import { ordinal } from "@/lib/scoring/format";
 
+import { WatchLine } from "./area-results";
 import type { AreaRankingView } from "./inside-view";
 import { isGold, scoreColor, trackOverflow } from "./score-colors";
 
@@ -417,9 +418,20 @@ export function PriorityBar({ c, full, showLevel = true }: { c: AreaPart; full: 
             </span>
             <span className="text-right text-caption tabular-nums text-neutral-500">{Math.round(c.points)} pts</span>
           </div>
+          {c.scored !== undefined && (
+            <Note>
+              Ranked as ≈ {formatArea(c.key, c.scored)}: a small sample here (a wide margin, or a small police agency), so
+              the estimate is weighed toward what&rsquo;s typical nearby.
+            </Note>
+          )}
           {full && (
             <Note>
-              {standing(c)} · weight {c.weight} ·{" "}
+              {c.budget !== undefined && c.value !== null
+                ? c.value <= c.budget
+                  ? `within your ${formatArea(c.key, c.budget)} budget`
+                  : `${(c.value / c.budget).toFixed(1)}× your ${formatArea(c.key, c.budget)} budget`
+                : standing(c)}{" "}
+              · weight {c.weight} ·{" "}
               <span className={(c.impact ?? 0) >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}>
                 effect {(c.impact ?? 0) >= 0 ? "+" : "−"}
                 {Math.abs(Math.round(c.impact ?? 0))}
@@ -478,6 +490,7 @@ function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRa
       {(more: boolean) => (
         <>
           <p className="text-body">{tradeOff(parts)}</p>
+          <WatchLine items={ranking.watchOuts(i)} />
           {(more ? byEffect : byEffect.slice(0, 3)).map((c) => (
             <PriorityBar key={c.key} c={c} full={more} />
           ))}

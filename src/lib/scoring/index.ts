@@ -5,4 +5,5 @@ export * from "./score";
 export * from "./format";
 export * from "./relative";
 export * from "./categories";
+export * from "./taxes";
 export * from "./climate-families";

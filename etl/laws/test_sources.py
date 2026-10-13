@@ -74,6 +74,26 @@ check(facts["IL"][1].value == "flat", "one rate is flat")
 check(facts["WA"][0].value == "0" and facts["WA"][1].value == "none", "WA: 0 on wages, structure none")
 check("capital gains" in facts["WA"][0].notes, "WA's capital gains rates kept in notes")
 
+print("\nTax Foundation: income tax brackets (standalone table layout)")
+rows = [
+    ("State", "Rates", None, "Brackets", "Rates", None, "Brackets", "Single", "Couple", "Single", "Couple", "Dependent"),
+    ("Ala.", 0.02, ">", 0, 0.02, ">", 0, 3000, 8500, 1500, 3000, 1000),
+    ("(a, b, c)", 0.04, ">", 500, 0.04, ">", 1000, "\xa0", "\xa0", "\xa0", None, None),
+    (None, 0.05, ">", 3000, 0.05, ">", 6000, None, None, None, None, None),
+    ("Alaska", "none", None, None, "none", None, None, "n.a.", "n.a.", "n.a.", "n.a.", "n.a."),
+    ("Calif.", 0.01, ">", 0, 0.01, ">", 0, 5540, 11080, "$153 credit", "$306 credit", "$153 credit"),
+    (None, 0.133, ">", 1000000, 0.133, ">", 1485906, None, None, None, None, None),
+]
+blocks = tf.parse_income_blocks(rows)
+check(blocks["AL"]["single"] == [(0.02, 0), (0.04, 500), (0.05, 3000)], "single brackets with their thresholds")
+check(blocks["AL"]["married"][1] == (0.04, 1000), "a couple's brackets are their own")
+check(blocks["AL"]["deduction"] == (3000, 8500) and blocks["AL"]["exemption"] == (1500, 3000),
+      "standard deduction and personal exemption, single and couple")
+check(blocks["CA"]["credit"] == (153, 306) and blocks["CA"]["exemption"] == (0, 0), "\"$153 credit\" is a credit")
+check(tf.encode_schedule(blocks["AK"]) == "none", "no wage income tax encodes as none")
+check(tf.encode_schedule(blocks["AL"]) == "s:0.02@0,0.04@500,0.05@3000;m:0.02@0,0.04@1000,0.05@6000;"
+      "sd:3000,8500;ex:1500,3000;cr:0,0", "the schedule's compact form")
+
 print("\nTax Foundation: sales tax and groceries")
 sheet = [("State & Local Sales Tax Rates as of July 1, 2026",),
          ("State", "State Tax Rate", "State Tax Rank", "Average Local Tax Rate", "Max Local Rate",

@@ -7,11 +7,12 @@
  * (`checked`). The app must show all three wherever it shows a value.
  */
 
-import { STATE_CATEGORY_KEYS, STATE_METRIC_KEYS, type CountyDataset } from "@/lib/scoring";
+import { parseSchedule, STATE_CATEGORY_KEYS, STATE_METRIC_KEYS, type CountyDataset } from "@/lib/scoring";
 
 export const LAWS_FORMAT = "laws-v1";
 
-export type LawType = "numeric" | "ordinal" | "boolean" | "nominal";
+/** `schedule`: income tax brackets in a compact form (see `parseSchedule`). */
+export type LawType = "numeric" | "ordinal" | "boolean" | "nominal" | "schedule";
 
 export interface LawDef {
   key: string;
@@ -122,7 +123,38 @@ export function formatLaw(def: LawDef, fact: LawFact): string {
         return String(n);
     }
   }
+  if (def.type === "schedule") return formatSchedule(fact.v);
   return LABELS[def.key]?.[fact.v] ?? fact.v.replace(/_/g, " ");
+}
+
+const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+const pct = (r: number) => `${Number((r * 100).toFixed(2))}%`;
+
+/** Brackets in words: "2% to 5% in 3 brackets · $3,000 deduction (single)", "None". */
+function formatSchedule(v: string): string {
+  const s = parseSchedule(v);
+  if (s === "none") return "None";
+  if (!s) return v;
+  const rates = s.single.map((b) => b.rate).filter((r) => r > 0);
+  const lo = Math.min(...rates);
+  const hi = Math.max(...rates);
+  const head = lo === hi ? `${pct(hi)} flat` : `${pct(lo)} to ${pct(hi)} in ${s.single.length} brackets`;
+  const extras = [
+    s.deduction[0] > 0 ? `${usd(s.deduction[0])} deduction` : null,
+    s.exemption[0] > 0 ? `${usd(s.exemption[0])} exemption` : null,
+    s.credit[0] > 0 ? `${usd(s.credit[0])} credit` : null,
+  ].filter(Boolean);
+  return extras.length ? `${head} · ${extras.join(", ")} (single)` : head;
+}
+
+/** Each state's income tax brackets (`income_tax_brackets`), for the Taxes estimate. */
+export function taxSchedules(laws: LawData | null): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
+  for (const [st, facts] of Object.entries(laws?.states ?? {})) {
+    const f = facts.income_tax_brackets;
+    out[st] = f && !isGap(f) ? f.v : null;
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

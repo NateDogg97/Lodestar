@@ -5,7 +5,7 @@
 > If something here conflicts with what you actually built, the code is right and this file is
 > stale — fix the file.
 >
-> Last updated: 2026-10-04
+> Last updated: 2026-10-12
 >
 > **Changelog**
 > - 2026-10-04 — **Fewer filters; who lives here.** Filters drop the cost-of-living
@@ -2020,6 +2020,100 @@ equality metric… or even racial stats on the area or county page."
       - Never a filter on a single race's share.
 - [ ] Not changed: unemployment stays a county-wide priority; county population stays.
 
+### Phase 10 — Results that don't mislead (2026-10-12) ✅ **BUILT, tested locally — production data not yet uploaded**
+
+Owner: "the results can highlight outliers and ignore good valid results" — good schools +
+low taxes put Jackson Hole (homes $1.5–3.5M) at #1–#6 and Wyoming filled the top 100.
+Diagnosis in the Tuning track (2026-10-12). The averaging is sound (tested: a log-scale
+transform and geometric/power means change nothing at the top), so percentiles and the
+weighted mean stay. What misled: three measures, unasked-for extremes, noise, near-ties.
+
+**10a. Cost of living below the metro** (`etl/rpp_local.py`, run in `join.build()` and on
+the published file with `python -m etl.rpp_local --published`). Each county's rents
+component is its parent's (metro, or the whole state outside metros) × (its ACS rent ÷ the
+parent's population-weighted rent)^b; all items move by (rents ratio)^g. b = 1.17 and
+g = 0.215, fitted across BEA's 387 metros each run; parents keep their published level
+(metro counties average back to the metro, median error 0.00).
+- [x] Check, not fitted to: non-metro counties average **89.1** vs BEA's national non-metro
+      **88.7** (was 95.3); rents 62.6 vs 59.9 (was 85.2). The CLI refuses to publish if the
+      gap passes 3 points.
+- [x] Teton WY 92.7 → **107.8**, Pitkin CO 103 → 107, Nantucket 106 → 112, Los Alamos 92 → 98,
+      Oglala Lakota 89 → 79; Manhattan 117 / Bronx 106 (were both 112.6). The county page's
+      "i" names the parent's figure. `rpp_all_parent`, `rpp_rents_parent` kept in the file.
+
+**10b. Taxes as dollars, one priority.**
+- [x] Law `income_tax_brackets` (LAWS.md §12): Tax Foundation's standalone table (Feb 11,
+      2026), single and joint brackets, deduction, exemption or credit; refreshed with
+      `etl.laws.refresh --only income_tax_brackets` (51 rows, nothing else touched).
+- [x] **Taxes** (`src/lib/scoring/taxes.ts`), county-wide, $/yr, lower only: property tax
+      (county rate × your budget when buying, else the county's typical home; 0 for renters,
+      it's in the rent) + state income tax on your income (else the US median, $78,538, ACS
+      B19013) filing jointly unless set + sales tax on 25% of income
+      (`TAXABLE_SPENDING_SHARE`: Tax Foundation's state sales tax bases run 23–31% of
+      personal income and include business purchases). Not counted: local income taxes.
+- [x] The three rates are must-have limits only (`LIMIT_ONLY`); saved searches and links
+      fold their weights into Taxes (largest). Taxes is also a must-have limit ($/yr).
+- [x] Decided: property tax on the **county's** typical home, not the area's. The area basis
+      re-measures home price (double counting with home value / budget) and brought back the
+      $56k Boca 55+ condos (#2). Cost: a pricey neighbourhood in a cheap county (Knoxville's
+      west end) shows its county's taxes — its home value warns when it's top-5%.
+
+**10c. What I'm looking for** (Filters → Priorities, first section). Buy / rent / not sure,
+budget, income, filing. `Preferences.household`: on this device only, never in a link
+(a link or saved search opened keeps the device's; Defaults keeps it; Clear all clears it).
+- [x] With a budget, home value (or rent) scores fit: 100 at or under, 0 at 1.5×
+      (`budgetPoints`); no "cheapest" badges or top-1% claims on fit. A new budget turns that
+      priority on at 3 if it was off (`withHousehold`).
+
+**10d. "Watch out"** under results (areas, counties) and on the area page: worst 5% of US
+areas on home value, rent, violent crime, hazard risk — or of counties on taxes, cost of
+living, home value, hazard — when that measure isn't weighted. Ranking unchanged.
+- [x] built (`areaWatchOuts`, `countyWatchOuts`).
+
+**10e. Noise at the extremes** (`etl/tracts/shrink.py`, in `etl.tracts.national`): scoring
+columns `*_eb` for home value, rent, income (Fay–Herriot on the log scale toward the county,
+from published margins) and crime (Poisson–gamma per state over agencies). Shown values and
+limits are as published; a part ranked on an estimate ≥5% off says "ranked as ≈ $X".
+- [x] built; areas.json 14.3 → 16.6 MB raw. **Finding:** it moves noisy values a lot (a Flint
+      area $16k → $21k ranked; a 0-crime 3,390-person agency → 28/100k) but small areas stay
+      over-represented at the extremes (rent 10.2% → 7.0%, home value 17.9% → 16.3%) —
+      most small-area extremes are real places (urban cores, enclaves), not sampling noise.
+      Kept: correct, and cheap at query time.
+
+**10f. Near-ties.** Ranks read "=2" when shown scores match (`rankLabels`); "#1 best match"
+becomes "Tied for #1"; the county map's colour span is at least 20 points (`MIN_COLOR_SPAN`).
+- [x] built
+
+**Results** (scratch harness and `npm run audit:results`, 80 searches, all passing):
+- Schools 5 + Taxes 3: Jackson's best area **#6,638** (was #1); top 100 FL 41, WY 21, TN 13,
+  NV 9, ND 6… (was WY 76, FL 24). Pitkin #10,301, Blaine #9,641, Nantucket #46,896.
+- Same, buying on $500k with $120k income: Gulf Coast FL, Knoxville, Laramie — typical homes
+  $370–490k, schools 91st–94th pctl; Naples carries its hurricane-risk watch-out.
+- Budget $350k + schools + safety: Pittsburgh and Ohio suburbs (Bethel Park, Mt. Lebanon).
+- Taxes at a $400k income: New Hampshire first (no wage income or sales tax), then WY, SD, FL.
+- Cheapest homes: urban cores, each warned "More violent crime than 95–99% of US areas".
+- Five new audit scenarios lock these in (`outliers` in scripts/audit/scenarios.ts).
+- Three older expectations moved because rural cost of living is now right (comments in
+  scenarios.ts): a 26°F east-Tennessee town reaches #13 of "retire warm" on cost — winter
+  weighs 4 of 18 there; a hard line belongs in Must-haves.
+- Live on localhost (Playwright, desktop and 390 px): old three-tax links rewrite to
+  `w=taxes:3`; the household section, budget note, Taxes "i" and must-have rates render; no
+  console errors.
+
+**Still open**
+- [ ] **Reach production.** This work was done in a fork (`zamays/Lodestar`); production
+      deploys from `NateDogg97/Lodestar` (Vercel) and its R2 bucket. A merged PR ships the
+      code, `counties.json` and `laws.json`; the parent's `tracts-refresh` workflow (monthly,
+      or run by hand) then publishes `areas.json` with the `*_eb` columns — or the owner runs
+      `etl.tracts.upload` with the R2 keys. Until then areas rank on published values (the
+      app falls back per value).
+- [ ] Owner: Taxes basis without a budget (county typical home — chosen above — vs a fixed
+      national home, which would measure tax *policy* only).
+- [ ] Owner: the watch-out line at 5% (vs 10%: more cautions, more noise).
+- [ ] Later: share of owned homes under the budget (ACS B25075) instead of fit to the
+      typical home; local income taxes; filing-status-aware sales tax; county-level
+      cost of living beyond rents (goods/services still the state's or metro's).
+
 ### Phase 9 — First-run tutorial (added 2026-10-01) ✅ **BUILT 2026-10-04**
 
 The app has a lot in it (priorities, must-haves, climate cards, saved searches, the map,
@@ -2157,4 +2251,45 @@ Budget most of the iteration time there, not on infrastructure.
 Not a phase — a habit. Run real searches, note where a ranking feels wrong, and write down
 *why* before changing anything. Log findings here with the date, the search, and what changed.
 
-- *(no entries yet)*
+- **2026-10-12 — "good schools + low taxes" puts Jackson Hole first.** Search: nearby
+  schools 5; income tax, property tax and sales tax 3 each. Reproduced with the app's own
+  code over the live `areas.json`: Teton County, WY holds #1–#6, and the top 100 is 76 WY,
+  24 FL. Homes there run $1.5–3.5M (99th–100th percentile). Fixed in Phase 10 (§9);
+  findings, worst first:
+  - [x] **Cost of living is wrong, not just coarse, for resort counties.** *(Phase 10a)* Non-metro counties
+        take the statewide RPP (§4 "County-level RPP assignment"), so Teton WY reads 92.7
+        (cheaper than ~79% of areas); same for Blaine/Teton/Valley ID, Flathead MT, Los
+        Alamos NM, Kendall TX. §4 assumed "lost resolution, not wrong ordering"; this is
+        wrong ordering. Fix: the §4 plan already written — swap the rents component for the
+        local ACS rent/home value and recombine with BEA weights.
+  - [x] **"Low taxes" is measured by rate, not by what a household pays.** *(Phase 10b)* Teton's property
+        tax rate (0.385%) is lower than 98% of areas; the bill on its typical home
+        ($7.7k–13.6k/yr) is higher than 87–97%. Rank correlation of rate with bill is only
+        0.46. Replacing the rate with rate × the area's home value drops Teton to #182.
+        Recommendation: one "Taxes" priority as estimated yearly dollars for a household
+        buying the typical home (property bill + state income tax on a reference income +
+        sales tax on reference spending). Guard it like mobile homes: the bill variant
+        surfaced Boca Raton 33434 (likely Century Village, 55+ condos, $56–110k) at #2.
+  - [x] **One wish became three votes, all state-wide.** *(Phase 10b)* Income and sales tax are the same in
+        every area of a state, and 20% of all areas tie at 100 points on a 0% income tax.
+        56% of this search's score variance is between states, so it reduces to "pick
+        Wyoming". Recommendation: group correlated measures into one theme slider (taxes,
+        cost, crime), and show each level's effective share of the score.
+  - [x] **What wasn't asked is invisible.** *(Phase 10d)* 7 of the top 25 have homes over the 95th
+        percentile, rent over the 95th, or a top-10% tax bill, and the list says nothing.
+        Recommendation: an always-on "Watch out" line for any result in the worst 5% on
+        home price, rent, violent crime or hazard risk when that measure isn't weighted.
+        Changes no ranking.
+  - [x] **Small areas own the extremes.** *(Phase 10e — mostly real, see there)* Areas under 1,500 people are 3.7% of areas but
+        10–18% of the most extreme 1% of home value, income, rent and violent crime
+        (58–63% low-confidence vs 43% base). Recommendation: empirical-Bayes shrinkage in
+        the ETL (Fay–Herriot toward the county for ACS medians, using their margins;
+        Poisson–gamma for crime, which already has person-years of exposure).
+  - [x] **The map stretches 8 points into red-to-green.** *(Phase 10f)* #1 scores 96.7, #50 scores 88.7.
+        With the ties (16 distinct scores in the top 25) this presents near-equals as
+        decided. See the open "Ties at the top" item.
+  - Tested and **not** the cause: a magnitude-aware transform (robust z of log value, then
+        logistic) gives home value the same points as percentiles (log home values are
+        close to normal). Geometric and power means (p = −2) change nothing at the top: with
+        84k areas, the top 25 has no weak link (worst asked part ≥ 79 points) under any of
+        them. Keep percentiles and the weighted mean.

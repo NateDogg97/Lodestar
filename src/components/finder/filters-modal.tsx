@@ -8,9 +8,13 @@ import {
   CLIMATE_FAMILIES,
   DIRECTIONS,
   formatValue,
+  LIMIT_ONLY,
   MAX_WEIGHT,
   METRICS,
   NOT_IN_FILTERS,
+  TAXABLE_SPENDING_SHARE,
+  US_MEDIAN_HOUSEHOLD_INCOME,
+  type Household,
   type CategoryDef,
   type CategoryKey,
   type Direction,
@@ -26,7 +30,7 @@ import { Icon } from "@/components/ui/icons";
 
 import { ClimateIcon } from "./climate-icons";
 import { SavedSearches } from "./saved-searches";
-import type { Preferences } from "./preferences";
+import { budgetColumn, withHousehold, type Preferences } from "./preferences";
 
 /**
  * The two halves of a search (plan §9 Phase 7a): Priorities rank places
@@ -39,9 +43,11 @@ import type { Preferences } from "./preferences";
  */
 export type FiltersMode = "priorities" | "musts";
 
-type SectionId = AreaGroup | "states" | "policies";
+type SectionId = AreaGroup | "states" | "policies" | "you";
 
-const SECTIONS: { id: SectionId; label: string; mustsOnly?: boolean }[] = [
+const SECTIONS: { id: SectionId; label: string; mustsOnly?: boolean; prioritiesOnly?: boolean }[] = [
+  // Phase 10c (2026-10-12): who's moving, so budget and taxes are about them.
+  { id: "you", label: "What I’m looking for", prioritiesOnly: true },
   { id: "states", label: "States", mustsOnly: true },
   // Cost of living, housing and taxes are one section (owner, 2026-10-04: fewer filters,
   // grouped): what it costs to live here.
@@ -56,6 +62,8 @@ const SECTIONS: { id: SectionId; label: string; mustsOnly?: boolean }[] = [
 ];
 
 const SECTION_TIPS: Partial<Record<SectionId, string>> = {
+  you:
+    "All optional. A budget scores home value (or rent) by fit — full marks at or under it, none at 1.5× it — instead of “cheaper is better”. Income and filing set the Taxes estimate. Kept on this device only: links you share never include them.",
   hazards:
     "FEMA National Risk Index (Dec 2025): where an area ranks nationally on the share of its buildings, people and farms expected to be lost to each hazard in a typical year.",
   safety: "FBI crime rates for the police agency covering each area.",
@@ -81,6 +89,25 @@ const COUNTY_NOTES: Partial<Record<MetricKey, string>> = {
   unemployment_rate: "Share of the county's labor force looking for work (BLS, latest yearly average).",
 };
 
+const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+
+/** The Taxes "i": what it adds up, for this household (Phase 10b). */
+function taxesNote(h: Household): string {
+  const income = h.income ?? US_MEDIAN_HOUSEHOLD_INCOME;
+  const who = h.income ? `your ${usd(income)} income` : `a ${usd(income)} income (the US median household)`;
+  const home =
+    h.tenure === "rent"
+      ? "Renting: property tax is in the rent, so it isn’t counted."
+      : h.tenure === "buy" && h.budget
+        ? `Property tax: the county’s rate on your ${usd(h.budget)} budget.`
+        : "Property tax: the county’s rate on its typical home (set a budget in What I’m looking for to use yours).";
+  return `Dollars a year, in each county: ${home} State income tax on ${who}, filing ${
+    h.filing === "single" ? "single" : "jointly"
+  }, from the state’s brackets (Tax Foundation). Sales tax at the state and average local rate on about ${Math.round(
+    TAXABLE_SPENDING_SHARE * 100,
+  )}% of that income. Not counted: local income taxes (NYC, Ohio cities, Maryland counties…), federal taxes.`;
+}
+
 const DIRECTION_LABELS: Record<Direction, string> = {
   lower: "Lower",
   middle: "Average",
@@ -98,7 +125,11 @@ function sectionCategories(id: SectionId): (typeof CATEGORIES)[number][] {
 
 /** How many filters in a section are doing something, in one mode. */
 function sectionCount(prefs: Preferences, mode: FiltersMode, id: SectionId): number {
-  const metrics = countyMetrics(id);
+  if (id === "you") {
+    const h = prefs.household;
+    return mode === "priorities" ? [h.tenure, h.budget, h.income].filter((v) => v !== undefined).length : 0;
+  }
+  const metrics = countyMetrics(id, mode);
   const areas = areaMeasures(id);
   if (mode === "priorities") {
     return (
@@ -117,19 +148,27 @@ function sectionCount(prefs: Preferences, mode: FiltersMode, id: SectionId): num
 const SECTION_GROUPS: Partial<Record<SectionId, readonly AreaGroup[]>> = { housing: ["cost", "housing", "taxes"] };
 const groupsOf = (id: SectionId): readonly string[] => SECTION_GROUPS[id] ?? [id];
 
-/** A section's county-wide measures: not the ones that are by area now, nor the ones that aren't filters. */
-const countyMetrics = (id: SectionId) => {
+/**
+ * A section's county-wide measures: not the ones that are by area now, nor the ones that
+ * aren't filters; the tax rates only as must-haves (Taxes is their priority, Phase 10b).
+ */
+const countyMetrics = (id: SectionId, mode: FiltersMode) => {
   const groups = groupsOf(id);
-  return METRICS.filter((m) => groups.includes(m.group) && !COUNTY_METRICS_NOW_AREA.has(m.key) && !NOT_IN_FILTERS.has(m.key)).sort(
-    (a, b) => groups.indexOf(a.group) - groups.indexOf(b.group),
-  );
+  return METRICS.filter(
+    (m) =>
+      groups.includes(m.group) &&
+      !COUNTY_METRICS_NOW_AREA.has(m.key) &&
+      !NOT_IN_FILTERS.has(m.key) &&
+      !(mode === "priorities" && LIMIT_ONLY.has(m.key)),
+  ).sort((a, b) => groups.indexOf(a.group) - groups.indexOf(b.group));
 };
 const areaMeasures = (id: SectionId) => AREA_PRIORITIES.filter((d) => groupsOf(id).includes(d.group));
 
 /** Active filters per mode — for the Filters button badge and the mode switch. */
 export function countActiveFilters(prefs: Preferences): Record<FiltersMode, number> {
   const out = { priorities: 0, musts: 0 };
-  for (const s of SECTIONS) {
+  // What I'm looking for describes the person, not a priority: its badge is on its section only.
+  for (const s of SECTIONS.filter((x) => x.id !== "you")) {
     out.priorities += sectionCount(prefs, "priorities", s.id);
     out.musts += sectionCount(prefs, "musts", s.id);
   }
@@ -191,11 +230,11 @@ export function FiltersModal({
   const [mode, setMode] = useState<FiltersMode>("priorities");
   // The Saved button swaps the body for saved and recent searches; the tabs,
   // or the button again, bring the filters back.
-  const [section, setSection] = useState<SectionId>("housing");
+  const [section, setSection] = useState<SectionId>("you");
   const pane = useRef<HTMLDivElement>(null);
   const active = countActiveFilters(prefs);
 
-  const sections = SECTIONS.filter((s) => mode === "musts" || !s.mustsOnly);
+  const sections = SECTIONS.filter((s) => (mode === "musts" ? !s.prioritiesOnly : !s.mustsOnly));
   const current = sections.some((s) => s.id === section) ? section : sections[0].id;
 
   // One page of every section (owner, 2026-10-04): scroll through them all; the list on
@@ -299,7 +338,7 @@ export function FiltersModal({
                 setMode(m);
                 setSavedOpen(false);
                 // Back to the top: the first section this mode shows.
-                setSection(SECTIONS.find((x) => m === "musts" || !x.mustsOnly)!.id);
+                setSection(SECTIONS.find((x) => (m === "musts" ? !x.prioritiesOnly : !x.mustsOnly))!.id);
                 pane.current?.scrollTo({ top: 0 });
               }}
               className={`rounded-full px-2.5 py-1.5 text-label font-medium whitespace-nowrap sm:px-3 ${
@@ -385,7 +424,7 @@ export function FiltersModal({
         >
           {sections.map(({ id }) => {
             const def = SECTIONS.find((x) => x.id === id)!;
-            const metrics = countyMetrics(id);
+            const metrics = countyMetrics(id, mode);
             const areas = areaMeasures(id);
             // Climate type and states get their own pickers (family cards, a state grid).
             const categories =
@@ -420,6 +459,13 @@ export function FiltersModal({
                 />
               )}
               {showClimatePicker && <h4 className="mt-6 mb-3 text-label font-semibold">Limits</h4>}
+              {id === "you" && (
+                <HouseholdCard
+                  key={`household-${resetKey}`}
+                  household={prefs.household}
+                  onChange={(h) => onChange(withHousehold(prefs, h))}
+                />
+              )}
               <div className="grid grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] gap-3">
                 {areas.map((d) =>
                   mode === "priorities" ? (
@@ -432,6 +478,7 @@ export function FiltersModal({
                       weight={prefs.area.weights[d.key] ?? 0}
                       direction={prefs.area.directions[d.key] ?? d.defaultDirection}
                       typical="Aiming for the typical US area"
+                      budget={budgetColumn(prefs.household) === d.key ? prefs.household.budget : undefined}
                       onWeight={(w) => onChange({ ...prefs, area: { ...prefs.area, weights: { ...prefs.area.weights, [d.key]: w } } })}
                       onDirection={(dir) =>
                         onChange({ ...prefs, area: { ...prefs.area, directions: { ...prefs.area.directions, [d.key]: dir } } })
@@ -462,7 +509,8 @@ export function FiltersModal({
                       id={m.key}
                       label={m.label}
                       level="county"
-                      note={COUNTY_NOTES[m.key]}
+                      note={m.key === "taxes" ? taxesNote(prefs.household) : COUNTY_NOTES[m.key]}
+                      fixed={"fixedDirection" in m}
                       weight={prefs.weights[m.key] ?? 0}
                       direction={prefs.directions[m.key] ?? m.defaultDirection}
                       typical={ranges[m.key] ? `Aiming for the typical county: ${formatValue(m.key, ranges[m.key]!.median)}` : undefined}
@@ -476,7 +524,7 @@ export function FiltersModal({
                       id={m.key}
                       label={m.label}
                       level="county"
-                      note={COUNTY_NOTES[m.key]}
+                      note={m.key === "taxes" ? taxesNote(prefs.household) : COUNTY_NOTES[m.key]}
                       unit={m.unit}
                       limit={prefs.limits[m.key]}
                       placeholders={ranges[m.key] ? [plainNumber(ranges[m.key]!.min), plainNumber(ranges[m.key]!.max)] : undefined}
@@ -828,6 +876,8 @@ function PriorityCard({
   direction,
   typical,
   source,
+  fixed,
+  budget,
   onWeight,
   onDirection,
 }: {
@@ -840,6 +890,10 @@ function PriorityCard({
   direction: Direction;
   /** Shown when "Average" is chosen: what that aims for. */
   typical?: string;
+  /** One "better" only (Taxes): no direction control. */
+  fixed?: boolean;
+  /** Scored against this budget (Phase 10c): replaces the direction control. */
+  budget?: number;
   source?: LawSourceSummary;
   onWeight: (w: number) => void;
   onDirection: (d: Direction) => void;
@@ -862,7 +916,13 @@ function PriorityCard({
             : "bg-emerald-600 font-semibold text-white"
         }
       />
-      {weight > 0 && (
+      {weight > 0 && budget !== undefined && (
+        <p className="mt-3 text-caption text-emerald-800 dark:text-emerald-300">
+          Scored against your {label === "Rent" ? `${usd(budget)}/mo` : usd(budget)} budget: full marks at or under it, none
+          at 1.5× it.
+        </p>
+      )}
+      {weight > 0 && !fixed && budget === undefined && (
         <>
           <p id={`${titleId}-dir`} className="mt-3 mb-1.5 text-caption text-neutral-500 dark:text-neutral-400">
             Better
@@ -1063,5 +1123,115 @@ function CategoryCard({
         )}
       </div>
     </Card>
+  );
+}
+
+/**
+ * What I'm looking for (Phase 10c, 2026-10-12): buy or rent, a budget, income and filing.
+ * All optional; on this device only. A new budget turns its measure on (`withHousehold`).
+ */
+function HouseholdCard({ household: h, onChange }: { household: Household; onChange: (h: Household) => void }) {
+  const set = (patch: Partial<Household>) => {
+    const next: Household = { ...h, ...patch };
+    for (const k of Object.keys(next) as (keyof Household)[]) if (next[k] === undefined) delete next[k];
+    onChange(next);
+  };
+  const pressed = () => "bg-neutral-800 font-semibold text-white dark:bg-neutral-200 dark:text-neutral-900";
+  return (
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] gap-3">
+      <Card active={h.tenure !== undefined || h.budget !== undefined}>
+        <CardTitle id="you-tenure" label="Buying or renting" />
+        <div className="mt-3">
+          <Segmented
+            labelledBy="you-tenure"
+            options={[
+              { value: "buy", label: "Buying" },
+              { value: "rent", label: "Renting" },
+              { value: "", label: "Not sure" },
+            ]}
+            value={h.tenure ?? ""}
+            onChange={(v) => set({ tenure: v === "" ? undefined : (v as Household["tenure"]), budget: undefined })}
+            pressedClass={pressed}
+          />
+        </div>
+        {h.tenure && (
+          <div className="mt-3">
+            <MoneyField
+              key={h.tenure}
+              id="you-budget"
+              label={h.tenure === "buy" ? "Home budget" : "Rent budget"}
+              unit={h.tenure === "buy" ? "$" : "$/mo"}
+              placeholder={h.tenure === "buy" ? "e.g. 450000" : "e.g. 1800"}
+              value={h.budget}
+              onChange={(budget) => set({ budget })}
+            />
+          </div>
+        )}
+      </Card>
+      <Card active={h.income !== undefined}>
+        <CardTitle id="you-income" label="Household income" />
+        <div className="mt-3">
+          <MoneyField
+            id="you-income-field"
+            label="Per year"
+            unit="$"
+            placeholder={`${US_MEDIAN_HOUSEHOLD_INCOME} (US median)`}
+            value={h.income}
+            onChange={(income) => set({ income })}
+          />
+        </div>
+        <p id="you-filing" className="mt-3 mb-1.5 text-caption text-neutral-500 dark:text-neutral-400">
+          Filing taxes
+        </p>
+        <Segmented
+          labelledBy="you-income you-filing"
+          options={[
+            { value: "joint", label: "Jointly" },
+            { value: "single", label: "Single" },
+          ]}
+          value={h.filing ?? "joint"}
+          onChange={(v) => set({ filing: v as Household["filing"] })}
+          pressedClass={pressed}
+        />
+      </Card>
+    </div>
+  );
+}
+
+function MoneyField({
+  id,
+  label,
+  unit,
+  placeholder,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  unit: string;
+  placeholder: string;
+  value: number | undefined;
+  onChange: (v: number | undefined) => void;
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="mb-1 block text-caption text-neutral-500 dark:text-neutral-400">
+        {label} <span className="text-neutral-400 dark:text-neutral-500">({unit})</span>
+      </label>
+      <input
+        id={id}
+        type="number"
+        inputMode="numeric"
+        min={0}
+        defaultValue={value ?? ""}
+        placeholder={placeholder}
+        onChange={(e) => {
+          const n = Number(e.target.value.trim());
+          onChange(e.target.value.trim() !== "" && Number.isFinite(n) && n > 0 ? n : undefined);
+        }}
+        // 16px on phones so iOS doesn't zoom into the field.
+        className="h-10 w-full rounded-lg border border-neutral-300 bg-transparent px-3 text-body tabular-nums placeholder:text-neutral-400 md:text-label dark:border-neutral-700"
+      />
+    </div>
   );
 }

@@ -57,7 +57,7 @@ FETCHERS: dict[str, Callable[[date], SourceResult | tuple[SourceResult, ...]]] =
 }
 # Which law keys each fetcher produces, for --only and for failure reporting.
 PRODUCES = {
-    "taxfoundation.income_tax": ("income_tax_top_rate", "income_tax_structure"),
+    "taxfoundation.income_tax": ("income_tax_top_rate", "income_tax_structure", "income_tax_brackets"),
     "taxfoundation.sales_tax": ("sales_tax_combined",),
     "taxfoundation.groceries": ("grocery_tax_exempt",),
     "ncsl.minimum_wage": ("minimum_wage",),

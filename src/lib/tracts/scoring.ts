@@ -132,6 +132,8 @@ export interface AreaSearch {
   areaWeights: Partial<Record<string, number>>;
   areaDirections: Partial<Record<string, Direction>>;
   areaLimits: Partial<Record<string, { min?: number; max?: number }>>;
+  /** Phase 10c: a budget for this measure (home price or monthly rent) scores fit to it. */
+  budgets?: Partial<Record<string, number>>;
 }
 
 /** One area-level measure ranking areas. */
@@ -140,6 +142,8 @@ export interface AreaCriterion {
   label: string;
   weight: number;
   direction: Direction;
+  /** Scored as fit to this budget instead of by direction (`budgetPoints`). */
+  budget?: number;
 }
 
 export interface AreaLimit {
@@ -159,8 +163,10 @@ export function areaCriteria(search: AreaSearch): { criteria: AreaCriterion[]; l
   for (const def of AREA_PRIORITIES) {
     const weight = clampWeight(search.areaWeights[def.key]);
     if (weight > 0) {
+      const budget = search.budgets?.[def.key];
       criteria.push({ column: def.key, label: def.label, weight,
-        direction: search.areaDirections[def.key] ?? def.defaultDirection });
+        direction: budget ? "lower" : search.areaDirections[def.key] ?? def.defaultDirection,
+        ...(budget ? { budget } : {}) });
     }
     const l = search.areaLimits[def.key];
     if (l && (l.min !== undefined || l.max !== undefined)) limits.push({ column: def.key, label: def.label, ...l });

@@ -23,19 +23,34 @@ export interface Findings {
 
 const sortedCache = new WeakMap<NationalAreas, Map<string, Float64Array>>();
 
+/**
+ * The value a measure is ranked on, re-derived independently (Phase 10e): its `_eb`
+ * estimate column where the file has one and both are known, else the published value.
+ */
+export function scoredAt(areas: NationalAreas, column: string, i: number): number {
+  const raw = areas.values.get(column)?.[i] ?? NaN;
+  const est = areas.values.get(`${column}_eb`)?.[i] ?? NaN;
+  return Number.isFinite(raw) && Number.isFinite(est) ? est : raw;
+}
+
 export function sortedResidential(areas: NationalAreas, column: string): Float64Array {
   let cache = sortedCache.get(areas);
   if (!cache) sortedCache.set(areas, (cache = new Map()));
   let s = cache.get(column);
   if (!s) {
-    const col = areas.values.get(column);
     const xs: number[] = [];
-    if (col) for (let i = 0; i < areas.n; i++) if (!Number.isNaN(col[i]) && !notResidential(areas, i)) xs.push(col[i]);
+    for (let i = 0; i < areas.n; i++) {
+      const v = scoredAt(areas, column, i);
+      if (!Number.isNaN(v) && !notResidential(areas, i)) xs.push(v);
+    }
     s = Float64Array.from(xs.sort((a, b) => a - b));
     cache.set(column, s);
   }
   return s;
 }
+
+/** Fit to a budget, re-derived (Phase 10c): 100 at or under it, 0 at 1.5× it. */
+const budgetFit = (v: number, b: number) => (v <= b ? 100 : Math.max(0, (100 * (1.5 * b - v)) / (0.5 * b)));
 
 const sortedCounties = new WeakMap<Float64Array, Float64Array>();
 function sortedKnown(col: Float64Array): Float64Array {
@@ -119,8 +134,16 @@ export function automaticChecks(r: RunResult): Findings {
       sum += p.weight * (p.points ?? 50);
       w += p.weight;
       if (p.value === null) continue;
+      if (p.budget !== undefined) {
+        const want = budgetFit(scoredAt(areas, p.key, i), p.budget);
+        if (p.points === null || Math.abs(want - p.points) > 0.01) {
+          f.hard.push(`budget fit contradicts the value: ${areas.name[i]} ${p.key}=${p.value} shown ${p.points?.toFixed(2)}, derived ${want.toFixed(2)}`);
+        }
+        if (p.beats !== null) f.hard.push(`a rarity claim on budget fit: ${areas.name[i]} ${p.key}`);
+        continue;
+      }
       const d = p.level === "area"
-        ? derive(sortedResidential(areas, p.key), p.value, p.direction)
+        ? derive(sortedResidential(areas, p.key), scoredAt(areas, p.key, i), p.direction)
         : derive(sortedKnown(r.counties.values[p.key as MetricKey]), p.value, p.direction);
       if (p.points === null || Math.abs(d.points - p.points) > 0.01) {
         f.hard.push(`points contradict the value: ${areas.name[i]} ${p.key}=${p.value} shown ${p.points?.toFixed(2)} pts, derived ${d.points.toFixed(2)}`);
@@ -174,7 +197,7 @@ export function automaticChecks(r: RunResult): Findings {
         f.hard.push(`badge without a priority: ${label}`);
         continue;
       }
-      const d = derive(sortedResidential(areas, c.column), r.value(i, c.column), c.direction);
+      const d = derive(sortedResidential(areas, c.column), scoredAt(areas, c.column, i), c.direction);
       if ((d.beats ?? 0) < 99) f.hard.push(`false "Top 1%": ${areas.name[i]} ${c.column}=${r.value(i, c.column)} beats only ${d.beats?.toFixed(1)}%`);
     }
     for (const label of b.best) {

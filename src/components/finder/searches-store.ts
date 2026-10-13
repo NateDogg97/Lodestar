@@ -86,6 +86,7 @@ export function initialSearch(): SharedSearch {
   const shared = decodeSearch(new URLSearchParams(window.location.search));
   if (!shared) return { prefs: saved ?? DEFAULT_PREFERENCES, place: null };
   if (saved && searchKey(saved) !== searchKey(shared.prefs)) addRecent(saved);
-  return shared;
+  // A link never carries a household (privacy): this device's stays.
+  return { ...shared, prefs: { ...shared.prefs, household: saved?.household ?? {} } };
 }
 

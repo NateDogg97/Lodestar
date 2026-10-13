@@ -26,6 +26,14 @@
  * - A county-wide priority the county has no value for counts as average (50), like an
  *   area one (`countyParts` used to drop it).
  * - Each part says whether its value is low confidence (`flagged`), so lists can show it.
+ *
+ * Results that don't mislead (Phase 10, 2026-10-12):
+ * - Home value, rent, income and crime rank by their empirical-Bayes estimate (`*_eb`,
+ *   etl/tracts/shrink.py) where the file has one: a noisy small-sample value is weighed
+ *   toward its county's typical area. Shown values and must-have limits are as published.
+ * - With a budget, home value (or rent) scores fit to it (`budgetPoints`), not "cheaper
+ *   is better" — so the cheapest extremes stop winning.
+ * - `areaWatchOuts`: what a result is worst at among measures nobody asked about.
  */
 
 import {
@@ -165,10 +173,21 @@ const pctCache = new WeakMap<NationalAreas, Map<string, Float64Array>>();
 const boundsCache = new WeakMap<NationalAreas, Map<string, PercentileBounds>>();
 const rankedCache = new WeakMap<NationalAreas, Map<string, Float64Array>>();
 
+/** Measures ranked by their empirical-Bayes estimate where the file has one (Phase 10e). */
+export const SCORED_AS: Partial<Record<string, string>> = {
+  median_home_value: "median_home_value_eb",
+  median_gross_rent: "median_gross_rent_eb",
+  median_household_income: "median_household_income_eb",
+  violent_rate: "violent_rate_eb",
+  property_rate: "property_rate_eb",
+};
+
 /**
  * The column as the percentiles see it: places that can't be results (`notResidential`)
  * are NaN, so they take no part in anyone's rank — the distribution is of the places a
- * person could move to. (Their own points come out NaN; they're never listed.)
+ * person could move to. (Their own points come out NaN; they're never listed.) A measure
+ * in `SCORED_AS` uses its estimate wherever the published value is known and the estimate
+ * is too (an older file, or an area merged from one, has none: its value as published).
  */
 function rankedColumn(areas: NationalAreas, column: string): Float64Array {
   let cache = rankedCache.get(areas);
@@ -176,11 +195,37 @@ function rankedColumn(areas: NationalAreas, column: string): Float64Array {
   let v = cache.get(column);
   if (!v) {
     const src = areas.values.get(column);
+    const est = SCORED_AS[column] ? areas.values.get(SCORED_AS[column]!) : undefined;
     v = new Float64Array(areas.n).fill(NaN);
-    if (src) for (let i = 0; i < areas.n; i++) if (!notResidential(areas, i)) v[i] = src[i];
+    if (src) {
+      for (let i = 0; i < areas.n; i++) {
+        if (notResidential(areas, i)) continue;
+        v[i] = est && Number.isFinite(src[i]) && Number.isFinite(est[i]) ? est[i] : src[i];
+      }
+    }
     cache.set(column, v);
   }
   return v;
+}
+
+/** The value an area is ranked on (its estimate, for `SCORED_AS` measures); NaN if none. */
+export function scoredValue(areas: NationalAreas, column: string, i: number): number {
+  return rankedColumn(areas, column)[i];
+}
+
+/** A budget's reach: the typical home (or rent) at this multiple of it scores 0. */
+export const BUDGET_STRETCH = 1.5;
+
+/**
+ * Fit to a budget, 0–100 (Phase 10c): 100 at or under it, falling evenly to 0 at
+ * `BUDGET_STRETCH` × it. An area's typical home a bit over budget still has homes under
+ * it; one at 1.5× rarely does. Under budget is not better than at it: that's what keeps
+ * $30k mobile-home parks and 55+ condos from winning a budget search.
+ */
+export function budgetPoints(value: number, budget: number): number {
+  if (!Number.isFinite(value) || !(budget > 0)) return NaN;
+  if (value <= budget) return 100;
+  return Math.max(0, (100 * (BUDGET_STRETCH * budget - value)) / ((BUDGET_STRETCH - 1) * budget));
 }
 
 /** An area-level column's tie groups, for points (see `percentileBounds`), computed once. */
@@ -196,7 +241,8 @@ export function areaBounds(areas: NationalAreas, column: string): PercentileBoun
 }
 
 /** An area's points on one column (0–100, higher is better), or NaN with no value. */
-export function areaPoints(areas: NationalAreas, column: string, i: number, direction: Direction): number {
+export function areaPoints(areas: NationalAreas, column: string, i: number, direction: Direction, budget?: number): number {
+  if (budget) return budgetPoints(scoredValue(areas, column, i), budget);
   const p = areaPercentiles(areas, column)[i];
   if (Number.isNaN(p)) return NaN;
   const b = areaBounds(areas, column);
@@ -298,7 +344,7 @@ export function scoreNational(areas: NationalAreas, s: NationalSearch): National
     let sum = cp.sum;
     let w = cp.weight;
     for (const c of s.criteria) {
-      const pts = areaPoints(areas, c.column, i, c.direction);
+      const pts = areaPoints(areas, c.column, i, c.direction, c.budget);
       // No value: counted as average, never dropped (it would lift the score).
       sum += c.weight * (Number.isNaN(pts) ? 50 : pts);
       w += c.weight;
@@ -381,6 +427,13 @@ export interface AreaPart {
   beats: number | null;
   /** The value is low confidence (a wide Census margin, a small police agency): show a caution. */
   flagged: boolean;
+  /** Scored as fit to this budget (Phase 10c). */
+  budget?: number;
+  /**
+   * The value it was ranked on, when that differs from the shown one by 5% or more: an
+   * estimate weighed toward its county's typical area for its wide margin (Phase 10e).
+   */
+  scored?: number;
 }
 
 /** An area's parts, most important first (the fingerprint's order). */
@@ -394,15 +447,20 @@ export function explainArea(
   const parts: AreaPart[] = s.criteria.map((c) => {
     const p = areaPercentiles(areas, c.column)[i];
     const v = areas.values.get(c.column)?.[i] ?? NaN;
-    const pts = areaPoints(areas, c.column, i, c.direction);
+    const pts = areaPoints(areas, c.column, i, c.direction, c.budget);
     const points = Number.isNaN(pts) ? null : pts;
-    return {
+    const sv = scoredValue(areas, c.column, i);
+    const part: AreaPart = {
       key: c.column, label: c.label, level: "area", direction: c.direction, weight: c.weight,
       value: Number.isNaN(v) ? null : v, rawPercentile: Number.isNaN(p) ? null : p, points,
       impact: points === null ? null : c.weight * (points - 50),
-      beats: points === null ? null : beatsAt(areaBounds(areas, c.column), i, c.direction),
+      // Rarity claims ("top 1%") don't apply to fit to a budget.
+      beats: points === null || c.budget ? null : beatsAt(areaBounds(areas, c.column), i, c.direction),
       flagged: !Number.isNaN(v) && flagged.has(c.column),
     };
+    if (c.budget) part.budget = c.budget;
+    if (Number.isFinite(sv) && Number.isFinite(v) && Math.abs(sv - v) >= 0.05 * Math.abs(v)) part.scored = sv;
+    return part;
   });
   for (const c of county?.contributions ?? []) {
     parts.push({
@@ -447,6 +505,7 @@ const COUNTY_WORDS: Partial<Record<string, [string, string]>> = {
  * "a major airport nearby", "high risk of tornadoes".
  */
 const words = (part: AreaPart, good: boolean): string => {
+  if (part.budget) return good ? `${part.key === "median_gross_rent" ? "rent" : "homes"} within your budget` : "prices over your budget";
   const def = part.level === "area" ? areaPriority(part.key) : undefined;
   if (def && part.direction === def.defaultDirection) return (good ? def.good : def.bad) ?? part.label.toLowerCase();
   const metric = part.level === "county" ? getMetric(part.key as MetricKey) : undefined;
@@ -504,6 +563,8 @@ export function resultBadges(areas: NationalAreas, top: number[], s: NationalSea
   const out = new Map<number, ResultBadges>(top.map((i) => [i, { best: [], top1: [] }]));
   if (top.length < 2) return out;
   for (const c of s.criteria) {
+    // Fit to a budget ties every area under it at 100: no "best", no rarity.
+    if (c.budget) continue;
     const def = areaPriority(c.column);
     let best = -1;
     let bestPts = -Infinity;
@@ -532,6 +593,41 @@ export function resultBadges(areas: NationalAreas, top: number[], s: NationalSea
         if (b.top1.length === 0 && (beatsAt(areaBounds(areas, c.column), i, c.direction) ?? 0) >= 99) b.top1.push(def.topBadge);
       }
     }
+  }
+  return out;
+}
+
+/** A caution on a result: a measure nobody asked about where it's among the worst in the US. */
+export interface WatchOut {
+  key: string;
+  text: string;
+}
+
+/** Among the worst this share of US places → a caution (Phase 10d). */
+export const WATCH_SHARE = 5;
+
+/** Area measures worth a caution when unasked, and how it reads with the share it's worse than. */
+const AREA_WATCH: { key: string; text: (pct: number) => string }[] = [
+  { key: "median_home_value", text: (p) => `Homes cost more than in ${p}% of US areas` },
+  { key: "median_gross_rent", text: (p) => `Rent is higher than in ${p}% of US areas` },
+  { key: "violent_rate", text: (p) => `More violent crime than ${p}% of US areas` },
+  { key: "hazard_risk", text: (p) => `Higher natural hazard risk than ${p}% of US areas` },
+];
+
+/**
+ * What an area is among the worst 5% of US areas at, on measures the search doesn't weigh
+ * (Phase 10d, 2026-10-12: Jackson Hole topped "good schools + low taxes" with homes over
+ * $2M and nothing said so). A measure weighted in any direction, or scored against a
+ * budget, is the person's own call and gets no caution. Changes no ranking.
+ */
+export function areaWatchOuts(areas: NationalAreas, i: number, s: NationalSearch): WatchOut[] {
+  const asked = new Set(s.criteria.map((c) => c.column));
+  const out: WatchOut[] = [];
+  for (const w of AREA_WATCH) {
+    if (asked.has(w.key) || !areas.values.has(w.key)) continue;
+    // Share of US areas strictly lower (better), on the value it's ranked by.
+    const below = areaBounds(areas, w.key).lo[i];
+    if (Number.isFinite(below) && below >= 100 - WATCH_SHARE) out.push({ key: w.key, text: w.text(Math.floor(below)) });
   }
   return out;
 }

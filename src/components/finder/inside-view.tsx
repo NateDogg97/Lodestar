@@ -52,6 +52,8 @@ export interface AreaRankingView {
   onReveal: (all: boolean) => void;
   /** National indices of the county's areas that fail the search (shown grey when revealed). */
   ruledOut: number[];
+  /** "Watch out" for an area: what it's among the worst in the US at, unasked (Phase 10d). */
+  watchOuts: (i: number) => { key: string; text: string }[];
   /** The county's areas the search rules out (or unknown, when unknowns are hidden). */
   hiddenCount: number;
 }
