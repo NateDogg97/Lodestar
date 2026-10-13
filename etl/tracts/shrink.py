@@ -10,7 +10,8 @@ as much as its own uncertainty says — the standard small-area estimate:
 ACS MEDIANS (home value, rent, household income) — Fay–Herriot, on the log scale
     y   = log(estimate), se = MOE / 1.645 / estimate (delta method)
     mu  = the median y of the county's residential areas (the state's, for a county
-          with fewer than MIN_COUNTY_AREAS)
+          with fewer than MIN_COUNTY_AREAS). Tax rates center on the area's city within
+          the county, and a city with too few areas on the whole county.
     tau2 = the state's spread of y around those centers, less the mean sampling
           variance (method of moments), at least TAU2_FLOOR
     B   = se² / (se² + tau2);  y_eb = y + B (mu − y)
@@ -44,8 +45,13 @@ UNKNOWN_SE = 0.5
 
 
 def shrink_log_medians(est: list[float | None], moe: list[float | None], county: list[str],
-                       state: list[str], residential: list[bool], keep: list[bool]) -> list[float | None]:
-    """Fay–Herriot estimates, same units as `est`; `keep` marks values left as published."""
+                       state: list[str], residential: list[bool], keep: list[bool],
+                       parent: list[str] | None = None) -> list[float | None]:
+    """Fay–Herriot estimates, same units as `est`; `keep` marks values left as published.
+
+    `county` is each area's center group. With `parent` (groups inside a county: its
+    cities), a group with too few areas centers on its parent — the whole county — before
+    the state."""
     n = len(est)
     y = np.full(n, np.nan)
     se2 = np.full(n, np.nan)
@@ -60,13 +66,25 @@ def shrink_log_medians(est: list[float | None], moe: list[float | None], county:
 
     usable = ~np.isnan(y) & np.array(residential)
     by_county: dict[str, list[int]] = defaultdict(list)
+    by_parent: dict[str, list[int]] = defaultdict(list)
     by_state: dict[str, list[int]] = defaultdict(list)
     for i in np.flatnonzero(usable):
         by_county[county[i]].append(i)
+        if parent is not None:
+            by_parent[parent[i]].append(i)
         by_state[state[i]].append(i)
     state_mu = {s: float(np.median(y[ix])) for s, ix in by_state.items()}
     county_mu = {c: float(np.median(y[ix])) for c, ix in by_county.items() if len(ix) >= MIN_COUNTY_AREAS}
-    mu = np.array([county_mu.get(county[i], state_mu.get(state[i], np.nan)) for i in range(n)])
+    parent_mu = {c: float(np.median(y[ix])) for c, ix in by_parent.items() if len(ix) >= MIN_COUNTY_AREAS}
+
+    def center(i: int) -> float:
+        if county[i] in county_mu:
+            return county_mu[county[i]]
+        if parent is not None and parent[i] in parent_mu:
+            return parent_mu[parent[i]]
+        return state_mu.get(state[i], np.nan)
+
+    mu = np.array([center(i) for i in range(n)])
 
     tau2 = {}
     for s, ix in by_state.items():

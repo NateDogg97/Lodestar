@@ -202,17 +202,11 @@ def _rows_from_county(payload: dict, national: dict[str, float]) -> tuple[list[l
     return out, aux
 
 
-def tax_groups(county: list[str], place: list[str | None], rate: list[float | None],
-               residential: list[bool]) -> list[str]:
+def tax_groups(county: list[str], place: list[str | None]) -> list[str]:
     """The center each area's tax rate shrinks toward: its city within the county (areas in
-    no city together), where that group has enough rated areas; else the whole county."""
-    from collections import Counter
-
-    from .shrink import MIN_COUNTY_AREAS
-
-    keys = [f"{c}|{p or ''}" for c, p in zip(county, place)]
-    n = Counter(k for k, r, res in zip(keys, rate, residential) if res and r)
-    return [k if n[k] >= MIN_COUNTY_AREAS else c for k, c in zip(keys, county)]
+    no city together). `shrink_log_medians` centers a group with too few rated areas on its
+    whole county (`parent`), not on the areas left once the cities are split off."""
+    return [f"{c}|{p or ''}" for c, p in zip(county, place)]
 
 
 def add_estimates(rows: list[list], aux: list[dict]) -> None:
@@ -240,8 +234,8 @@ def add_estimates(rows: list[list], aux: list[dict]) -> None:
     # (`tax_groups`), not on one county median that would pull a city's rate to the townships'.
     rate = [a["property_tax_rate"] for a in aux]
     eb = shrink_log_medians(rate, [a["property_tax_rate_moe"] for a in aux],
-                            tax_groups(county, [a["place"] for a in aux], rate, residential), state, residential,
-                            [False] * len(aux))
+                            tax_groups(county, [a["place"] for a in aux]), state, residential,
+                            [False] * len(aux), parent=county)
     for k in range(len(rows)):
         rows[k][at["property_tax_rate_eb"]] = _rounded("property_tax_rate_eb", eb[k])
     pop = [a["crime_population"] for a in aux]

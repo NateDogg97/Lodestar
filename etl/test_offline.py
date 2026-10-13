@@ -700,6 +700,12 @@ def test_edges_and_hazard_ratings() -> None:
     check(d[0] == 0.0, "a point inside the shape is 0 from it")
     check(abs(d[1] - 0.5 * 69.17 * np.cos(np.radians(42.5))) < 0.5, f"east of it: half a degree of longitude ({d[1]:.1f} mi)")
     check(abs(d[2] - 0.25 * 69.17 * np.cos(np.radians(42.5))) < 0.5, f"west of it: a quarter degree ({d[2]:.1f} mi)")
+    # At 45°N, 1.2° of longitude east (~59 mi) is nearer than 1.0° of latitude north (~69 mi),
+    # though it's farther in raw degrees: the nearest is chosen in miles.
+    east, north = box(-88.8, 44.5, -88.0, 45.5), box(-90.5, 46.0, -89.5, 47.0)
+    d, idx = distance_to(np.array([45.0]), np.array([-90.0]), [north, east])
+    check(idx[0] == 1 and abs(d[0] - 1.2 * 69.17 * np.cos(np.radians(45.0))) < 1.0,
+          f"the nearest in miles, not in degrees ({d[0]:.1f} mi to shape {idx[0]})")
 
     t = pd.DataFrame({"ALR_NPCTL": [4.2], "RISK_RATNG": ["Relatively Moderate"],
                       **{f"{p}_ALR_NPCTL": [10.0] for p in ("HRCN", "WFIR", "IFLD", "ERQK", "TRND", "SWND", "HAIL", "WNTW", "CWAV", "HWAV")},
@@ -1483,10 +1489,20 @@ def test_area_property_tax() -> None:
 
     county = ["26161"] * 7
     place = ["Ypsilanti"] * 3 + [None] * 3 + ["Chelsea"]
-    groups = tax_groups(county, place, [2.0, 1.9, 2.1, 1.3, 1.4, 1.5, 1.7], [True] * 7)
-    check(groups[:3] == ["26161|Ypsilanti"] * 3, "a city with 3+ rated areas is its own center", groups)
-    check(groups[3:6] == ["26161|"] * 3, "areas in no city center on each other")
-    check(groups[6] == "26161", "a city with too few rated areas centers on the county")
+    groups = tax_groups(county, place)
+    check(groups[:3] == ["26161|Ypsilanti"] * 3, "a city's areas are one group", groups)
+    check(groups[3:6] == ["26161|"] * 3, "areas in no city are one group")
+    # A wide-margin rate in a lone small city shrinks toward the whole county's median
+    # (1.7%), not the state's — the other state here sits at 1.0%.
+    from .tracts.shrink import shrink_log_medians
+    rates = [2.0, 1.9, 2.1, 1.3, 1.4, 1.5, 1.7, 1.0, 1.0, 1.0, 1.0]
+    moes = [0.05] * 6 + [1.5] + [0.05] * 4
+    eb = shrink_log_medians(rates, moes, groups + ["26999|"] * 4, ["26"] * 11, [True] * 11, [False] * 11,
+                            parent=county + ["26999"] * 4)
+    state_only = shrink_log_medians(rates, moes, groups + ["26999|"] * 4, ["26"] * 11, [True] * 11, [False] * 11)
+    check(abs(eb[6] - 1.7) < 0.05, f"a city with too few areas centers on its county ({eb[6]:.2f}%)")
+    check(state_only[6] < eb[6] - 0.05, f"without the county fallback it drifts to the state ({state_only[6]:.2f}%)")
+    check(abs(eb[0] - 2.0) < 0.05, "a big city's own tight rate barely moves")
 
     payload = {"columns": ["geoid", "low_confidence"], "rows": [["26161400100", "x"], ["26161400200", ""]]}
     by_geoid = {"26161400100": {"property_tax_rate": 1.4567, "property_tax_rate_moe": 0.2, "flags": set()},

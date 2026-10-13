@@ -149,24 +149,47 @@ def towns() -> pd.DataFrame:
 
 def distance_to(lat: np.ndarray, lon: np.ndarray, geoms: list) -> tuple[np.ndarray, np.ndarray]:
     """(miles, index of the nearest geometry) from each point to the nearest of `geoms`
-    (0 inside one). Nearest found in a plane scaled by cos(latitude) around each point."""
+    (0 inside one). Nearest found in a plane scaled by cos(latitude) around each point.
+
+    The tree's own nearest is in raw degrees, where a degree of longitude counts as much as
+    one of latitude: at 45°N a shape 1.2° east (59 mi) loses to one 1.0° north (69 mi). So
+    it only bounds the search: scaling shrinks distances by at most cos(lat), so any shape
+    nearer in miles is within d0 / cos(lat) degrees of the point, where d0 is the raw-degree
+    distance to the tree's pick. Those few candidates are compared in the scaled plane."""
     import shapely
     from shapely.ops import nearest_points
 
     tree = shapely.STRtree(geoms)
     pts = shapely.points(lon, lat)
-    idx = tree.nearest(pts)
+    first = tree.nearest(pts)
+    d0 = shapely.distance(pts, np.asarray(geoms, dtype=object)[first])
+    # Scaled copies, per shape and 0.1° latitude band: points cluster, so most are reused.
+    scaled_cache: dict[tuple[int, int], object] = {}
+
+    def scaled(gi: int, band: int, c: float):
+        key = (gi, band)
+        if key not in scaled_cache:
+            scaled_cache[key] = shapely.transform(geoms[gi], lambda xy: np.column_stack([xy[:, 0] * c, xy[:, 1]]))
+        return scaled_cache[key]
+
     out = np.empty(len(lat))
-    for k, (p, gi) in enumerate(zip(pts, idx)):
-        g = geoms[gi]
-        if g.contains(p):
+    idx = first.copy()
+    for k, p in enumerate(pts):
+        if d0[k] == 0.0:  # inside (or on the edge of) the tree's pick
             out[k] = 0.0
             continue
-        # Scale longitude around the point so "nearest" is nearest in miles, then measure it.
-        c = np.cos(np.radians(lat[k]))
-        scaled = shapely.transform(g, lambda xy: np.column_stack([xy[:, 0] * c, xy[:, 1]]))
-        _, q = nearest_points(shapely.Point(lon[k] * c, lat[k]), scaled)
-        out[k] = float(haversine_miles(lat[k], lon[k], q.y, q.x / c))
+        band = int(round(lat[k] * 10))
+        c = float(np.cos(np.radians(band / 10)))
+        here = shapely.Point(lon[k] * c, lat[k])
+        best, best_d, best_q = int(first[k]), np.inf, None
+        for gi in tree.query(p, predicate="dwithin", distance=d0[k] / c * 1.0001):
+            g = scaled(int(gi), band, c)
+            dd = here.distance(g)
+            if dd < best_d:
+                best, best_d = int(gi), dd
+                best_q = nearest_points(here, g)[1] if dd > 0 else None
+        idx[k] = best
+        out[k] = 0.0 if best_q is None else float(haversine_miles(lat[k], lon[k], best_q.y, best_q.x / c))
     return out, idx
 
 
