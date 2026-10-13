@@ -51,20 +51,25 @@ def sync(dry_run: bool, state_fips: list[str] | None = None) -> None:
     a laptop never overwrites what CI published for the others."""
     files = sorted(PUBLISH_DIR.glob("*.json"), key=lambda p: p.name == "index.json")  # index last
     if state_fips:
-        files = [p for p in files if p.name in ("index.json", "areas.json") or p.name[:2] in state_fips]
+        files = [p for p in files if p.name in ("index.json", "areas.json", "pollution.json") or p.name[:2] in state_fips]
+    # The pollution tables a later run falls back to (etl/pollution/carry.py). National, and
+    # already merged with the live ones, so a run over some states uploads them whole.
+    files = sorted(PUBLISH_DIR.glob("pollution/*.csv")) + files
     if not any(p.name == "index.json" for p in files):
         raise SystemExit(f"No index.json in {PUBLISH_DIR}: run `python -m etl.tracts.publish` first")
     s3, bucket = r2.client("R2_BUCKET")
     remote = r2.etags(s3, bucket, PREFIX)
-    changed = [p for p in files if remote.get(PREFIX + p.name) != r2.md5(p)]
+    key = lambda p: PREFIX + p.relative_to(PUBLISH_DIR).as_posix()  # noqa: E731
+    changed = [p for p in files if remote.get(key(p)) != r2.md5(p)]
     size = sum(p.stat().st_size for p in changed)
     log.info("%s: %d local files, %d changed (%.1f MB)%s", bucket, len(files), len(changed), size / 1e6,
              " — dry run" if dry_run else "")
     if dry_run:
         return
     for i, p in enumerate(changed, 1):
-        s3.put_object(Bucket=bucket, Key=PREFIX + p.name, Body=p.read_bytes(), ContentType="application/json",
-                      CacheControl=CACHE_INDEX if p.name == "index.json" else CACHE_COUNTY)
+        s3.put_object(Bucket=bucket, Key=key(p), Body=p.read_bytes(),
+                      ContentType="text/csv" if p.suffix == ".csv" else "application/json",
+                      CacheControl=CACHE_INDEX if p.name in ("index.json", "pollution.json") else CACHE_COUNTY)
         if i % 100 == 0:
             log.info("uploaded %d/%d", i, len(changed))
     log.info("uploaded %d files to %s/%s", len(changed), bucket, PREFIX)

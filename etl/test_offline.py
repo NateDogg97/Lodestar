@@ -1462,6 +1462,63 @@ def test_tract_acs_confidence() -> None:
     check("median_home_value" not in df.at[2, "low_confidence"], "a top-coded value isn't flagged for its missing MOE")
 
 
+def test_pollution_carry_over() -> None:
+    """A pollution source that's down, or collapses, keeps the live tables; the run goes on."""
+    print("\npollution.carry (last month's tables when a source is down)")
+    import json
+    import tempfile
+    from pathlib import Path
+
+    from .pollution import carry
+
+    live = {
+        "tracts": pd.DataFrame({"tract": ["26161400100", "26161400200", "39049000100"], "pm25": [7.1, 7.4, 8.0]}),
+        "counties": pd.DataFrame({"county": ["26161", "39049"], "pm25": [7.2, 8.0]}),
+    }
+    saved = (carry.live_table, carry.DIR, carry.STATUS)
+    with tempfile.TemporaryDirectory() as tmp:
+        carry.live_table = lambda name, kind: live[kind].copy()
+        carry.DIR, carry.STATUS = Path(tmp) / "pollution", Path(tmp) / "pollution.json"
+        try:
+            sources = {"pm25": {"computed": "2026-09-03", "carried": False}}
+
+            def down():
+                raise RuntimeError("HTTP 503 from the source")
+
+            t, c = carry.run("pm25", down, ["26"], sources, today="2026-11-03")
+            check(t.equals(live["tracts"]) and c.equals(live["counties"]), "a failed source keeps the live tables")
+            check(sources["pm25"] == {"computed": "2026-09-03", "carried": True, "attempted": "2026-11-03"},
+                  "its computed date stays the old one, marked carried", sources)
+            check(not (carry.DIR / "pm25_tracts.csv").exists(), "nothing new published for it")
+
+            # Michigan only, and one of its two areas lost its value: below the 95% floor.
+            thin = (pd.DataFrame({"tract": ["26161400100", "26161400200"], "pm25": [7.0, None]}),
+                    pd.DataFrame({"county": ["26161"], "pm25": [7.0]}))
+            carry.run("pm25", lambda: thin, ["26"], sources, today="2026-11-03")
+            check(sources["pm25"]["carried"], "a collapsed source counts as down")
+
+            fresh = (pd.DataFrame({"tract": ["26161400100", "26161400200"], "pm25": [7.0, 7.3]}),
+                     pd.DataFrame({"county": ["26161"], "pm25": [7.1]}))
+            carry.run("pm25", lambda: fresh, ["26"], sources, today="2026-11-03")
+            check(sources["pm25"] == {"computed": "2026-11-03", "carried": False}, "a good run is dated today")
+            pub = carry._read((carry.DIR / "pm25_tracts.csv").read_text())
+            check(list(pub["tract"]) == ["26161400100", "26161400200", "39049000100"]
+                  and list(pub["pm25"]) == [7.0, 7.3, 8.0],
+                  "the published table: fresh Michigan, Ohio kept from the live one", pub.to_dict("list"))
+
+            carry.live_table = lambda name, kind: None
+            try:
+                carry.run("smoke", down, ["26"], {}, today="2026-11-03")
+                check(False, "nothing live: the failure is raised")
+            except RuntimeError:
+                check(True, "nothing live (the first run): the failure is raised, as before")
+            carry.write_status(sources, today="2026-11-03")
+            s = json.loads(carry.STATUS.read_text())
+            check(s["format"] == 1 and s["sources"]["pm25"]["computed"] == "2026-11-03", "pollution.json written")
+        finally:
+            carry.live_table, carry.DIR, carry.STATUS = saved
+
+
 def test_area_property_tax() -> None:
     """Property tax by area (2026-10-13): the tract rate, its margin and flag, city centers, backfill."""
     print("\nproperty tax by area: rate, margin, centers, backfill")
@@ -1547,6 +1604,7 @@ def main() -> int:
         test_app_payload_is_compact_and_lossless_where_it_matters()
         test_tract_acs_confidence()
         test_area_property_tax()
+        test_pollution_carry_over()
         test_tract_today_prices()
         test_tract_backfill_audit_columns()
         test_tract_crime_rates()

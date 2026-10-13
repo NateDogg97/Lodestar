@@ -3,7 +3,16 @@ import { describe, expect, it } from "vitest";
 import type { CountyScore } from "@/lib/scoring";
 
 import { areaWatchOuts, countyParts, explainArea, parseNationalAreas, scoreNational, type NationalSearch } from "./national";
-import { leadPoints, pm25Points, PM25_DOUBT_CAP, pollutionVerdict, smokePoints } from "./pollution";
+import {
+  formatDay,
+  leadPoints,
+  parsePollutionStatus,
+  pm25Points,
+  PM25_DOUBT_CAP,
+  pollutionFreshness,
+  pollutionVerdict,
+  smokePoints,
+} from "./pollution";
 import { areaCriteria } from "./scoring";
 
 const county = (fips: string): CountyScore => ({
@@ -76,5 +85,40 @@ describe("pollution in area results", () => {
     expect(warn(0).map((w) => w.text)).toEqual(["About 45% of home radon tests here read above EPA's action level — test any home"]);
     expect(warn(1)).toEqual([]);
     expect(warn(2)).toEqual([]); // unknown stays unknown: no caution, no all-clear
+  });
+});
+
+describe("pollution data age (pollution.json)", () => {
+  const status = parsePollutionStatus({
+    format: 1,
+    checked: "2026-11-03",
+    sources: {
+      pm25: { computed: "2026-11-03", carried: false },
+      smoke: { computed: "2026-09-03", carried: true, attempted: "2026-11-03" },
+      radon: { computed: "2026-11-03", carried: false },
+    },
+  })!;
+
+  it("names a source the last refresh couldn't reach, and since when", () => {
+    const f = pollutionFreshness(status, "2026-11-04");
+    expect(f.updated).toBe("2026-11-03");
+    expect(f.stale).toEqual([{ source: "smoke", label: "Wildfire smoke", since: "2026-09-03", unavailable: true }]);
+  });
+
+  it("calls a source overdue after two missed months, even if nothing said so", () => {
+    const old = parsePollutionStatus({ sources: { pm25: { computed: "2026-08-01", carried: false } } })!;
+    expect(pollutionFreshness(old, "2026-10-01").stale).toEqual([]); // 61 days
+    expect(pollutionFreshness(old, "2026-10-03").stale).toEqual([
+      { source: "pm25", label: "Fine particles (PM2.5)", since: "2026-08-01", unavailable: false },
+    ]);
+  });
+
+  it("ignores what isn't a status, and formats days without a time-zone shift", () => {
+    expect(parsePollutionStatus(null)).toBeNull();
+    expect(parsePollutionStatus({ sources: { pm25: "yes" } })).toBeNull();
+    expect(parsePollutionStatus({ sources: { pm25: { computed: "soon", carried: 1 } } })).toEqual({
+      sources: { pm25: { computed: null, carried: false } },
+    });
+    expect(formatDay("2026-11-03")).toBe("Nov 3, 2026");
   });
 });

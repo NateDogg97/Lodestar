@@ -467,3 +467,7 @@ GEONAMES_CITIES_URL = "https://download.geonames.org/export/dump/cities15000.zip
 DOWNTOWN_MIN_SHARE = 0.30
 DOWNTOWN_SEARCH_MI = 5.0
 
+
+# The public data bucket the app reads (R2, behind this domain): what's live now. The
+# pollution run falls back to the tables it last published here when a source is down.
+DATA_URL = os.environ.get("DATA_URL", "https://data.lodestarmap.com").strip().rstrip("/")

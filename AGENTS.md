@@ -55,6 +55,8 @@ rather than leaving it stale. Record new decisions or open questions there, not 
   publishing area files (a monthly rebuild without them drops the columns); counties.json
   needs `python -m etl.pollution all` then `python -m etl.patch pollution`. Pollution scores on
   fixed anchors, not percentiles (`src/lib/tracts/pollution.ts`); radon is shown, never ranked.
+  A source that's down keeps the tables last published to R2 (`etl/pollution/carry.py`), and
+  `tracts/pollution.json` dates each source for the area page.
 - State laws: design and rules in `LAWS.md` — read §8 *The automation line* first. The table
   (`etl/data/law_definitions.csv` + `law_values.csv`) is written only by
   `python -m etl.laws.refresh`, which parses each cited source; never hand-edit values.

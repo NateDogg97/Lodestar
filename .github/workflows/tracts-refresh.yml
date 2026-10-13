@@ -107,7 +107,10 @@ jobs:
       # just published, from their census blocks. The inputs change yearly (ACAG, EPA
       # monitors, NOAA smoke years are fixed in etl/pollution/*.py YEARS), but every run
       # starts from scratch and they aren't mirrored yet, so they're downloaded each run
-      # (~3–4 GB; a few minutes to compute). A source whose coverage collapses fails here.
+      # (~3–4 GB; a few minutes to compute). A source that's down, or whose coverage
+      # collapses, keeps last month's tables from R2 (etl/pollution/carry.py) so the rest of
+      # the refresh still ships; pollution.json tells the app how old each source is. Only
+      # the first run, with nothing live, fails here.
       - name: Pollution
         env:
           CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}

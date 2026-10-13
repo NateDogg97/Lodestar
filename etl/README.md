@@ -663,6 +663,7 @@ python -m etl.pollution.gate           # the PM2.5 acceptance gate on the pilot 
 | `radon.py` | Li et al. PNAS 2025 ZIP exceedance (OSF, CC0) + Census ZCTA–block file (1 GB, streamed) | `radon_above4`, `radon_above2`: the chance a home test reads above 4 / 2 pCi/L; `radon_ci` |
 | `lead.py` | Census ACS B25034 (county); areas get it from `tracts/acs.py` | `pre1960_share`, `pre1980_share` with margins |
 | `county.py` | The tables above | The nine county columns `etl.patch pollution` publishes |
+| `carry.py` | The tables last published to R2 (`tracts/pollution/*.csv`) | A source that fails, or whose known areas drop below 95% of the live table's, keeps the live tables so the refresh still ships; `public/data/tracts/pollution.json` dates each source (the area page says when one is stale) |
 
 **National run, 2026-10-13:** 5.77M populated blocks → 83,848 areas in 3,144 counties.
 PM2.5, smoke and older housing known for 100% of residential areas; radon 94.5% (no

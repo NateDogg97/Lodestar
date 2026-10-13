@@ -12,6 +12,10 @@ are its own blocks, so a partial run would leave other states' counties stale).
 A state's areas get the same values whichever states run with it: blocks never cross a
 state line, and the monitor table behind the PM2.5 doubt is always national.
 
+A source that fails, or returns far less than what's live, keeps the tables last
+published to R2 and the run goes on (etl/pollution/carry.py); public/data/tracts/
+pollution.json records when each source was last computed.
+
 Inputs, all downloaded on first use and cached in data/raw/ (nothing is mirrored yet —
 plan §9 Phase 11, rule 11): the 2020 PL 94-171 block files (~2–3 GB nationally), ACAG
 V6.GL.03 (3 × 94 MB), EPA AirData (3 × 4 MB), NOAA HMS smoke (3,653 daily files), the OSF
@@ -53,22 +57,33 @@ def resolve(args: list[str]) -> list[str]:
 
 
 def main() -> None:
-    from . import pm25, radon, smoke
+    from . import carry, pm25, radon, smoke
     from .monitors import OUT as MONITORS
     from .monitors import fetch as fetch_monitors
 
     states = resolve(sys.argv[1:])
     log.info("pollution for %d states", len(states))
-    monitors = fetch_monitors()
-    monitors.to_csv(MONITORS, index=False)
-    _, tracts, counties = pm25.compute(states, monitors=monitors)
-    out: dict[str, tuple[pd.DataFrame, pd.DataFrame]] = {"pm25": (tracts, counties)}
-    out["smoke"] = smoke.compute(states)
-    out["radon"] = radon.compute(states)
+
+    def pm25_tables() -> tuple[pd.DataFrame, pd.DataFrame]:
+        monitors = fetch_monitors()
+        monitors.to_csv(MONITORS, index=False)
+        _, tracts, counties = pm25.compute(states, monitors=monitors)
+        return tracts, counties
+
+    # A source that's down keeps last month's tables (etl/pollution/carry.py), so it
+    # doesn't hold back the rest of the refresh.
+    sources = carry.live_status().get("sources", {})
+    out: dict[str, tuple[pd.DataFrame, pd.DataFrame]] = {
+        "pm25": carry.run("pm25", pm25_tables, states, sources),
+        "smoke": carry.run("smoke", lambda: smoke.compute(states), states, sources),
+        "radon": carry.run("radon", lambda: radon.compute(states), states, sources),
+    }
+    carry.write_status(sources)
     for name, (t, c) in out.items():
         t.to_csv(config.INTERIM_DIR / f"{name}_tracts.csv", index=False)
         c.to_csv(config.INTERIM_DIR / f"{name}_counties.csv", index=False)
-        log.info("%s: %d areas, %d counties", name, len(t), len(c))
+        log.info("%s: %d areas, %d counties%s", name, len(t), len(c),
+                 " (last published: source unavailable)" if sources[name].get("carried") else "")
 
 
 if __name__ == "__main__":

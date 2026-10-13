@@ -110,3 +110,87 @@ export function pollutionVerdict(v: {
   if (v.radon !== null && v.radon >= RADON_WATCH) parts.push("radon: test any home");
   return parts.length ? parts.join(" · ") : "No pollution data";
 }
+
+/**
+ * How old the area pollution data is (etl/pollution/carry.py, pollution.json beside the
+ * area files). The monthly refresh downloads each pollution source; one that's down keeps
+ * last month's figures (`carried`) so the rest of the refresh still ships. The figures are
+ * multi-year averages, so a month's delay changes little — but it's said, not hidden.
+ */
+export interface PollutionSourceStatus {
+  /** The day this source's figures were computed (YYYY-MM-DD); null if never recorded. */
+  computed: string | null;
+  /** The last refresh couldn't reach this source and kept the figures from `computed`. */
+  carried: boolean;
+}
+
+export interface PollutionStatus {
+  sources: Partial<Record<PollutionSource, PollutionSourceStatus>>;
+}
+
+export type PollutionSource = "pm25" | "smoke" | "radon";
+
+export const POLLUTION_SOURCE_LABELS: Record<PollutionSource, string> = {
+  pm25: "Fine particles (PM2.5)",
+  smoke: "Wildfire smoke",
+  radon: "Radon",
+};
+
+/** Older than this, a source's figures are overdue even if no refresh said so (two missed monthly runs). */
+export const POLLUTION_STALE_DAYS = 62;
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** pollution.json, or null if it isn't one (never trusted blindly: it comes over the network). */
+export function parsePollutionStatus(raw: unknown): PollutionStatus | null {
+  if (!raw || typeof raw !== "object") return null;
+  const src = (raw as { sources?: unknown }).sources;
+  if (!src || typeof src !== "object") return null;
+  const sources: PollutionStatus["sources"] = {};
+  for (const key of Object.keys(POLLUTION_SOURCE_LABELS) as PollutionSource[]) {
+    const s = (src as Record<string, unknown>)[key];
+    if (!s || typeof s !== "object") continue;
+    const computed = (s as { computed?: unknown }).computed;
+    sources[key] = {
+      computed: typeof computed === "string" && ISO_DAY.test(computed) ? computed : null,
+      carried: (s as { carried?: unknown }).carried === true,
+    };
+  }
+  return Object.keys(sources).length ? { sources } : null;
+}
+
+export interface PollutionFreshness {
+  /** The latest day any source was computed: "updated" for the section. */
+  updated: string | null;
+  /** Sources whose figures are older than they should be, and since when. */
+  stale: { source: PollutionSource; label: string; since: string | null; unavailable: boolean }[];
+}
+
+const dayNumber = (iso: string) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return Date.UTC(y, m - 1, d) / 86_400_000;
+};
+
+/** What to say about the data's age, as of `today` (YYYY-MM-DD). */
+export function pollutionFreshness(status: PollutionStatus, today: string): PollutionFreshness {
+  let updated: string | null = null;
+  const stale: PollutionFreshness["stale"] = [];
+  for (const key of Object.keys(POLLUTION_SOURCE_LABELS) as PollutionSource[]) {
+    const s = status.sources[key];
+    if (!s) continue;
+    if (s.computed && (!updated || s.computed > updated)) updated = s.computed;
+    const overdue = s.computed !== null && dayNumber(today) - dayNumber(s.computed) > POLLUTION_STALE_DAYS;
+    if (s.carried || overdue) {
+      stale.push({ source: key, label: POLLUTION_SOURCE_LABELS[key], since: s.computed, unavailable: s.carried });
+    }
+  }
+  return { updated, stale };
+}
+
+/** "Nov 3, 2026" for a YYYY-MM-DD day (no time zone shift: it's a calendar day). */
+export function formatDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
+    month: "short", day: "numeric", year: "numeric", timeZone: "UTC",
+  });
+}

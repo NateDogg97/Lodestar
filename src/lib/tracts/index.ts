@@ -19,6 +19,8 @@ export const tractDataUrl = (fips: string) => `${DATA_URL}/tracts/${fips}.json`;
 export const tractShapesUrl = (fips: string) => `${DATA_URL}/tracts/${fips}.topo.json`;
 /** Every area's scoring columns, for ranking areas nationwide (Phase 8f). */
 export const nationalAreasUrl = () => `${DATA_URL}/tracts/areas.json`;
+/** How old each pollution source's area figures are (etl/pollution/carry.py). */
+export const pollutionStatusUrl = () => `${DATA_URL}/tracts/pollution.json`;
 
 export type Cell = string | number | boolean | null;
 export type Row = Record<string, Cell>;

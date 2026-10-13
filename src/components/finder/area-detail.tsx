@@ -37,12 +37,16 @@ import {
   type AreaPart,
   type CountyAreas,
   type School,
+  formatDay,
+  pollutionFreshness,
+  type PollutionStatus,
 } from "@/lib/tracts";
 import { formatValue, TAXABLE_SPENDING_SHARE, type MetricKey } from "@/lib/scoring";
 import { ordinal } from "@/lib/scoring/format";
 
 import { WatchLine } from "./area-results";
 import type { AreaRankingView } from "./inside-view";
+import { usePollutionStatus } from "./use-tract-data";
 import { isGold, scoreColor, trackOverflow } from "./score-colors";
 
 /**
@@ -1244,6 +1248,9 @@ export function PollutionSection({
   flagged?: (key: string) => boolean;
   monitor?: { name: string; km: number | null; value: number } | null;
 }) {
+  // Area figures come from the monthly refresh, which says how old each source is; a
+  // county's are rebuilt by hand with counties.json, so the age applies to areas only.
+  const status = usePollutionStatus(level === "area");
   const pm25 = get("pm25");
   const doubt = get("pm25_doubt");
   const smoke = get("smoke_days_thick");
@@ -1344,7 +1351,35 @@ export function PollutionSection({
         </Row>
       )}
       {radon !== null && <Note>Radon varies house to house — test any home before you buy, whatever {place} shows.</Note>}
+      {status && <PollutionAge status={status} />}
     </AreaSection>
+  );
+}
+
+/**
+ * When the pollution figures were last updated, and which are older than they should be: a
+ * source the monthly refresh couldn't reach keeps its last figures (etl/pollution/carry.py).
+ */
+function PollutionAge({ status }: { status: PollutionStatus }) {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const { updated, stale } = pollutionFreshness(status, today);
+  if (stale.length === 0) return updated ? <Note>Pollution figures updated {formatDay(updated)}.</Note> : null;
+  return (
+    <p className="flex items-start gap-1 text-caption text-amber-800 dark:text-amber-300">
+      <Icon name="warning" className="mt-[3px] h-3 w-3 shrink-0" />
+      <span>
+        {stale
+          .map(
+            (s) =>
+              `${s.label} figures are ${s.since ? `from ${formatDay(s.since)}` : "older than usual"}: ${
+                s.unavailable ? "its source was unavailable at the last monthly update" : "they're overdue for an update"
+              }.`,
+          )
+          .join(" ")}{" "}
+        These are multi-year averages, so they change little month to month.
+      </span>
+    </p>
   );
 }
 
