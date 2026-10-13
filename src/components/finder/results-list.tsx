@@ -7,7 +7,6 @@ import {
   filterLabel,
   formatValue,
   getMetric,
-  rankLabels,
   type CountyDataset,
   type CountyScore,
   type FilterKey,
@@ -42,14 +41,13 @@ export function ResultsList({ ranked, data, relative, selectedFips, onSelect, wa
   }
 
   const shown = ranked.slice(0, visible);
-  const labels = rankLabels(shown.map((s) => s.score ?? NaN));
   return (
     <div>
       <ol className="divide-y divide-neutral-200 dark:divide-neutral-800">
         {shown.map((s, i) => (
           <ResultRow
             key={s.fips}
-            rank={labels[i]}
+            rank={i + 1}
             watch={watchOuts(s.index)}
             score={s}
             data={data}
@@ -81,7 +79,7 @@ function ResultRow({
   selected,
   onSelect,
 }: {
-  rank: string;
+  rank: number;
   watch: { key: string; text: string }[];
   score: CountyScore;
   data: CountyDataset;
@@ -105,9 +103,7 @@ function ResultRow({
         aria-pressed={selected}
         className="grid w-full grid-cols-[2rem_1fr_auto] items-start gap-2 px-2 py-3.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-900"
       >
-        <span className="pt-0.5 text-label tabular-nums text-neutral-500" title={rank.startsWith("=") ? `Tied for ${rank.slice(1)}` : undefined}>
-          {rank}
-        </span>
+        <span className="pt-0.5 text-label tabular-nums text-neutral-500">{rank}</span>
 
         <span className="min-w-0">
           <span className="block text-body font-medium">

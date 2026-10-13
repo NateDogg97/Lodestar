@@ -42,20 +42,3 @@ export function topRelativeScores(ranked: CountyScore[], n = MAP_TOP_N): Map<str
   }
   return out;
 }
-
-/**
- * Rank labels that show ties (Phase 10f, 2026-10-12): results whose scores read the same
- * (rounded, as shown) share a rank, "=2", and the next takes its place: 1, =2, =2, 4.
- * A run of results all at 100 on "no hurricane risk" no longer looks decided. Unscored
- * results (NaN) are numbered plainly.
- */
-export function rankLabels(scores: readonly number[]): string[] {
-  const shown = scores.map((s) => (Number.isFinite(s) ? Math.round(s) : NaN));
-  return shown.map((v, k) => {
-    if (Number.isNaN(v)) return String(k + 1);
-    let first = k;
-    while (first > 0 && shown[first - 1] === v) first--;
-    const tied = shown[first + 1] === v || first < k;
-    return tied ? `=${first + 1}` : String(k + 1);
-  });
-}

@@ -1973,7 +1973,8 @@ percentiles over residential areas only.
 - [ ] **Ties at the top.** Single-priority searches on a measure with a shared best value
       (zero hurricane risk, 0 violent crime, $250k+ income, 0.0 mi to the coast) return
       100 results tied at 100, ordered by population, numbered 1–100. True but the ranks
-      look decided. Recommendation: show "=1" (or "tied") for equal scores.
+      look decided. Recommendation: show "=1" (or "tied") for equal scores. *Built in 10f,
+      then removed (owner, 2026-10-13): plain numbers.*
 - [ ] **Score colors as text.** The yellow-green stops (scores 70–85) as number color on
       white are ~1.6:1 contrast — below WCAG AA even for large text. Dark mode is fine.
       Owner chose the ramp; recommendation: darken the mid stops for text only, or draw
@@ -2114,9 +2115,10 @@ limits are as published; a part ranked on an estimate ≥5% off says "ranked as 
       most small-area extremes are real places (urban cores, enclaves), not sampling noise.
       Kept: correct, and cheap at query time.
 
-**10f. Near-ties.** Ranks read "=2" when shown scores match (`rankLabels`); "#1 best match"
-becomes "Tied for #1"; the county map's colour span is at least 20 points (`MIN_COLOR_SPAN`).
+**10f. Near-ties.** The county map's colour span is at least 20 points (`MIN_COLOR_SPAN`).
 - [x] built
+- Tie ranks ("=2", "Tied for #1" when shown scores match) were built, then removed on merge
+  (owner, 2026-10-13: doesn't like how they look). Results are numbered 1, 2, 3 again.
 
 **Results** (scratch harness and `npm run audit:results`, 80 searches, all passing):
 - Schools 5 + Taxes 3: Jackson's best area **#6,638** (was #1); top 100 FL 41, WY 21, TN 13,

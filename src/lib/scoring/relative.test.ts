@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { rankLabels, topRelativeScores, type CountyScore } from ".";
+import { topRelativeScores, type CountyScore } from ".";
 
 const county = (fips: string, score: number | null): CountyScore => ({
   index: 0, fips, score, status: "match", failedFilters: [], unknownFilters: [], missingMetrics: [], contributions: [],
@@ -38,13 +38,5 @@ describe("topRelativeScores", () => {
   it("defaults to the top 50", () => {
     const ranked = Array.from({ length: 80 }, (_, i) => county(String(i).padStart(5, "0"), 100 - i));
     expect(topRelativeScores(ranked).size).toBe(50);
-  });
-});
-
-describe("rankLabels", () => {
-  it("shares a rank between scores that read the same, and skips past them", () => {
-    expect(rankLabels([96.7, 95.6, 95.5, 94.9, 90])).toEqual(["1", "=2", "=2", "4", "5"]);
-    expect(rankLabels([100, 100, 99])).toEqual(["=1", "=1", "3"]);
-    expect(rankLabels([NaN, NaN])).toEqual(["1", "2"]);
   });
 });

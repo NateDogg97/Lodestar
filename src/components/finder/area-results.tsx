@@ -15,7 +15,7 @@ import {
   type ResultBadges,
   type WatchOut,
 } from "@/lib/tracts";
-import { formatValue, rankLabels, type CountyScore, type MetricKey } from "@/lib/scoring";
+import { formatValue, type CountyScore, type MetricKey } from "@/lib/scoring";
 
 import { Icon } from "@/components/ui/icons";
 import { InfoTip, place } from "@/components/ui/info-tip";
@@ -240,12 +240,12 @@ export function Fingerprint({ parts }: { parts: AreaPart[] }) {
   );
 }
 
-function Badges({ badges, first, tied }: { badges: ResultBadges | undefined; first: boolean; tied?: boolean }) {
+function Badges({ badges, first }: { badges: ResultBadges | undefined; first: boolean }) {
   return (
     <>
       {first && (
         <span className="rounded-full bg-neutral-900 px-2 py-px text-caption font-semibold text-white dark:bg-neutral-100 dark:text-neutral-900">
-          {tied ? "Tied for #1" : "#1 best match"}
+          #1 best match
         </span>
       )}
       {badges?.top1.map((b) => (
@@ -269,13 +269,8 @@ const partValue = (p: AreaPart) =>
   p.level === "county" ? formatValue(p.key as MetricKey, p.value) : formatArea(p.key, p.value);
 
 /** A result's rank; "=4" when its shown score ties a neighbour's (Phase 10f). */
-export function RankLabel({ label }: { label: string }) {
-  const tied = label.startsWith("=");
-  return (
-    <span className="w-7 pt-0.5 text-label tabular-nums text-neutral-500" title={tied ? `Tied for ${label.slice(1)}` : undefined}>
-      {label}
-    </span>
-  );
+export function RankLabel({ rank }: { rank: number }) {
+  return <span className="w-7 pt-0.5 text-label tabular-nums text-neutral-500">{rank}</span>;
 }
 
 /**
@@ -446,7 +441,6 @@ export function AreaResultsList({
       </p>
     );
   }
-  const labels = rankLabels(top.map((i) => common.scores.score[i]));
   return (
     <ol className="divide-y divide-neutral-200 dark:divide-neutral-800">
       {top.map((i, rank) => {
@@ -459,7 +453,7 @@ export function AreaResultsList({
             className={isOpen ? "bg-neutral-50 dark:bg-neutral-900/50" : ""}
           >
             <div className="flex items-start gap-2 py-3 pl-1">
-              <RankLabel label={labels[rank]} />
+              <RankLabel rank={rank + 1} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <button
@@ -474,7 +468,6 @@ export function AreaResultsList({
                   <Badges
                     badges={badges.get(i)}
                     first={rank === 0 && !Number.isNaN(common.scores.score[i])}
-                    tied={labels[0]?.startsWith("=")}
                   />
                 </div>
                 <p className="text-caption text-neutral-500">{common.countyName(common.areas.county[i])}</p>
@@ -524,7 +517,6 @@ export function CountyResultsList({
       </p>
     );
   }
-  const labels = rankLabels(counties.map((c) => c.bestScore));
   return (
     <ol className="divide-y divide-neutral-200 dark:divide-neutral-800">
       {counties.map((c, rank) => {
@@ -532,7 +524,7 @@ export function CountyResultsList({
         return (
           <li key={c.fips} data-tour={rank === 0 ? "first-result" : undefined} className={isOpen ? "bg-neutral-50 dark:bg-neutral-900/50" : ""}>
             <div className="flex items-start gap-2 py-3 pl-1">
-              <RankLabel label={labels[rank]} />
+              <RankLabel rank={rank + 1} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <button
@@ -545,7 +537,7 @@ export function CountyResultsList({
                   </button>
                   {rank === 0 && !Number.isNaN(c.bestScore) && (
                     <span className="rounded-full bg-neutral-900 px-2 py-px text-caption font-semibold text-white dark:bg-neutral-100 dark:text-neutral-900">
-                      {labels[0]?.startsWith("=") ? "Tied for #1" : "#1 best match"}
+                      #1 best match
                     </span>
                   )}
                 </div>
