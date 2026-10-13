@@ -2312,7 +2312,7 @@ re-check when the UI wording is written (2026-10-13: not yet verified).
       priorities — PM2.5, wildfire smoke days, older homes (lead paint) — with fixed direction
       and no "top 1%" badges; points from `src/lib/tracts/pollution.ts` (`ANCHORED`), the
       PM2.5 cap read from the area's own "pm25" flag (set by `backfill --pollution` at
-      `DOUBTED_SHARE` 50). Radon: page + Watch out (≥ 30%) only. Watch out also names the
+      `DOUBTED_SHARE` 50). Radon: page + Watch out (≥ 40%, the worst 5.6%) only. Watch out also names the
       worst 5% on PM2.5 and smoke. `PollutionSection` on area and county pages (county:
       share of residents over 9, worst area; area: nearest monitor). ETL: `backfill
       --pollution`, `etl.patch pollution` (9 county columns), areas.json + 5 columns. Unit
@@ -2585,7 +2585,8 @@ ZCTAs) → blocks by Census's 2020 ZCTA–block file (8.04M blocks, 1 GB streame
 - *Radon — show, don't rank* (as the table above first said, for a new reason: the source is
   now fine-grained but its error is wider than most gaps between places). Area and county pages
   show the share above 4 pCi/L with the low-confidence icon and "test your home"; Watch out
-  (10d) names an area at ≥ 30%. No priority, no must-have.
+  (10d) names an area at ≥ 30%. *Changed to ≥ 40% in 11e (2026-10-13): on the national data
+  30% flagged 16.9% of areas, one result in six; 40% is the worst 5.6%, like the other cautions.* No priority, no must-have.
 - *Older housing — rank with anchors:* 100 points at 0% built before 1960, 0 at ≥ 60%
   (linear; the county middle half spans 36–74 points); flagged values carry the icon.
 - *PM2.5 doubt in the app:* "doubted" when `pm25_doubt` ≥ 50; below that, the page notes the

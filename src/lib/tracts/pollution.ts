@@ -38,8 +38,12 @@ export const SMOKE_BEST = 5;
 export const SMOKE_WORST = 30;
 export const LEAD_WORST = 60;
 
-/** EPA's radon action level is 4 pCi/L; Watch out names an area where this % of homes is above it. */
-export const RADON_WATCH = 30;
+/**
+ * Watch out names an area where this % of home radon tests read above EPA's 4 pCi/L. 40 is
+ * the worst ~5% of US areas (5.6%), like the other cautions; 30 (11d's first choice) flagged
+ * 17% — one result in six — which reads as noise.
+ */
+export const RADON_WATCH = 40;
 
 /** Standard normal CDF (Abramowitz & Stegun 7.1.26, |error| < 1.5e-7). */
 export function normalCdf(z: number): number {
@@ -100,7 +104,8 @@ export function pollutionVerdict(v: {
   radon: number | null;
 }): string {
   const parts: string[] = [];
-  if (v.pm25 !== null) parts.push(`${pm25Word(v.pm25)} air (PM2.5 ${v.pm25.toFixed(1)}${v.doubted ? ", uncertain" : ""})`);
+  // A doubted value gets no verdict word: a monitor nearby says the model reads it too clean.
+  if (v.pm25 !== null) parts.push(v.doubted ? `Air quality uncertain (model PM2.5 ${v.pm25.toFixed(1)})` : `${pm25Word(v.pm25)} air (PM2.5 ${v.pm25.toFixed(1)})`);
   if (v.smoke !== null) parts.push(`${Math.round(v.smoke)} smoke days a year`);
   if (v.radon !== null && v.radon >= RADON_WATCH) parts.push("radon: test any home");
   return parts.length ? parts.join(" · ") : "No pollution data";

@@ -1162,6 +1162,8 @@ export function PollutionSection({
           typicalText={`${US_TYPICAL.pm25}`}
           max={15}
           maxText="15+"
+          // A doubted value isn't shown as better or worse than typical: a monitor says it may be neither.
+          neutral={doubted}
           flagged={doubted}
         />
       )}
