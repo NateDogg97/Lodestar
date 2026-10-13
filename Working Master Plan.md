@@ -2317,6 +2317,39 @@ re-check when the UI wording is written (2026-10-13: not yet verified).
 - **False comfort.** A clean value is not a clean bill: radon is per house, wells and small
   water systems may be missing, and a tract average can hide a hot street. Say so.
 
+#### 11a findings (2026-10-13, in progress)
+
+**PM2.5 — the plan's versions are archived; use V6.GL.03.** SatPM's own index (satpm.org)
+lists V6.GL.02.04 and V5.NA.05 under "Archive"; current products are **V6.GL.03** (global,
+**1998–2024**, CC BY 4.0), V5.GL.06, **V6.NA.01** (North America, total + composition,
+2000–2023, CC BY 4.0, Box only, no biomass-burning file), CONUS-PM1 and SatNO2 V4.GL.01.
+- **Download path (CI-friendly):** a public S3 bucket, no key, no Box:
+  `https://satpmdata.s3.us-east-1.amazonaws.com/V6GL03/CNNPM25/Annual/NA/V6GL03.CNNPM25.NA.YYYY01-YYYY12.nc`
+  — one North America file per year, ~94 MB (2022–2024 = ~285 MB). The AWS registry page
+  the plan cites now 404s; the bucket is `satpmdata` (us-east-1).
+- **Format:** NetCDF-4 (HDF5): `PM25` float32 (6000 × 13000), µg/m³; `lat` 10.005–69.995,
+  `lon` −169.995 to −40.005, 0.01° cell centres → a point's cell is index arithmetic.
+  No `_FillValue` attribute: no-data cells hold **−999.9**, which must read as unknown.
+  Northern Alaska above 70°N is outside the grid (unknown, not 0). Reading needs `h5py`
+  (or `h5netcdf`) — one new ETL dependency, as planned.
+- **First look, 2023 (a Canadian-smoke year):** Ann Arbor 10.1, Houston Ship Channel 11.7 vs
+  Katy 10.1, Bakersfield 11.5 vs Santa Barbara 8.3, Jackson WY 4.7, Honolulu 4.7, Anchorage
+  3.3. **Clairton 9.89 vs the North Hills 9.85** — the ~1 km surface may not resolve the Mon
+  Valley's industrial hot spot. The contrast check (11c) will decide against EPA monitors;
+  this is the gate's purpose, so it's a real risk to plan for, not a surprise later.
+- **License:** V6.GL.03 and V6.NA.01 "licensed under CC BY 4.0" (their pages). V5.NA.05.02
+  (the only product with a **biomass-burning** share) states no license — unchanged.
+
+**Blocks — the PL 94-171 geo header works.** Per state, `<st>geo2020.pl` (pipe-delimited)
+holds every block (SUMLEV 750) with POP100 and INTPTLAT/INTPTLON. Michigan: 254,730 blocks
+summing to exactly 10,077,331; Washtenaw's 5,921 blocks (4,791 with people) to exactly
+372,258. Zips: MI 40 MB, CA 80 MB → roughly 2–3 GB nationally, once (2020 blocks don't
+change); mirror to R2 as a single block table (GEOID, pop, lat, lon) of ~8M rows.
+
+**Monitors and smoke — public, small.** EPA AirData `annual_conc_by_monitor_YYYY.zip`
+(2023: 4.3 MB, 2024: 4.0 MB) for the monitor check; NOAA HMS daily smoke shapefiles
+`…/Smoke_Polygons/Shapefile/YYYY/MM/hms_smokeYYYYMMDD.zip` (~30 KB a day).
+
 #### Review notes (2026-10-13, after the Washtenaw fixes — not decisions)
 
 - **Correction:** B25034 (year built, by decade) is *not* pulled — the tract ACS has only
