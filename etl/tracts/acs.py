@@ -22,6 +22,8 @@ WHAT THIS PRODUCES (one row per tract)
                           lead-paint *risk*, never "lead exposure" (Phase 11d; EJScreen's
                           definition; B25034 bins by decade, so 1978 can't be cut)
     pre1980_share         % built before 1980, shown beside it
+    property_tax_rate     taxes paid ÷ home values, owner-occupied, % (aggregates, as for
+                          counties) — flagged like a median when its CV passes TRACT_MAX_CV
     low_confidence        ";"-separated list of the columns above whose
                           margin of error is too wide to trust (see below)
     + a *_moe column for each value, for the app's caution-icon details
@@ -163,6 +165,17 @@ def parse(raw: pd.DataFrame) -> pd.DataFrame:
     out["commute_minutes"] = r
     out["commute_minutes_moe"] = np.sqrt(moe["commute_minutes_total"] ** 2 + r**2 * commuters_moe**2) / commuters
     flag(out["commute_minutes_moe"] / 1.645 / r > config.TRACT_MAX_CV, "commute_minutes")
+
+    # Property tax rate (2026-10-13): a ratio of two aggregates, MOE by the ratio formula.
+    # No owner-occupied value (all renters, or none sampled): unknown.
+    value = est["aggregate_home_value"].where(est["aggregate_home_value"] > 0)
+    rate = est["aggregate_real_estate_taxes"] / value
+    out["property_tax_rate"] = 100 * rate
+    out["property_tax_rate_moe"] = 100 * np.sqrt(
+        moe["aggregate_real_estate_taxes"] ** 2 + rate**2 * moe["aggregate_home_value"] ** 2) / value
+    no_moe = out["property_tax_rate"].notna() & out["property_tax_rate_moe"].isna()
+    flag((out["property_tax_rate_moe"] / 1.645 / out["property_tax_rate"] > config.TRACT_MAX_CV) | no_moe,
+         "property_tax_rate")
 
     # Who lives here (2026-10-04, etl/demographics.py): shares by race and Hispanic origin
     # and the diversity index — context on the area page, never flagged (small areas'

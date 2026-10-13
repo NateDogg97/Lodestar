@@ -22,6 +22,8 @@ thing; this patches public/data/tracts/{fips}.json in place:
   shares from the tract ACS (one Census call per state). PM2.5 gains the "pm25" flag where
   most residents live near a monitor reading well above it (etl/pollution/doubt.py), and
   the older-housing share its ACS margin flag.
+- property tax by area (2026-10-13): `--taxes` adds `property_tax_rate` (taxes paid ÷ home
+  values, owner-occupied) and its margin from the tract ACS, flagged like a median.
 
 One Census API call per state (all tracts at once), then `python -m etl.tracts.national`
 to rebuild areas.json, then `python -m etl.tracts.upload`.
@@ -31,6 +33,7 @@ to rebuild areas.json, then `python -m etl.tracts.upload`.
     python -m etl.tracts.backfill --offline  # only the crime and top-code rules (no network)
     python -m etl.tracts.backfill --demographics  # only who lives here
     python -m etl.tracts.backfill --pollution     # only pollution (after the national runs)
+    python -m etl.tracts.backfill --taxes         # only the property tax rate by area
 """
 
 from __future__ import annotations
@@ -355,6 +358,34 @@ def patch_pollution(payload: dict, by_geoid: dict[str, dict]) -> dict[str, int]:
     return counts
 
 
+TAX_COLUMNS = ("property_tax_rate", "property_tax_rate_moe")
+
+
+def patch_taxes(payload: dict, by_geoid: dict[str, dict]) -> dict[str, int]:
+    """The area's property tax rate, its margin and flag, in place (idempotent)."""
+    cols: list[str] = payload["columns"]
+    for c in TAX_COLUMNS:
+        if c not in cols:
+            cols.append(c)
+            for r in payload["rows"]:
+                r.append(None)
+    at = {c: cols.index(c) for c in cols}
+    counts = {"taxes": 0, "taxes_flagged": 0}
+    for r in payload["rows"]:
+        src = by_geoid.get(r[at["geoid"]])
+        if not src:
+            continue
+        for c in TAX_COLUMNS:
+            r[at[c]] = _num(src.get(c), 2)
+        flags = [f for f in (r[at["low_confidence"]] or "").split(";") if f and f != "property_tax_rate"]
+        if "property_tax_rate" in src["flags"] and r[at["property_tax_rate"]] is not None:
+            flags.append("property_tax_rate")
+            counts["taxes_flagged"] += 1
+        r[at["low_confidence"]] = ";".join(flags)
+        counts["taxes"] += r[at["property_tax_rate"]] is not None
+    return counts
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--state", help="two-digit state FIPS, comma-separated (default: all published)")
@@ -363,6 +394,7 @@ def main() -> None:
     ap.add_argument("--nri", action="store_true", help="only FEMA's ratings and the display-only hazards (NRI tract table)")
     ap.add_argument("--edges", action="store_true", help="only the metro-edge, Great Lake and town-center distances")
     ap.add_argument("--pollution", action="store_true", help="only pollution (national interim tables + ACS older housing)")
+    ap.add_argument("--taxes", action="store_true", help="only the property tax rate by area (one Census call per state)")
     args = ap.parse_args()
     wanted = set(args.state.split(",")) if args.state else None
     files = sorted(PUBLISH_DIR.glob("[0-9][0-9][0-9][0-9][0-9].json"))
@@ -379,6 +411,21 @@ def main() -> None:
                 path.write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False))
             log.info("state %s: %d counties", state, len(paths))
         log.info("done: %d areas with edge distances", total["edges"])
+        return
+    if args.taxes:
+        for state, paths in sorted(by_state.items()):
+            parsed = acs.parse(acs._state_raw(state))
+            by_geoid = {
+                g: {**{c: v for c, v in zip(TAX_COLUMNS, vals)}, "flags": set((lc or "").split(";"))}
+                for g, lc, *vals in zip(parsed["geoid"], parsed["low_confidence"], *(parsed[c] for c in TAX_COLUMNS))
+            }
+            for path in paths:
+                payload = json.loads(path.read_text())
+                for k, v in patch_taxes(payload, by_geoid).items():
+                    total[k] += v
+                path.write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False))
+            log.info("state %s: %d counties", state, len(paths))
+        log.info("done: %d areas with a property tax rate, %d of them low confidence", total["taxes"], total["taxes_flagged"])
         return
     if args.pollution:
         table = pollution_table()

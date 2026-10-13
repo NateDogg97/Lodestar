@@ -402,6 +402,11 @@ ACS_TRACT_VARIABLES = {
     "B25034_009": "built_1950s",
     "B25034_010": "built_1940s",
     "B25034_011": "built_before_1940",
+    # Property tax by area (2026-10-13): aggregate taxes ÷ aggregate value of owner-occupied
+    # homes, as for counties (ACS_VARIABLES) — rates differ by city, township and school
+    # district inside a county (Washtenaw's areas run 1.1–2.1%).
+    "B25090_001": "aggregate_real_estate_taxes",
+    "B25082_001": "aggregate_home_value",
 }
 # ACS top-codes: a median at these values means "this much or more". (Household income
 # was missing until the full audit, 2026-10-04: 483 areas at the cap were flagged "low

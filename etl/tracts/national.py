@@ -72,11 +72,15 @@ NUMBERS = {  # column -> decimals kept
     # Phase 11 (etl/pollution/): what areas are ranked on (PM2.5, thick-smoke days, older
     # housing) or cautioned about (PM2.5 doubt, radon). Detail stays in the county files.
     "pm25": 1, "pm25_doubt": 0, "smoke_days_thick": 1, "pre1960_share": 0, "radon_above4": 0,
+    # Property tax by area (2026-10-13): the area's own rate (taxes paid ÷ home values) and its
+    # estimate toward the county's typical area — the Taxes estimate uses the estimate.
+    "property_tax_rate": 2, "property_tax_rate_eb": 2,
 }
 COLUMNS = TEXT + list(NUMBERS)
 EB = {"median_home_value_eb": "median_home_value", "median_gross_rent_eb": "median_gross_rent",
       "median_household_income_eb": "median_household_income",
-      "violent_rate_eb": "violent_rate", "property_rate_eb": "property_rate"}
+      "violent_rate_eb": "violent_rate", "property_rate_eb": "property_rate",
+      "property_tax_rate_eb": "property_tax_rate"}
 ROUND_TO.update({eb: ROUND_TO[src] for eb, src in EB.items() if src in ROUND_TO})
 
 # Census column -> the Zillow index (by ZIP) that brings it to today's prices.
@@ -175,7 +179,8 @@ def _rounded(c: str, v: float | None) -> float | int | None:
 # What `shrink` needs per area, beyond the published columns.
 AUX = ["median_home_value", "median_home_value_moe", "median_gross_rent", "median_gross_rent_moe",
        "median_household_income", "median_household_income_moe", "crime_agency", "crime_population",
-       "crime_months", "violent_rate", "property_rate", "population", "group_quarters_share"]
+       "crime_months", "violent_rate", "property_rate", "population", "group_quarters_share",
+       "property_tax_rate", "property_tax_rate_moe", "place"]
 
 
 def _rows_from_county(payload: dict, national: dict[str, float]) -> tuple[list[list], list[dict]]:
@@ -197,6 +202,19 @@ def _rows_from_county(payload: dict, national: dict[str, float]) -> tuple[list[l
     return out, aux
 
 
+def tax_groups(county: list[str], place: list[str | None], rate: list[float | None],
+               residential: list[bool]) -> list[str]:
+    """The center each area's tax rate shrinks toward: its city within the county (areas in
+    no city together), where that group has enough rated areas; else the whole county."""
+    from collections import Counter
+
+    from .shrink import MIN_COUNTY_AREAS
+
+    keys = [f"{c}|{p or ''}" for c, p in zip(county, place)]
+    n = Counter(k for k, r, res in zip(keys, rate, residential) if res and r)
+    return [k if n[k] >= MIN_COUNTY_AREAS else c for k, c in zip(keys, county)]
+
+
 def add_estimates(rows: list[list], aux: list[dict]) -> None:
     """Fill the `*_eb` columns of `rows` in place (etl/tracts/shrink.py)."""
     from .shrink import shrink_log_medians, shrink_rates
@@ -216,6 +234,16 @@ def add_estimates(rows: list[list], aux: list[dict]) -> None:
             from_census = census[k] not in (None, 0) and not keep[k]
             est = shown * (eb[k] / census[k]) if (shown is not None and from_census and eb[k]) else shown
             rows[k][at[f"{col}_eb"]] = _rounded(f"{col}_eb", est)
+    # Property tax rate: a ratio with a margin, shrunk like the medians (a rate of 0 — no
+    # taxes paid — stays as published: there's no log of it). Cities levy their own millage,
+    # so an area centers on its city's typical area, and the rest of the county on its own
+    # (`tax_groups`), not on one county median that would pull a city's rate to the townships'.
+    rate = [a["property_tax_rate"] for a in aux]
+    eb = shrink_log_medians(rate, [a["property_tax_rate_moe"] for a in aux],
+                            tax_groups(county, [a["place"] for a in aux], rate, residential), state, residential,
+                            [False] * len(aux))
+    for k in range(len(rows)):
+        rows[k][at["property_tax_rate_eb"]] = _rounded("property_tax_rate_eb", eb[k])
     pop = [a["crime_population"] for a in aux]
     months = [a["crime_months"] for a in aux]
     agency = [a["crime_agency"] for a in aux]
@@ -233,16 +261,21 @@ def build(merge_live: bool) -> dict:
     if merge_live:
         try:
             live = requests.get(LIVE_URL, timeout=config.HTTP_TIMEOUT).json()
-            if live.get("format") == AREAS_FORMAT and set(COLUMNS) - set(live.get("columns", {})) <= set(EB):
-                # A live file from before Phase 10e lacks the estimates: those areas score on
-                # their published values (the app's fallback) until their county is rebuilt.
+            if live.get("format") == AREAS_FORMAT and "geoid" in live.get("columns", {}):
+                # A live file from before a column was added (the Phase 10e estimates,
+                # pollution, property tax by area) lacks it: those areas read it as unknown
+                # (the app's fallback) until their county is rebuilt. Rejecting the file
+                # instead would drop every county not rebuilt in this run.
                 cols = live["columns"]
+                missing = [c for c in COLUMNS if c not in cols]
+                if missing:
+                    log.warning("live areas.json lacks %s: unknown for counties not rebuilt here", missing)
                 for i in range(live["n"]):
                     r = [cols[c][i] if c in cols else None for c in COLUMNS]
                     rows.setdefault(r[0][:5], []).append(r)
                 log.info("live areas.json: %d areas in %d counties", sum(map(len, rows.values())), len(rows))
             else:
-                log.warning("live areas.json has another format or columns: rebuilding from local files only")
+                log.warning("live areas.json has another format: rebuilding from local files only")
         except (requests.RequestException, ValueError) as exc:
             log.warning("no live areas.json (%s): local files only", type(exc).__name__)
     local = sorted(PUBLISH_DIR.glob("[0-9][0-9][0-9][0-9][0-9].json"))

@@ -1456,6 +1456,51 @@ def test_tract_acs_confidence() -> None:
     check("median_home_value" not in df.at[2, "low_confidence"], "a top-coded value isn't flagged for its missing MOE")
 
 
+def test_area_property_tax() -> None:
+    """Property tax by area (2026-10-13): the tract rate, its margin and flag, city centers, backfill."""
+    print("\nproperty tax by area: rate, margin, centers, backfill")
+    from .tracts import acs as tract_acs
+    from .tracts.backfill import patch_taxes
+    from .tracts.national import tax_groups
+
+    def row(tract: str, taxes: float, taxes_moe: float, value: float, value_moe: float) -> dict:
+        base = {f"{v}{s}": 0 for v in config.ACS_TRACT_VARIABLES for s in ("E", "M")}
+        base.update({"state": "26", "county": "161", "tract": tract, "B25090_001E": str(taxes),
+                     "B25090_001M": str(taxes_moe), "B25082_001E": str(value), "B25082_001M": str(value_moe)})
+        return base
+
+    df = tract_acs.parse(pd.DataFrame([
+        row("400100", 15_000_000, 1_000_000, 1_000_000_000, 50_000_000),   # 1.5%, tight
+        row("400200", 2_000_000, 1_500_000, 100_000_000, 40_000_000),      # 2.0%, CV > 40%
+        row("400300", 0, 0, 0, 0),                                          # no owned homes
+    ]))
+    check(abs(df.at[0, "property_tax_rate"] - 1.5) < 1e-9, "rate = aggregate taxes / aggregate value, in %")
+    expected = 100 * (1_000_000**2 + 0.015**2 * 50_000_000**2) ** 0.5 / 1_000_000_000
+    check(abs(df.at[0, "property_tax_rate_moe"] - expected) < 1e-9, "margin by the Census ratio formula")
+    check("property_tax_rate" not in df.at[0, "low_confidence"], "a tight rate isn't flagged")
+    check("property_tax_rate" in df.at[1, "low_confidence"], "a wide-margin rate is flagged like a median")
+    check(pd.isna(df.at[2, "property_tax_rate"]), "no owner-occupied value: unknown, not 0")
+
+    county = ["26161"] * 7
+    place = ["Ypsilanti"] * 3 + [None] * 3 + ["Chelsea"]
+    groups = tax_groups(county, place, [2.0, 1.9, 2.1, 1.3, 1.4, 1.5, 1.7], [True] * 7)
+    check(groups[:3] == ["26161|Ypsilanti"] * 3, "a city with 3+ rated areas is its own center", groups)
+    check(groups[3:6] == ["26161|"] * 3, "areas in no city center on each other")
+    check(groups[6] == "26161", "a city with too few rated areas centers on the county")
+
+    payload = {"columns": ["geoid", "low_confidence"], "rows": [["26161400100", "x"], ["26161400200", ""]]}
+    by_geoid = {"26161400100": {"property_tax_rate": 1.4567, "property_tax_rate_moe": 0.2, "flags": set()},
+                "26161400200": {"property_tax_rate": 2.0, "property_tax_rate_moe": 1.5, "flags": {"property_tax_rate"}}}
+    patch_taxes(payload, by_geoid)
+    counts = patch_taxes(payload, by_geoid)  # twice: idempotent
+    at = {c: k for k, c in enumerate(payload["columns"])}
+    rows = payload["rows"]
+    check(rows[0][at["property_tax_rate"]] == 1.46, "rate kept to hundredths")
+    check(rows[0][at["low_confidence"]] == "x" and rows[1][at["low_confidence"]] == "property_tax_rate",
+          "flag added once, other flags kept", [r[at["low_confidence"]] for r in rows])
+    check(counts == {"taxes": 2, "taxes_flagged": 1}, "counts", counts)
+
+
 def main() -> int:
     print("=" * 70)
     print("OFFLINE TEST SUITE — no network required")
@@ -1485,6 +1530,7 @@ def main() -> int:
         test_gazetteer_encoding_guard()
         test_app_payload_is_compact_and_lossless_where_it_matters()
         test_tract_acs_confidence()
+        test_area_property_tax()
         test_tract_today_prices()
         test_tract_backfill_audit_columns()
         test_tract_crime_rates()
