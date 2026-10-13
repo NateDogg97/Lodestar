@@ -279,6 +279,25 @@ POLLUTION = {
     "radon_above4": 0, "radon_above2": 0, "radon_ci": 0,
 }
 POLLUTION_FLAGS = ("pm25", "pre1960_share")
+# The quality gate for --pollution (11f): share of residential areas (51+ people) with a
+# value, below which a source is broken, not sparse — the run fails before any upload.
+# Radon is judged on the lower 48 only (the model has no Alaska or Hawaii); nationally it
+# covers 94.5% (dense, basement-poor ZIPs are left out by the model), the others 100%.
+POLLUTION_FLOORS = {"pm25": 99.0, "smoke_days_thick": 99.0, "pre1960_share": 95.0, "radon_above4": 85.0}
+NOT_LOWER_48 = ("02", "15")
+
+
+def pollution_gate(counts: dict[str, int]) -> list[str]:
+    """The measures whose coverage fell below their floor, as messages (empty: pass)."""
+    out = []
+    for c, floor in POLLUTION_FLOORS.items():
+        den = counts.get("residential_l48" if c == "radon_above4" else "residential", 0)
+        if not den:
+            continue
+        share = 100 * counts.get(f"known_{c}", 0) / den
+        if share < floor:
+            out.append(f"{c}: {share:.1f}% of residential areas have a value (floor {floor:g}%)")
+    return out
 
 
 def pollution_table() -> "pd.DataFrame":
@@ -307,7 +326,8 @@ def patch_pollution(payload: dict, by_geoid: dict[str, dict]) -> dict[str, int]:
             for r in payload["rows"]:
                 r.append(None)
     at = {c: cols.index(c) for c in cols}
-    counts = {"pollution": 0, "doubted": 0}
+    counts = {"pollution": 0, "doubted": 0, "residential": 0, "residential_l48": 0,
+              **{f"known_{c}": 0 for c in POLLUTION_FLOORS}}
     for r in payload["rows"]:
         src = by_geoid.get(r[at["geoid"]])
         flags = [f for f in (r[at["low_confidence"]] or "").split(";") if f and f not in POLLUTION_FLAGS]
@@ -325,6 +345,13 @@ def patch_pollution(payload: dict, by_geoid: dict[str, dict]) -> dict[str, int]:
                 flags.append("pre1960_share")
             counts["pollution"] += 1
         r[at["low_confidence"]] = ";".join(flags)
+        if "population" in at and (r[at["population"]] or 0) >= 51:
+            l48 = str(r[at["geoid"]])[:2] not in NOT_LOWER_48
+            counts["residential"] += 1
+            counts["residential_l48"] += l48
+            for c in POLLUTION_FLOORS:
+                if r[at[c]] is not None:
+                    counts[f"known_{c}"] += 1 if c != "radon_above4" else l48
     return counts
 
 
@@ -375,6 +402,11 @@ def main() -> None:
                 path.write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False))
             log.info("state %s: %d counties", state, len(paths))
         log.info("done: %d areas with pollution, %d with PM2.5 doubted", total["pollution"], total["doubted"])
+        failed = pollution_gate(total)
+        for msg in failed:
+            log.error("pollution gate: %s", msg)
+        if failed:
+            raise SystemExit(1)
         return
     if args.nri:
         from . import nri

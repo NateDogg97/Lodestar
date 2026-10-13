@@ -940,7 +940,18 @@ def test_pollution_backfill() -> None:
     check(a[at["low_confidence"]].split(";") == ["crime", "pm25", "pre1960_share"],
           "doubted by most residents -> pm25 flag; ACS margin -> pre1960 flag; others kept, none doubled")
     check(b[at["low_confidence"]] == "" and b[at["radon_above4"]] is None, "a minority doubted isn't flagged; NaN is null")
-    check(c[at["pm25"]] is None and counts == {"pollution": 2, "doubted": 1}, "an area with no row stays unknown")
+    check(c[at["pm25"]] is None and counts["pollution"] == 2 and counts["doubted"] == 1, "an area with no row stays unknown")
+
+    from .tracts.backfill import pollution_gate
+
+    healthy = {"residential": 1000, "residential_l48": 900, "known_pm25": 1000, "known_smoke_days_thick": 1000,
+               "known_pre1960_share": 990, "known_radon_above4": 850}
+    check(pollution_gate(healthy) == [], "full PM2.5 and smoke, 94% radon in the lower 48: passes")
+    check(pollution_gate({**healthy, "known_pm25": 500}) == ["pm25: 50.0% of residential areas have a value (floor 99%)"],
+          "a source that collapsed fails the run")
+    check(pollution_gate({"residential": 10, "residential_l48": 0, "known_pm25": 10, "known_smoke_days_thick": 10,
+                          "known_pre1960_share": 10}) == [],
+          "Hawaii alone: no radon expected, no failure")
 
 
 def test_noaa_per_variable_station_selection() -> None:
