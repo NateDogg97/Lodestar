@@ -2298,9 +2298,9 @@ re-check when the UI wording is written (2026-10-13: not yet verified).
       % above a benchmark, worst block, coverage, county's worst area; < 50% coverage →
       unknown). 17 offline tests. Michigan end to end in 1.5 s: Washtenaw 2023 PM2.5 9.71
       µg/m³, worst area 10.57, 91.6% of residents above 9 (a smoke year).
-- [~] **11c — PM2.5 and smoke pilot** — *PM2.5 gate run 2026-10-13; contrast fails (below);
-      remedy decided and built (monitor-disagreement doubt; all failed pairs flagged).
-      Smoke (HMS days) next.* on Allegheny PA, Harris TX, Kern CA, Teton WY, Washtenaw
+- [x] **11c — PM2.5 and smoke pilot** — *Done 2026-10-13. PM2.5 gate run; contrast fails
+      (below); remedy decided and built (monitor-disagreement doubt; all failed pairs
+      flagged). Smoke built as HMS days overhead, 2015–2024 (below).* on Allegheny PA, Harris TX, Kern CA, Teton WY, Washtenaw
       MI (audit continuity) and a rural county with no monitor. Run the whole acceptance gate,
       record the numbers here, and set the scoring anchors. **Stop if it fails.**
 - [ ] **11d — Lead paint and radon**, tract and county, with confidence flags.
@@ -2509,6 +2509,37 @@ reading) for decision 2c's display.
 - *11e rule to write:* an area is "doubted" when `pm25_doubt` ≥ 50 (most of its residents);
   below that the caution shows as "x% of residents live near a monitor reading higher than
   this estimate" without the cap. County pages always show the share.
+
+#### 11c smoke results (2026-10-13; `python -m etl.pollution.smoke`)
+
+`etl/pollution/smoke.py`: each day's NOAA HMS plumes rasterized at 0.05° (~5 km, finer than
+the analysts' outlines; a cell is in a plume when its centre is), blocks take their cell
+(rule 1), the same `exposure()` builds areas and counties. Two columns: `smoke_days` (any
+plume) and `smoke_days_thick` (Medium or Heavy). A day with no file is *not analyzed*, never
+clear; counts scale to 365 by analyzed days (4 of 3,653 missing). HMS covers Alaska and Hawaii
+(the Maui plume is in 2023-08-09's file), so 0 there is a real 0. Older files have unclosed
+rings (repaired on read); an unknown density label raises.
+- **Rank on thick days, show any-plume days.** Against 1,013 EPA monitors' worst-day PM2.5
+  (98th percentile − annual mean, 2022–24), thick days rank-correlate 0.27 (West 0.47, East
+  0.35); any-plume days 0.01 (East 0.06) — thin, high haze from farm burning paints the Gulf
+  and Southeast (Houston 196 any-plume days a year in 2022–24).
+- **Window: 2015–2024, not 2022–2024** (a change from decision 1's three years, which stays
+  for PM2.5). Fire years swing: thick days at Bakersfield 4, 4, 2, 20, 1, 66, 43, 2, 1, 4
+  (2015→2024); Ann Arbor 70 in 2023 vs 4–15 most years. 2022–24 gave Kern 2 a year and
+  Washtenaw 37; ten years give 14 and 21. ~3 minutes for five states (3,653 cached files).
+- **Pilot counties (thick / any, days a year):** Humboldt CA 22.1 / 51, Washtenaw 21.4 / 74,
+  Plumas (Portola) 20.5 / 51, Teton WY 20.2 / 54, Carbon WY 17.0 / 54, Kern 14.1 / 41,
+  Allegheny 14.0 / 66, Harris 10.6 / 85, Travis 8.4 / 77, Los Angeles 6.9 / 30, San Diego
+  5.0 / 28. Coverage 100%.
+- **Still overhead, not breathed.** The upper Midwest reads high because transported smoke
+  rides aloft; a valley under an inversion can breathe more than its plume count says. The
+  label stays "days with smoke overhead", the info text says so, and the ground smoke is
+  already inside PM2.5 — nothing double counts.
+- **Anchors (for 11e):** thick days at every area's population center, percentiles
+  1/5/10/25/50/75/90/95/99 = 1.2 / 3.3 / 6.2 / 9.3 / 13.5 / 17.5 / 24.1 / 27.2 / 31.8. Points
+  linear from **100 at ≤ 5 days to 0 at ≥ 30**: the middle half spans 50–83 points
+  (leverage like PM2.5's bands). A year-to-year SD of ~15 days in the West puts the ten-year
+  mean's error near ±5 days, so the info text says differences under ~10 days are noise.
 
 #### Review notes (2026-10-13, after the Washtenaw fixes — not decisions)
 
