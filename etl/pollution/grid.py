@@ -78,7 +78,13 @@ def mean_of(grids: list[Grid]) -> Grid:
     for g in grids[1:]:
         if (g.values.shape, g.lat0, g.lon0, g.dlat, g.dlon) != (first.values.shape, first.lat0, first.lon0, first.dlat, first.dlon):
             raise ValueError("grids differ in shape or origin; can't average cell by cell")
-    stack = np.stack([np.where(g.values <= NO_DATA_BELOW, np.nan, g.values) for g in grids])
-    mean = stack.mean(axis=0)  # NaN in any year -> NaN
-    return Grid(np.where(np.isnan(mean), NO_DATA_BELOW - 1, mean).astype(np.float32), first.lat0, first.lon0,
-                first.dlat, first.dlon, units=first.units, source=" + ".join(g.source for g in grids))
+    # Accumulated a year at a time (a North America year is 78M cells): no stack in memory.
+    total = np.zeros(first.values.shape, dtype=np.float64)
+    missing = np.zeros(first.values.shape, dtype=bool)
+    for g in grids:
+        missing |= ~(g.values > NO_DATA_BELOW)  # NaN or the no-data marker, in any year
+        total += np.where(missing, 0.0, g.values)
+    mean = (total / len(grids)).astype(np.float32)
+    mean[missing] = NO_DATA_BELOW - 1
+    return Grid(mean, first.lat0, first.lon0, first.dlat, first.dlon, units=first.units,
+                source=" + ".join(g.source for g in grids))
