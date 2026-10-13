@@ -4,7 +4,6 @@ import type { CountyScore } from "@/lib/scoring";
 
 import { areaWatchOuts, countyParts, explainArea, parseNationalAreas, scoreNational, type NationalSearch } from "./national";
 import {
-  formatDay,
   leadPoints,
   parsePollutionStatus,
   pm25Points,
@@ -113,12 +112,11 @@ describe("pollution data age (pollution.json)", () => {
     ]);
   });
 
-  it("ignores what isn't a status, and formats days without a time-zone shift", () => {
+  it("ignores what isn't a status", () => {
     expect(parsePollutionStatus(null)).toBeNull();
     expect(parsePollutionStatus({ sources: { pm25: "yes" } })).toBeNull();
     expect(parsePollutionStatus({ sources: { pm25: { computed: "soon", carried: 1 } } })).toEqual({
       sources: { pm25: { computed: null, carried: false } },
     });
-    expect(formatDay("2026-11-03")).toBe("Nov 3, 2026");
   });
 });

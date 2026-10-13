@@ -186,11 +186,3 @@ export function pollutionFreshness(status: PollutionStatus, today: string): Poll
   }
   return { updated, stale };
 }
-
-/** "Nov 3, 2026" for a YYYY-MM-DD day (no time zone shift: it's a calendar day). */
-export function formatDay(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
-    month: "short", day: "numeric", year: "numeric", timeZone: "UTC",
-  });
-}

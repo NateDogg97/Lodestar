@@ -37,10 +37,10 @@ import {
   type AreaPart,
   type CountyAreas,
   type School,
-  formatDay,
   pollutionFreshness,
   type PollutionStatus,
 } from "@/lib/tracts";
+import { formatDay } from "@/lib/laws";
 import { formatValue, TAXABLE_SPENDING_SHARE, type MetricKey } from "@/lib/scoring";
 import { ordinal } from "@/lib/scoring/format";
 
