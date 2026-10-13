@@ -49,6 +49,12 @@ rather than leaving it stale. Record new decisions or open questions there, not 
   reads it from Cloudflare R2 (`data.lodestarmap.com`, `NEXT_PUBLIC_DATA_URL`), rebuilt monthly
   by `.github/workflows/tracts-refresh.yml`. Hand-downloaded sources (SEDA) live in a private
   R2 bucket: `python -m etl.inputs pull` after cloning. Don't commit data files under `etl/data/raw/`.
+- Pollution (plan §9 Phase 11, `etl/pollution/`): measured at every 2020 census block where
+  people live and population-weighted — never a county source or a neighbour's value. CI runs
+  `python -m etl.pollution published` and `python -m etl.tracts.backfill --pollution` after
+  publishing area files (a monthly rebuild without them drops the columns); counties.json
+  needs `python -m etl.pollution all` then `python -m etl.patch pollution`. Pollution scores on
+  fixed anchors, not percentiles (`src/lib/tracts/pollution.ts`); radon is shown, never ranked.
 - State laws: design and rules in `LAWS.md` — read §8 *The automation line* first. The table
   (`etl/data/law_definitions.csv` + `law_values.csv`) is written only by
   `python -m etl.laws.refresh`, which parses each cited source; never hand-edit values.
