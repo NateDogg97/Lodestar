@@ -630,6 +630,11 @@ reads it from R2 (`NEXT_PUBLIC_DATA_URL`). Large downloads land in `data/raw/`
 (git-ignored) and are reused. Thresholds and
 URLs are in the "Census tracts" section of `config.py`.
 
+Each area's property tax rate (`property_tax_rate`, taxes paid ÷ home values of owner-occupied
+homes, tract ACS) comes with the build; into existing area files with
+`python -m etl.tracts.backfill --taxes`. `etl.tracts.national` adds `property_tax_rate_eb`,
+shrunk toward the area's city's typical area (plan §9 Phase 10g).
+
 ## Phase 11: pollution (`etl/pollution/`)
 
 Measured **where people live**: every 2020 census block with residents is sampled, and

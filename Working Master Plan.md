@@ -8,6 +8,10 @@
 > Last updated: 2026-10-13
 >
 > **Changelog**
+> - 2026-10-13 — **Taxes by area** (§9 Phase 10, "10g"; owner: "several areas have different
+>   effective tax burdens within the same county"). Each area has its own property tax rate
+>   (tract ACS); with areas as the results, Taxes uses it and is scored per area. Area pages
+>   get a Taxes section; the county page says its rate is an average.
 > - 2026-10-13 — **Phase 11 Tier 1 built (11a–11f)** (§9): PM2.5 (with the monitor-disagreement
 >   caution), wildfire smoke days, older housing (lead paint) as anchored area priorities;
 >   radon shown and cautioned, never ranked; Pollution sections on area and county pages; the
@@ -2115,6 +2119,40 @@ becomes "Tied for #1"; the county map's colour span is at least 20 points (`MIN_
       or run by hand) then publishes `areas.json` with the `*_eb` columns — or the owner runs
       `etl.tracts.upload` with the R2 keys. Until then areas rank on published values (the
       app falls back per value).
+**10g. Taxes by area (2026-10-13).** Owner: "The estimated tax for the whole Washtenaw county
+is the same… several areas have different effective tax burdens within the same county." Rates
+are set by city, township and school district: Washtenaw's areas run 0.95–2.09% (townships
+~1.1–1.5%, Ann Arbor ~1.6–1.8%, Ypsilanti city ~2.0%) on a county figure of 1.49%.
+- [x] `property_tax_rate` per area: tract ACS B25090 ÷ B25082 (aggregates, the county method),
+      margin by the ratio formula, flagged like a median at CV > 40% (`etl/tracts/acs.py`;
+      existing files: `python -m etl.tracts.backfill --taxes`). 79,923 of 84,119 areas have
+      one; 6,475 are flagged. Renter-heavy areas (1–5% owners) have none: the county's is used.
+- [x] `property_tax_rate_eb` (areas.json): Fay–Herriot toward the area's **city's** typical
+      area (areas in no city toward each other; a city with fewer than 3 rated areas toward
+      the county) — cities levy their own millage, and a county center pulled Ypsilanti's
+      2.0% to 1.65%. Check: the median area's rate vs its county's, r = 0.97, ratio 1.01;
+      within a county, p90/p10 of areas' rates is 1.18 (median county), 1.49 (p90).
+- [x] App (`src/lib/tracts/taxes.ts`): with areas as the results, Taxes = the county's sum
+      with the area's rate (its estimate, else as published, else the county's), ranked
+      among areas; the county part is scored without it (`areaTaxSearch`), so it counts once.
+      The Taxes and property-tax-rate must-haves test the area (`taxes`, `taxes_rate`).
+      County results still rank counties on the county's Taxes. Watch-out: "Taxes higher
+      than in X% of US areas". Badge: "Lowest taxes".
+- [x] Kept: without a budget the home is the **county's** typical home (10b — the area's own
+      would count prices twice), so areas differ by rate. The area page also says what the
+      bill would be on the area's own typical home.
+- [x] Area page "Taxes": its rate vs the county's, the range across the county's areas, the
+      estimate and its parts. County page: the estimate and rate say they're averages.
+      Property tax rate is a "Color the map by" option inside a county.
+- [x] `etl.tracts.national --merge-live` keeps a live file lacking newer columns (they read
+      as unknown) instead of dropping every county not rebuilt — it had been rejecting the
+      live file since the Phase 11 columns.
+- Results: Washtenaw, no household set: $9,083 (Manchester-area township, 1.16%) to $12,840
+  (College Heights, Ypsilanti, 2.02%) vs the county's $10,507. "Good schools + low taxes":
+  top 100 FL 45, TN 27, NV 13, WY 10, TX 3, ND 2. Audit scenario "Taxes by area" locks in
+  monotone rate → taxes inside Washtenaw and Taxes counted once.
+- [ ] Later: the new-buyer ratio by PUMA for areas (now the county's); MI/FL statutory millage.
+
 - [ ] Owner: Taxes basis without a budget (county typical home — chosen above — vs a fixed
       national home, which would measure tax *policy* only).
 - [ ] Owner: the watch-out line at 5% (vs 10%: more cautions, more noise).
