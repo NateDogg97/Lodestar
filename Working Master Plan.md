@@ -8,6 +8,10 @@
 > Last updated: 2026-10-13
 >
 > **Changelog**
+> - 2026-10-13 — **Phase 11 Tier 1 built (11a–11f)** (§9): PM2.5 (with the monitor-disagreement
+>   caution), wildfire smoke days, older housing (lead paint) as anchored area priorities;
+>   radon shown and cautioned, never ranked; Pollution sections on area and county pages; the
+>   monthly refresh computes pollution with a coverage gate. Inputs not yet mirrored.
 > - 2026-10-13 — **Phase 11 planned: pollution, and it is NEXT** (§9; owner). Eleven rules against averaging and
 >   nearby-pollution bias, an acceptance gate per pollutant, the health risk and the risk to
 >   this plan of each type, and a tiered build order. Tier 1: PM2.5, wildfire smoke, older-housing
@@ -2145,7 +2149,7 @@ Explore inside). A first-time visitor should learn the main loop in under a minu
 - [ ] Maybe later: quick-start chips on the welcome card ("What matters most?") that set
       the first priorities.
 
-### Phase 11 — Pollution ⬅️ **NEXT** (planned 2026-10-13; **nothing built yet**)
+### Phase 11 — Pollution (planned 2026-10-13; **Tier 1 built 2026-10-13: 11a–11f**; 11g–11h not started)
 
 **Why.** "Natural hazards" (FEMA) covers disasters. Nothing in the app says what a person
 breathes, drinks or lives next to. Pollution is the next safety question after crime and
@@ -2331,10 +2335,20 @@ re-check when the UI wording is written (2026-10-13: not yet verified).
       per-zone distributions of *test results* (basement-heavy, often where radon was
       suspected). Neither is "the share of homes", so pages say "the chance a home radon
       test reads above 4 pCi/L". Watch out moved to ≥ 40% (worst 5.6%; 30% flagged 16.9%).
-- [~] **11f — National run:** *Run locally 2026-10-13 (numbers under 11e); left: mirror
-      inputs to R2, the annual step in `tracts-refresh.yml`, AGENTS.md / etl/README.md.*
-      coverage per source, size check, mirror inputs, add to
+- [x] **11f — National run:** coverage per source, size check, mirror inputs, add to
       `tracts-refresh.yml` as an annual step, update `AGENTS.md` and `etl/README.md`.
+      *Done 2026-10-13, except mirroring (owner: "without the inputs to the private bucket").*
+      Coverage and sizes are under 11e. `python -m etl.pollution all | published | STATES`
+      computes every table in one run (3.5 min with inputs cached; a per-state run gives
+      the national run's values, checked byte-identical). **CI:** a "Pollution" step in
+      `tracts-refresh.yml` after Publish and before areas.json / upload — not annual as
+      planned: every run starts from scratch, and a rebuild without it would *drop* the
+      columns, so it runs monthly and re-downloads the inputs (~3–4 GB) until they're
+      mirrored. **Gate:** `backfill --pollution` fails the run if residential-area coverage
+      falls below PM2.5 / smoke 99%, older homes 95%, radon 85% of the lower 48. counties.json
+      stays a local step (`etl.pollution all` → `etl.patch pollution`), like its other sources.
+      *Open:* mirror the inputs (rule 11) when the owner wants it — then CI can skip the
+      downloads.
 - [ ] **11g — Tier 2:** air toxics, noise, drinking water; ozone and NO2 only if a source passes 11a.
 - [ ] **11h — Tier 3:** "Sites near here" lists; light pollution if asked.
 
