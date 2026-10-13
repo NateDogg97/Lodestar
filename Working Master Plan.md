@@ -2305,10 +2305,10 @@ re-check when the UI wording is written (2026-10-13: not yet verified).
       record the numbers here, and set the scoring anchors. **Stop if it fails.**
 - [x] **11d — Lead paint and radon**, tract and county, with confidence flags. *Done
       2026-10-13 — see "11d results". Not yet in the published files (11e/11f).*
-- [~] **11e — App:** metrics, group, anchored scoring, pages, watch-outs, Data sources page,
+- [x] **11e — App:** metrics, group, anchored scoring, pages, watch-outs, Data sources page,
       unit tests, new `audit:results` scenarios (e.g. a clean-air search must not surface a
       smoke-heavy valley; a Tier 1 filter changes the order only when weighted).
-      *Built 2026-10-13; verifying on the national data:* a **Pollution** section of area
+      *Done 2026-10-13 (verified on the national data, below):* a **Pollution** section of area
       priorities — PM2.5, wildfire smoke days, older homes (lead paint) — with fixed direction
       and no "top 1%" badges; points from `src/lib/tracts/pollution.ts` (`ANCHORED`), the
       PM2.5 cap read from the area's own "pm25" flag (set by `backfill --pollution` at
@@ -2316,9 +2316,24 @@ re-check when the UI wording is written (2026-10-13: not yet verified).
       worst 5% on PM2.5 and smoke. `PollutionSection` on area and county pages (county:
       share of residents over 9, worst area; area: nearest monitor). ETL: `backfill
       --pollution`, `etl.patch pollution` (9 county columns), areas.json + 5 columns. Unit
-      tests `pollution.test.ts`; audit: anchored singles expect the best points, plus
-      three pollution scenarios.
-- [ ] **11f — National run:** coverage per source, size check, mirror inputs, add to
+      tests `pollution.test.ts`; audit: anchored singles expect the 20 best points, the
+      audit re-derives anchored points independently, plus three pollution scenarios.
+      **National numbers:** 5.77M populated blocks → 83,848 areas, 3,144 counties. PM2.5 and
+      smoke known for 100% of areas (area medians 7.8 µg/m³, 13.5 thick days); older homes
+      100% (median 21% pre-1960; 4,245 areas flagged by ACS margin); radon 94.5% (median 10%).
+      692 areas (0.8%) PM2.5-doubted. counties.json 1.87 MB (< 2 MB); areas.json 18.4 MB raw,
+      4.6 MB gzipped (+1.4 MB raw). `npm run audit:results` passes, including the pollution
+      scenarios. Live (localhost): Portola's area shows model 5.8 with the 11.7 µg/m³ Portola
+      monitor 3 km away, drawn neutral, "Air quality uncertain", scored 50; Allegheny's page
+      52% of residents over 9, 9% near a doubting monitor, 55% pre-1960 homes.
+      **Radon, a correction:** the ZIP file gives 14.1% of people (population-weighted) vs the
+      paper's 73M (~24%) "living in residences above 4 pCi/L" — the paper's figure applies
+      per-zone distributions of *test results* (basement-heavy, often where radon was
+      suspected). Neither is "the share of homes", so pages say "the chance a home radon
+      test reads above 4 pCi/L". Watch out moved to ≥ 40% (worst 5.6%; 30% flagged 16.9%).
+- [~] **11f — National run:** *Run locally 2026-10-13 (numbers under 11e); left: mirror
+      inputs to R2, the annual step in `tracts-refresh.yml`, AGENTS.md / etl/README.md.*
+      coverage per source, size check, mirror inputs, add to
       `tracts-refresh.yml` as an annual step, update `AGENTS.md` and `etl/README.md`.
 - [ ] **11g — Tier 2:** air toxics, noise, drinking water; ozone and NO2 only if a source passes 11a.
 - [ ] **11h — Tier 3:** "Sites near here" lists; light pollution if asked.
