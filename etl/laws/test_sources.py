@@ -93,6 +93,8 @@ check(blocks["CA"]["credit"] == (153, 306) and blocks["CA"]["exemption"] == (0, 
 check(tf.encode_schedule(blocks["AK"]) == "none", "no wage income tax encodes as none")
 check(tf.encode_schedule(blocks["AL"]) == "s:0.02@0,0.04@500,0.05@3000;m:0.02@0,0.04@1000,0.05@6000;"
       "sd:3000,8500;ex:1500,3000;cr:0,0", "the schedule's compact form")
+check(tf.encode_schedule({**blocks["AL"], "single": [(0.0485, 0), (0.109, 1_234_567)]}).startswith(
+      "s:0.0485@0,0.109@1234567;"), "a 7-digit threshold isn't rounded")
 
 print("\nTax Foundation: sales tax and groceries")
 sheet = [("State & Local Sales Tax Rates as of July 1, 2026",),

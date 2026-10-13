@@ -159,8 +159,8 @@ def encode_schedule(b: dict) -> str:
     "none". Read by `incomeTax` in src/lib/scoring/taxes.ts."""
     if b["none"] or b["capital_gains_only"] or not b["single"]:
         return "none"
-    pairs = lambda xs: ",".join(f"{r:g}@{o:g}" for r, o in xs)  # noqa: E731
-    two = lambda t: f"{t[0]:g},{t[1]:g}"  # noqa: E731
+    pairs = lambda xs: ",".join(f"{r:.12g}@{o:.12g}" for r, o in xs)  # noqa: E731
+    two = lambda t: f"{t[0]:.12g},{t[1]:.12g}"  # noqa: E731
     return (f"s:{pairs(b['single'])};m:{pairs(b['married'] or b['single'])};"
             f"sd:{two(b['deduction'])};ex:{two(b['exemption'])};cr:{two(b['credit'])}")
 
