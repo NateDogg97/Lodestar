@@ -2303,7 +2303,8 @@ re-check when the UI wording is written (2026-10-13: not yet verified).
       flagged). Smoke built as HMS days overhead, 2015–2024 (below).* on Allegheny PA, Harris TX, Kern CA, Teton WY, Washtenaw
       MI (audit continuity) and a rural county with no monitor. Run the whole acceptance gate,
       record the numbers here, and set the scoring anchors. **Stop if it fails.**
-- [ ] **11d — Lead paint and radon**, tract and county, with confidence flags.
+- [x] **11d — Lead paint and radon**, tract and county, with confidence flags. *Done
+      2026-10-13 — see "11d results". Not yet in the published files (11e/11f).*
 - [ ] **11e — App:** metrics, group, anchored scoring, pages, watch-outs, Data sources page,
       unit tests, new `audit:results` scenarios (e.g. a clean-air search must not surface a
       smoke-heavy valley; a Tier 1 filter changes the order only when weighted).
@@ -2540,6 +2541,45 @@ rings (repaired on read); an unknown density label raises.
   linear from **100 at ≤ 5 days to 0 at ≥ 30**: the middle half spans 50–83 points
   (leverage like PM2.5's bands). A year-to-year SD of ~15 days in the West puts the ten-year
   mean's error near ±5 days, so the info text says differences under ~10 days are noise.
+
+#### 11d results (2026-10-13)
+
+**Older housing (lead-paint risk).** B25034 added to `ACS_TRACT_VARIABLES`; `etl/tracts/acs.py`
+makes `pre1960_share` and `pre1980_share` with MOEs and the usual ±15-point flag (Washtenaw 6 of
+107 areas flagged, Allegheny 19 of 394, Teton 0 of 7). Counties come from the county ACS
+estimate and its own margin (`python -m etl.pollution.lead` → `interim/lead_counties.csv`, 2 of
+3,222 low confidence) — a count of homes, not a modeled surface, so rule 3 doesn't apply and
+summing tracts would only widen the margin. Pre-1960 by county: median 24.6%, quartiles
+15.4–38.5%; Brooklyn 66.1, Allegheny 54.6, Washtenaw 25.2, Kern 18.4, Harris 12.0, Teton 11.5.
+Area files gain the columns on the next tract rebuild (the ACS chunk cache key includes its
+variables, so it refetches).
+
+**Radon.** `python -m etl.pollution.radon` (OSF, CC0): the monthly ZIP exceedance file
+(28,404 ZCTAs, lower 48) → the year as the mean of 12 months (a blank month → unknown; 27
+ZCTAs) → blocks by Census's 2020 ZCTA–block file (8.04M blocks, 1 GB streamed once to
+`interim/blocks/zcta.csv.gz`) → population-weighted `radon_above4` and `radon_above2` (%) and
+`radon_ci` (the model's mean bootstrap 95% CI width, percentage points).
+- *Units confirmed:* thresholds are stated in Bq/m³ (148 = 4 pCi/L); the average file is a
+  geometric mean in pCi/L (consistent with its own exceedances at radon's usual GSD ≈ 3).
+- *Pilot counties, % of homes above 4 pCi/L:* Lancaster PA 39.6, Teton 38.2, Berks (Reading
+  Prong) 36.1, Washtenaw 31.5, Carbon WY 29.7, Allegheny 29.5, Wayne MI 12.8, Philadelphia 6.9,
+  Kern 3.2, Los Angeles 3.2, Harris 0.1.
+- *Coverage:* 91.7% of the five pilot states' residents. The model leaves out dense,
+  basement-poor ZIPs (South LA, Santa Ana, Anaheim, SF's Mission and Excelsior — 9.4% of CA +
+  TX + MI): San Francisco 0% covered, LA 68%. Unknown, not filled from neighbours (rules 5, 9).
+  The paper's national headline (26.8% of people above 4 pCi/L) is the 11f cross-check.
+- *Uncertainty is large:* the CI width's median is ~34 points for a ZIP at ~20% — a ZIP's
+  "20%" means roughly 3–37%. On top of that, radon is per house.
+
+**For 11e (owner to confirm; recommendations):**
+- *Radon — show, don't rank* (as the table above first said, for a new reason: the source is
+  now fine-grained but its error is wider than most gaps between places). Area and county pages
+  show the share above 4 pCi/L with the low-confidence icon and "test your home"; Watch out
+  (10d) names an area at ≥ 30%. No priority, no must-have.
+- *Older housing — rank with anchors:* 100 points at 0% built before 1960, 0 at ≥ 60%
+  (linear; the county middle half spans 36–74 points); flagged values carry the icon.
+- *PM2.5 doubt in the app:* "doubted" when `pm25_doubt` ≥ 50; below that, the page notes the
+  share without the cap (above, 11c).
 
 #### Review notes (2026-10-13, after the Washtenaw fixes — not decisions)
 
