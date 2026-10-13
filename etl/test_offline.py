@@ -805,6 +805,27 @@ def test_pollution_exposure() -> None:
           "a tract's value doesn't depend on which counties are run together")
 
 
+def test_pollution_monitors() -> None:
+    """EPA annual means: complete years, events included, POCs averaged, 2+ years per site."""
+    print("\npollution.monitors (EPA PM2.5 annual means by site)")
+    from .pollution.monitors import site_means
+
+    def row(year, poc, mean, event="No Events", complete="Y", standard="PM25 Annual 2024", site="0064"):
+        return {"State Code": "42", "County Code": "003", "Site Num": site, "Parameter Code": 88101, "POC": poc,
+                "Latitude": 40.32, "Longitude": -79.87, "Pollutant Standard": standard, "Year": year,
+                "Completeness Indicator": complete, "Event Type": event, "Arithmetic Mean": mean,
+                "Local Site Name": "Liberty"}
+    rows = [row(2022, 1, 11.0), row(2022, 2, 13.0),                       # two instruments: 12
+            row(2023, 1, 14.0, "Events Included"), row(2023, 1, 12.5, "Events Excluded"),
+            row(2024, 1, 99.0, complete="N"),                              # incomplete: dropped
+            row(2024, 1, 50.0, standard="PM25 24-hour 2024"),              # another standard
+            row(2023, 1, 9.0, site="9999")]                                # one year only
+    out = site_means([pd.DataFrame(rows)]).set_index("site")
+    check(list(out.index) == ["42-003-0064"], "a site needs two complete years")
+    check(out.at["42-003-0064", "pm25"] == 13.0 and out.at["42-003-0064", "years"] == 2,
+          "instruments averaged per year; smoke events kept (12 and 14 -> 13)")
+
+
 def test_noaa_per_variable_station_selection() -> None:
     print("\nNOAA: stations are selected per variable group, not per county")
     from .sources import noaa
@@ -1350,6 +1371,7 @@ def main() -> int:
         test_pollution_grid()
         test_pollution_blocks()
         test_pollution_exposure()
+        test_pollution_monitors()
 
         fixtures = _make_synthetic()
         try:
