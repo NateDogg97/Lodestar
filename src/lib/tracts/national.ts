@@ -643,7 +643,7 @@ export function areaWatchOuts(areas: NationalAreas, i: number, s: NationalSearch
   // a share of homes over EPA's action level this high is always worth saying (11e).
   const radon = areas.values.get("radon_above4")?.[i] ?? NaN;
   if (radon >= RADON_WATCH) {
-    out.push({ key: "radon_above4", text: `About ${Math.round(radon)}% of homes here test above EPA's radon action level — test any home` });
+    out.push({ key: "radon_above4", text: `About ${Math.round(radon)}% of home radon tests here read above EPA's action level — test any home` });
   }
   return out;
 }

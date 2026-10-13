@@ -105,7 +105,7 @@ const COUNTY_SOURCES: { name: string; url: string; vintage: string; covers: stri
     url: "https://doi.org/10.17605/OSF.IO/3SHC4",
     vintage: "2001–2021, CC0",
     covers:
-      "Share of homes expected above EPA's 4 pCi/L radon action level, from 6M+ home tests. Shown, not ranked: its error is wide and radon varies house to house. Census 2020 ZIP-area–block relationship file to place it",
+      "The chance a home radon test reads above EPA's 4 pCi/L action level, modeled from 6M+ home tests (mostly basements and lowest floors). Shown, not ranked: its error is wide and radon varies house to house. Census 2020 ZIP-area–block relationship file to place it",
   },
   {
     name: "Census 2020 redistricting blocks (PL 94-171)",

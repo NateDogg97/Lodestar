@@ -1133,10 +1133,10 @@ export function PollutionSection({
           )}
           {get("pre1980_share") !== null && <Row label="Homes built before 1980">{pct(get("pre1980_share"))}</Row>}
           {get("radon_above2") !== null && (
-            <Row label="Homes above 2 pCi/L (EPA: consider fixing)">{pct(get("radon_above2"))}</Row>
+            <Row label="Radon tests above 2 pCi/L (EPA: consider fixing)">{pct(get("radon_above2"))}</Row>
           )}
           {level === "county" && get("radon_above4_worst") !== null && (
-            <Row label="Radon: worst area in the county">{pct(get("radon_above4_worst"))} of homes above 4 pCi/L</Row>
+            <Row label="Radon: worst area in the county">{pct(get("radon_above4_worst"))} of tests above 4 pCi/L</Row>
           )}
           <Note>
             PM2.5: WashU ACAG V6.GL.03, 2022–2024 average, a ~1 km satellite and chemistry model calibrated to EPA
@@ -1144,8 +1144,9 @@ export function PollutionSection({
             smooths over local sources — industry, ports, wood smoke in valleys. WHO&rsquo;s guideline is 5 µg/m³; the
             federal standard of 9 is under review. Smoke: NOAA Hazard Mapping System, days with smoke outlined overhead,
             2015–2024 — overhead isn&rsquo;t always at the ground. Older homes: Census 2019–2023; lead paint was banned
-            in 1978, and an old home is a risk, not a measure of lead exposure. Radon: share of homes expected above
-            EPA&rsquo;s 4 pCi/L action level by ZIP area (Harvard model of 6M+ tests, 2001–2021){
+            in 1978, and an old home is a risk, not a measure of lead exposure. Radon: the chance a home test reads above
+            EPA&rsquo;s 4 pCi/L action level, by ZIP area (Harvard model of 6M+ tests, mostly basements and lowest
+            floors, 2001–2021){
               get("radon_ci") !== null ? `, give or take about ${Math.round(get("radon_ci")! / 2)} points here` : ""
             }. Estimates for screening, not your address.
           </Note>
@@ -1201,7 +1202,7 @@ export function PollutionSection({
         </Row>
       )}
       {radon !== null && (
-        <Row label="Homes above EPA’s radon action level">
+        <Row label="Radon tests above EPA’s action level">
           <span className={radon >= RADON_WATCH ? "font-semibold text-amber-800 dark:text-amber-300" : undefined}>
             {pct(radon)}
           </span>

@@ -237,8 +237,8 @@ export const AREA_MEASURES: AreaMeasure[] = [
     note: "Census, 2019–2023. Lead paint is most likely in homes this old — a risk, not a measure of lead exposure." },
   { key: "pre1980_share", label: "Homes built before 1980", format: "percent",
     note: "Census, 2019–2023. Lead paint was banned for homes in 1978; the Census counts by decade, so 1980 is the nearest cut." },
-  { key: "radon_above4", label: "Homes above radon action level", format: "percent", colorable: true,
-    note: "Expected share of homes testing above EPA's 4 pCi/L action level, by ZIP area (Harvard model of 6M+ home tests, 2001–2021, PNAS 2025). Radon varies house to house: test any home." },
+  { key: "radon_above4", label: "Radon tests above action level", format: "percent", colorable: true,
+    note: "The chance a home radon test here reads above EPA's 4 pCi/L action level, by ZIP area (Harvard model of 6M+ home tests, 2001–2021, PNAS 2025). Tests are mostly taken in basements and lowest floors. Radon varies house to house: test any home." },
 ];
 
 export const AREA_MEASURE = new Map(AREA_MEASURES.map((m) => [m.key, m]));

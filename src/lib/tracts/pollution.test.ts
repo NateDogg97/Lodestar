@@ -68,7 +68,7 @@ describe("pollution in area results", () => {
 
   it("always cautions about radon at 30%+, which nobody can weight", () => {
     const warn = (i: number) => areaWatchOuts(areas, i, s).filter((w) => w.key === "radon_above4");
-    expect(warn(0).map((w) => w.text)).toEqual(["About 35% of homes here test above EPA's radon action level — test any home"]);
+    expect(warn(0).map((w) => w.text)).toEqual(["About 35% of home radon tests here read above EPA's action level — test any home"]);
     expect(warn(1)).toEqual([]);
     expect(warn(2)).toEqual([]); // unknown stays unknown: no caution, no all-clear
   });

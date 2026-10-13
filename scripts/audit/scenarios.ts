@@ -325,33 +325,34 @@ const composite: Scenario[] = [
   },
 ];
 
-/** The best points any residential area earns on an anchored measure (Phase 11). */
-const bestPoints = (r: RunResult, column: string) => {
-  let best = -Infinity;
+/** The `n`th best points any area in play earns on an anchored measure (Phase 11). */
+const nthBestPoints = (r: RunResult, column: string, n: number) => {
+  const pts: number[] = [];
   for (let i = 0; i < r.areas.n; i++) {
+    if (r.ns && r.ns.status[i] > 1) continue; // excluded or out of play
     const p = areaPoints(r.areas, column, i, "lower");
-    if (p > best) best = p;
+    if (!Number.isNaN(p)) pts.push(p);
   }
-  return best;
+  return pts.sort((a, b) => b - a)[n - 1] ?? -Infinity;
 };
 
 /**
  * One priority at a time, at its default direction: the top 20 must sit in the best 2%.
- * Anchored measures (pollution) tie every area past the best anchor at full points, so
- * there the top 20 must earn the best points any area does (within a point).
+ * Anchored measures (pollution) tie every area past the best anchor, so there the top 20
+ * must be the 20 best-scoring areas (ties by population), whatever their values.
  */
 const singles: Scenario[] = AREA_PRIORITIES.map((d) => ({
   name: `Single priority: ${d.label} (${d.defaultDirection})`,
   intent: `Only ${d.label.toLowerCase()} weighted, ${d.defaultDirection} is better.`,
   expect: isAnchored(d.key)
-    ? "The top 20 earn the best points any US area does on this measure (anchored, not ranked); ties broken by population."
+    ? "The top 20 are the 20 best-scoring US areas on this measure (anchored points, not ranks); ties broken by population."
     : "The top 20 are in the best 2% of US areas on this measure; ties broken by population.",
   prefs: P({ area: { weights: { [d.key]: 3 } } }),
   checks: [
     isAnchored(d.key)
       ? (r) => {
-          const best = bestPoints(r, d.key);
-          return allTop(20, `under the best points on ${d.label}`, (rr, i) => areaPoints(rr.areas, d.key, i, "lower") >= best - 1)(r);
+          const cut = nthBestPoints(r, d.key, 20);
+          return allTop(20, `not among the 20 best points on ${d.label}`, (rr, i) => areaPoints(rr.areas, d.key, i, "lower") >= cut - 1e-9)(r);
         }
       : allTop(20, `not in the best 2% of ${d.label}`, extreme(d.key, d.defaultDirection)),
   ],

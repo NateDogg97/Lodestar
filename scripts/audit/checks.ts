@@ -99,6 +99,30 @@ export const quantile = (sorted: Float64Array, q: number) => sorted[Math.min(sor
 
 const bad = (s: string) => /NaN|undefined|Infinity|null/.test(s);
 
+/**
+ * Anchored points (pollution, Phase 11), derived independently of the app: PM2.5's band
+ * points integrated numerically over N(value, 1.7) (the app uses an erf formula), capped at
+ * 50 when the area's own "pm25" flag says a monitor doubts it; smoke and older homes linear.
+ */
+function anchoredPoints(key: string, v: number, doubted: boolean): number | null {
+  if (key === "pm25") {
+    const band = (x: number) => (x <= 5 ? 100 : x <= 7 ? 75 : x <= 9 ? 50 : x <= 12 ? 25 : 0);
+    const sd = 1.7;
+    let sum = 0;
+    let wsum = 0;
+    for (let z = -8; z <= 8; z += 0.001) {
+      const w = Math.exp(-0.5 * z * z);
+      sum += w * band(v + z * sd);
+      wsum += w;
+    }
+    return doubted ? Math.min(50, sum / wsum) : sum / wsum;
+  }
+  const lin = (best: number, worst: number) => Math.max(0, Math.min(100, (100 * (worst - v)) / (worst - best)));
+  if (key === "smoke_days_thick") return lin(5, 30);
+  if (key === "pre1960_share") return lin(0, 60);
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 
 export function automaticChecks(r: RunResult): Findings {
@@ -140,6 +164,14 @@ export function automaticChecks(r: RunResult): Findings {
           f.hard.push(`budget fit contradicts the value: ${areas.name[i]} ${p.key}=${p.value} shown ${p.points?.toFixed(2)}, derived ${want.toFixed(2)}`);
         }
         if (p.beats !== null) f.hard.push(`a rarity claim on budget fit: ${areas.name[i]} ${p.key}`);
+        continue;
+      }
+      const anchored = p.level === "area" ? anchoredPoints(p.key, scoredAt(areas, p.key, i), areas.lowConfidence[i].includes(p.key)) : null;
+      if (anchored !== null) {
+        if (p.points === null || Math.abs(anchored - p.points) > 0.05) {
+          f.hard.push(`anchored points contradict the value: ${areas.name[i]} ${p.key}=${p.value} shown ${p.points?.toFixed(2)}, derived ${anchored.toFixed(2)}`);
+        }
+        if (p.beats !== null) f.hard.push(`a rarity claim on anchored points: ${areas.name[i]} ${p.key}`);
         continue;
       }
       const d = p.level === "area"

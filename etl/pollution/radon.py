@@ -6,8 +6,9 @@ Radon: the share of homes above EPA's action level, where people live (plan §9 
 
 WHAT THIS PRODUCES
     data/interim/radon_tracts.csv, radon_counties.csv — `etl.pollution.exposure` columns:
-        radon_above4      % of homes expected above 4 pCi/L (148 Bq/m³, EPA's action level)
-        radon_above2      % above 2 pCi/L (74 Bq/m³, EPA's "consider fixing")
+        radon_above4      the chance (%) a home test reads above 4 pCi/L (148 Bq/m³, EPA's
+                          action level) — tests are mostly basements and lowest floors
+        radon_above2      the same above 2 pCi/L (74 Bq/m³, EPA's "consider fixing")
         radon_ci          the ZIP model's own uncertainty: mean bootstrap 95% CI width of
                           the 4 pCi/L share, in percentage points (for the caution icon)
     each the population-weighted mean over the place's blocks, by the block's ZIP area.
