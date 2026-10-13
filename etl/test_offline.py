@@ -854,6 +854,29 @@ def test_pollution_doubt() -> None:
           "the nearest monitor is shown with its own reading, beside (not as) the area's value")
 
 
+def test_pollution_smoke() -> None:
+    """HMS plumes: densest plume per cell, a day not analyzed isn't a clear day."""
+    print("\npollution.smoke (days with smoke overhead)")
+    import shapely
+
+    from .pollution.smoke import count, rasterize
+
+    light = shapely.box(-84.0, 42.0, -83.0, 43.0)      # Michigan-ish, Light
+    heavy = shapely.box(-83.5, 42.0, -83.0, 42.5)      # inside it, Heavy
+    r = rasterize(np.array([light, heavy]), np.array([1, 3], dtype=np.uint8))
+    check(r.max() == 3 and (r == 3).sum() == 100 and (r == 1).sum() == 300,
+          "a cell takes the densest plume over its centre (0.05 deg cells: 100 heavy, 300 light)")
+    day = (np.array([light, heavy]), np.array([1, 3], dtype=np.uint8))
+    clear = (np.array([], dtype=object), np.array([], dtype=np.uint8))
+    a, t, n = count([day, clear, None, None])
+    pt = (np.array([42.2]), np.array([-83.2]))
+    check(n == 2, "a day with no file is not analyzed (2 of 4)")
+    check(abs(a.sample(*pt)[0] - 182.5) < 1e-3 and abs(t.sample(*pt)[0] - 182.5) < 1e-3,
+          "1 smoky day of 2 analyzed is half the year, not a quarter")
+    out = (np.array([42.8]), np.array([-83.8]))
+    check(t.sample(*out)[0] == 0 and a.sample(*out)[0] == 182.5, "a Light plume isn't a thick day")
+
+
 def test_noaa_per_variable_station_selection() -> None:
     print("\nNOAA: stations are selected per variable group, not per county")
     from .sources import noaa
@@ -1401,6 +1424,7 @@ def main() -> int:
         test_pollution_exposure()
         test_pollution_monitors()
         test_pollution_doubt()
+        test_pollution_smoke()
 
         fixtures = _make_synthetic()
         try:
