@@ -9,8 +9,8 @@
 >
 > **Changelog**
 > - 2026-10-13 — **PR #1 from a fork (zamays): Phases 10d–10g, 11 and the §12 audit fixes.**
->   Decisions in those sections credited to "zamays" were made by the PR's author, not
->   the owner, and are **pending the owner's review**. "Owner:" open questions are still open.
+>   Decisions in those sections credited to "zamays" were made by the PR's author; the owner
+>   has reviewed and confirmed them.
 >   Review fixes on merge: the area page's Taxes always uses the rate Taxes ranks on (loads
 >   the national file for an open area page); budget notes compare the estimate that's scored;
 >   switching buy ↔ rent moves the budget's priority; rank caches keyed by column, so a budget
@@ -2175,9 +2175,9 @@ are set by city, township and school district: Washtenaw's areas run 0.95–2.09
   monotone rate → taxes inside Washtenaw and Taxes counted once.
 - [ ] Later: the new-buyer ratio by PUMA for areas (now the county's); MI/FL statutory millage.
 
-- [ ] Owner: Taxes basis without a budget (county typical home — chosen above — vs a fixed
-      national home, which would measure tax *policy* only).
-- [ ] Owner: the watch-out line at 5% (vs 10%: more cautions, more noise).
+- [x] Owner: Taxes basis without a budget — the county typical home, as built (vs a fixed
+      national home, which would measure tax *policy* only). Confirmed 2026-10-13.
+- [x] Owner: the watch-out line at 5%, as built (vs 10%: more cautions, more noise). Confirmed 2026-10-13.
 - [ ] Later: share of owned homes under the budget (ACS B25075) instead of fit to the
       typical home; local income taxes; filing-status-aware sales tax; county-level
       cost of living beyond rents (goods/services still the state's or metro's).
@@ -2217,7 +2217,7 @@ hazards, and its public data is better than most people assume — and worse in 
 knowable ways. This phase is mostly about not misleading: a number that looks precise and
 isn't is worse than "unknown".
 
-**Order.** zamays's decision, 2026-10-13 (owner to confirm): **this is the next phase to build**, ahead of
+**Order.** zamays's decision, 2026-10-13: **this is the next phase to build**, ahead of
 Phase 10's "Reach production", which stays open. (The Washtenaw audit fixes in §12 were built
 the same day, at zamays's request, before this phase started.) 11a is research with no app
 code. Start there.
@@ -2270,8 +2270,8 @@ Read as two separate biases, each with a rule the ETL must obey and a test that 
 **Acceptance gate for each pollutant (11c onward).** A column ships only if it passes; the
 numbers go in this section.
 - **Monitor check.** Hold out each EPA AQS monitor in turn; compare the column at the
-  monitor's block with its reading. Record bias and RMSE. Starting bar (owner to confirm,
-  set *before* looking): RMSE under 1.5 µg/m³ for PM2.5 — about a third of the gap between
+  monitor's block with its reading. Record bias and RMSE. Starting bar (set *before*
+  looking): RMSE under 1.5 µg/m³ for PM2.5 — about a third of the gap between
   WHO's 5 and EPA's 9.
 - **Contrast check.** Pairs of nearby tracts known to differ (Allegheny PA: Liberty/Clairton
   vs the North Hills; Harris TX: ship-channel vs west Houston; Kern CA vs coastal CA). Our
@@ -2324,7 +2324,7 @@ re-check when the UI wording is written (2026-10-13: not yet verified).
   better, each measure its own priority and must-have limit. **No combined "pollution
   index"** (a mean would hide the one pollutant that matters — the same lesson as
   `hazard_risk`).
-- **Scale: anchored points, not percentiles — recommended, owner to confirm.** Harm follows
+- **Scale: anchored points, not percentiles — recommended.** Harm follows
   dose, and a percentile turns a small gap in a crowded middle into a big score gap.
   `budgetPoints` (`src/lib/tracts/scoring.ts`) is the precedent: 100 at or under a reference,
   0 at a stated worst. Anchors come from the table above (WHO guideline → full points),
@@ -2519,7 +2519,7 @@ days only, and the smoke a person breathes stays inside total PM2.5.
 > V6 products state CC BY 4.0; the V5.NA.05.02 page states no license. May we use it under the
 > same terms?"
 
-**Proposed acceptance bars (owner to confirm — set before 11c looks further):**
+**Proposed acceptance bars (set before 11c looks further):**
 - *Monitor check:* in-sample against the latest AQS year — |bias| ≤ 0.5 and RMSE ≤ 2.0
   µg/m³ (2023 passes: +0.38, 1.46); and cite ACAG's out-of-sample 1.7–2.3 as the error
   people are shown. The 1.5 bar can't be tested out-of-sample by us.
@@ -2703,12 +2703,12 @@ ZCTAs) → blocks by Census's 2020 ZCTA–block file (8.04M blocks, 1 GB streame
   fixing 1.5 µg/m³ — the bar should be no looser than the model's own validation.
 
 #### Open questions for Phase 11
-- [ ] Owner: is the reading of "not biased by nearby pollution" in rules 5–8 what was meant
-      (a place isn't credited with a neighbour's value) — or should real drift from a nearby
-      source *count*? The model surfaces include physical drift; our code adds none.
-- [x] zamays (owner to confirm): anchored points instead of percentiles for pollution — yes, in coarse bands (2026-10-13).
-- [x] zamays (owner to confirm): Tier 1 as listed — radon from the ZIP-level OSF model (share above 4 pCi/L) (2026-10-13).
-- [ ] Owner: the monitor-check bar (RMSE < 1.5 µg/m³ for PM2.5).
+- [x] Owner: "not biased by nearby pollution" (rules 5–8) means a place isn't credited with a
+      neighbour's value; real drift counts only as the model surfaces include it — our code adds
+      none. Confirmed 2026-10-13.
+- [x] zamays: anchored points instead of percentiles for pollution — yes, in coarse bands (2026-10-13).
+- [x] zamays: Tier 1 as listed — radon from the ZIP-level OSF model (share above 4 pCi/L) (2026-10-13).
+- [x] Owner: the monitor-check bar (RMSE < 1.5 µg/m³ for PM2.5). Confirmed 2026-10-13.
 - [x] Which year(s) for PM2.5 — the 2022–2024 mean of V6.GL.03 (2026-10-13).
 - [ ] Refresh cadence for pollution inputs: annual (chosen) vs monthly with the rest.
 
@@ -2762,7 +2762,7 @@ Not in MVP. Do not build these until the above ships.
 
 ## 11. Open questions
 
-- [ ] **Pollution** — the owner decisions are listed under §9 Phase 11, "Open questions".
+- [x] **Pollution** — the owner decisions under §9 Phase 11, "Open questions", confirmed 2026-10-13.
 - [x] ~~Which 6–8 state law attributes actually matter?~~ Answered by `LAWS.md` (2026-09-27):
       12 laws, each marked filter / info / both.
 - [ ] At tract level, does the RPP recombination need re-weighting, or do BEA's national weights
