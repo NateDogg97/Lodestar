@@ -1202,6 +1202,9 @@ function HouseholdCard({ household: h, onChange }: { household: Household; onCha
   );
 }
 
+/** How long a money field waits after the last keystroke before the search re-scores. */
+const MONEY_DEBOUNCE_MS = 400;
+
 function MoneyField({
   id,
   label,
@@ -1217,6 +1220,22 @@ function MoneyField({
   value: number | undefined;
   onChange: (v: number | undefined) => void;
 }) {
+  // Every change re-scores the whole search (taxes depend on it), so typing waits for a
+  // pause; leaving the field or closing Filters applies it at once. The latest onChange is
+  // called, so a debounced value never overwrites a change made in the meantime.
+  const latest = useRef(onChange);
+  useEffect(() => {
+    latest.current = onChange;
+  });
+  const pending = useRef<{ timer: ReturnType<typeof setTimeout>; value: number | undefined } | null>(null);
+  const flush = () => {
+    const p = pending.current;
+    if (!p) return;
+    clearTimeout(p.timer);
+    pending.current = null;
+    latest.current(p.value);
+  };
+  useEffect(() => flush, []); // on unmount only
   return (
     <div>
       <label htmlFor={id} className="mb-1 block text-caption text-neutral-500 dark:text-neutral-400">
@@ -1231,8 +1250,11 @@ function MoneyField({
         placeholder={placeholder}
         onChange={(e) => {
           const n = Number(e.target.value.trim());
-          onChange(e.target.value.trim() !== "" && Number.isFinite(n) && n > 0 ? n : undefined);
+          const v = e.target.value.trim() !== "" && Number.isFinite(n) && n > 0 ? n : undefined;
+          if (pending.current) clearTimeout(pending.current.timer);
+          pending.current = { timer: setTimeout(flush, MONEY_DEBOUNCE_MS), value: v };
         }}
+        onBlur={flush}
         // 16px on phones so iOS doesn't zoom into the field.
         className="h-10 w-full rounded-lg border border-neutral-300 bg-transparent px-3 text-body tabular-nums placeholder:text-neutral-400 md:text-label dark:border-neutral-700"
       />
