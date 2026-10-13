@@ -15,6 +15,7 @@ import {
   explainArea,
   tradeOff,
   type Area,
+  type AreaTaxContext,
   type CountyAreas,
   type NationalAreas,
   type NationalScores,
@@ -52,6 +53,8 @@ export interface AreaRankingView {
   onReveal: (all: boolean) => void;
   /** National indices of the county's areas that fail the search (shown grey when revealed). */
   ruledOut: number[];
+  /** "Watch out" for an area: what it's among the worst in the US at, unasked (Phase 10d). */
+  watchOuts: (i: number) => { key: string; text: string }[];
   /** The county's areas the search rules out (or unknown, when unknowns are hidden). */
   hiddenCount: number;
 }
@@ -78,6 +81,8 @@ interface Props {
   onBackToResults: () => void;
   /** The county's racial equality, for an area's "Who lives here". */
   countyEquality?: PeopleEquality;
+  /** For an area's own tax estimate (2026-10-13). */
+  taxes?: AreaTaxContext;
 }
 
 /**
@@ -147,7 +152,14 @@ export function InsideView(props: Props & { withIdentity?: boolean }) {
         />
       )}
       {areas && area && (
-        <AreaDetail area={area} county={areas} countyName={countyName} ranking={ranking} countyEquality={props.countyEquality} />
+        <AreaDetail
+          area={area}
+          county={areas}
+          countyName={countyName}
+          ranking={ranking}
+          countyEquality={props.countyEquality}
+          taxes={props.taxes}
+        />
       )}
     </div>
   );

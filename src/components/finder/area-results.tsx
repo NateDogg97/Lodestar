@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 
 import {
   areaLimitResults,
@@ -13,11 +13,12 @@ import {
   type NationalScores,
   type NationalSearch,
   type ResultBadges,
+  type WatchOut,
 } from "@/lib/tracts";
 import { formatValue, type CountyScore, type MetricKey } from "@/lib/scoring";
 
 import { Icon } from "@/components/ui/icons";
-import { InfoTip } from "@/components/ui/info-tip";
+import { InfoTip, place } from "@/components/ui/info-tip";
 
 import { isGold, scoreColor, trackOverflow } from "./score-colors";
 
@@ -40,6 +41,8 @@ interface Common {
   onOpenArea: (i: number) => void;
   /** Show an area on the map; `fly` moves the map there (a summary opened by hand). */
   onPreview: (i: number | null, fly: boolean) => void;
+  /** What an area is among the worst in the US at, unasked (Phase 10d). */
+  watchOuts: (i: number) => WatchOut[];
 }
 
 /** "Areas | Counties" and "Top 100 · 250 · 500". */
@@ -136,37 +139,104 @@ function Fill({ points, beats }: { points: number; beats: number | null }) {
   );
 }
 
+/** A bar's hover label: "Commute: 82". */
+const barTip = (p: AreaPart) => `${p.label}: ${p.points === null ? "no data" : Math.round(p.points)}`;
+
+/**
+ * Hovering a fingerprint names the bar under the pointer. The bar under it is picked
+ * by x, so the gaps between bars don't flicker. The label is a popover (top layer),
+ * so a scrolling panel never clips it; it hides on scroll rather than drifting.
+ * Mouse and pen only: a tap opens the result, which explains every bar.
+ */
+function useBarTip() {
+  const pop = useRef<HTMLSpanElement>(null);
+  const shown = useRef<Element | null>(null);
+
+  const hide = useCallback(() => {
+    if (pop.current?.matches(":popover-open")) pop.current.hidePopover();
+  }, []);
+
+  useEffect(() => {
+    const el = pop.current;
+    if (!el) return;
+    const onToggle = (e: Event) => {
+      if ((e as ToggleEvent).newState === "open") return window.addEventListener("scroll", hide, true);
+      shown.current = null;
+      window.removeEventListener("scroll", hide, true);
+    };
+    el.addEventListener("toggle", onToggle);
+    return () => {
+      el.removeEventListener("toggle", onToggle);
+      window.removeEventListener("scroll", hide, true);
+    };
+  }, [hide]);
+
+  const onPointerMove = (e: PointerEvent<HTMLElement>) => {
+    if (e.pointerType === "touch") return;
+    const bar = [...e.currentTarget.children].find((b) => {
+      const r = b.getBoundingClientRect();
+      return e.clientX >= r.left - 2 && e.clientX <= r.right + 2;
+    });
+    const el = pop.current;
+    if (!el || !bar || bar === shown.current) return;
+    el.textContent = bar.getAttribute("data-tip");
+    if (!el.matches(":popover-open")) el.showPopover();
+    place(bar as HTMLElement, el);
+    shown.current = bar;
+  };
+
+  const tip = (
+    <span
+      ref={pop}
+      popover="manual"
+      aria-hidden
+      // Popovers default to centered (inset: 0; margin: auto); place() sets top/left.
+      className="pointer-events-none fixed inset-auto m-0 w-max rounded-md bg-neutral-900 px-2 py-1 text-caption font-medium text-white shadow-md dark:bg-neutral-100 dark:text-neutral-900"
+    />
+  );
+  return { handlers: { onPointerMove, onPointerLeave: hide }, tip };
+}
+
 /**
  * The fingerprint (owner's favorite): one bar per priority, most important first,
- * no words. Up to 4 priorities as short bars; more as tiny columns, so 11 still fit.
+ * no words — hover a bar for its name and points. Up to 4 priorities as short bars;
+ * more as tiny columns, so 11 still fit.
  */
 export function Fingerprint({ parts }: { parts: AreaPart[] }) {
+  const { handlers, tip } = useBarTip();
   const known = parts.filter((p) => p.points !== null);
   const label = known.map((p) => `${p.label} ${Math.round(p.points!)}`).join(", ");
   if (parts.length <= 4) {
     return (
-      <span role="img" aria-label={label} className="mt-1 flex items-center gap-1">
-        {parts.map((p) => (
-          <span key={p.key} className={`block h-1.5 w-9 rounded-full bg-neutral-200 dark:bg-neutral-800 ${trackOverflow(isGold(p.beats))}`}>
-            {p.points !== null && <Fill points={p.points} beats={p.beats} />}
-          </span>
-        ))}
-      </span>
+      <>
+        <span role="img" aria-label={label} {...handlers} className="mt-1 flex items-center gap-1">
+          {parts.map((p) => (
+            <span key={p.key} data-tip={barTip(p)} className={`block h-1.5 w-9 rounded-full bg-neutral-200 dark:bg-neutral-800 ${trackOverflow(isGold(p.beats))}`}>
+              {p.points !== null && <Fill points={p.points} beats={p.beats} />}
+            </span>
+          ))}
+        </span>
+        {tip}
+      </>
     );
   }
   return (
-    <span role="img" aria-label={label} className="mt-1 flex h-5 items-end gap-[3px]">
-      {parts.map((p) => (
-        <span
-          key={p.key}
-          className={`block w-2 rounded-t-sm ${isGold(p.beats) ? "gold-col" : ""}`}
-          style={{
-            height: `${Math.max(3, Math.round(((p.points ?? 0) / 100) * 20))}px`,
-            backgroundColor: p.points === null ? "#d4d4d4" : isGold(p.beats) ? undefined : scoreColor(p.points),
-          }}
-        />
-      ))}
-    </span>
+    <>
+      <span role="img" aria-label={label} {...handlers} className="mt-1 flex h-5 items-end gap-[3px]">
+        {parts.map((p) => (
+          <span
+            key={p.key}
+            data-tip={barTip(p)}
+            className={`block w-2 rounded-t-sm ${isGold(p.beats) ? "gold-col" : ""}`}
+            style={{
+              height: `${Math.max(3, Math.round(((p.points ?? 0) / 100) * 20))}px`,
+              backgroundColor: p.points === null ? "#d4d4d4" : isGold(p.beats) ? undefined : scoreColor(p.points),
+            }}
+          />
+        ))}
+      </span>
+      {tip}
+    </>
   );
 }
 
@@ -198,6 +268,59 @@ function Badges({ badges, first }: { badges: ResultBadges | undefined; first: bo
 const partValue = (p: AreaPart) =>
   p.level === "county" ? formatValue(p.key as MetricKey, p.value) : formatArea(p.key, p.value);
 
+/** A result's rank; "=4" when its shown score ties a neighbour's (Phase 10f). */
+export function RankLabel({ rank }: { rank: number }) {
+  return <span className="w-7 pt-0.5 text-label tabular-nums text-neutral-500">{rank}</span>;
+}
+
+/**
+ * Cautions under a result (Phase 10d, 2026-10-12): measures the search doesn't weigh
+ * where the place is among the worst 5% in the US — "Homes cost more than in 99% of US
+ * areas". Says nothing about the ranking; makes sure a #1 can't hide its catch.
+ */
+export function WatchLine({ items }: { items: { key: string; text: string }[] }) {
+  if (items.length === 0) return null;
+  return (
+    <p className="mt-0.5 flex items-start gap-1 text-caption text-amber-800 dark:text-amber-300">
+      <Icon name="warning" className="mt-[3px] h-3 w-3 shrink-0" />
+      <span>
+        <span className="sr-only">Watch out: </span>
+        {items.map((w) => w.text).join(" · ")}
+      </span>
+    </p>
+  );
+}
+
+/** Under a summary's bars: how a budget scored, and which values were ranked on an estimate. */
+function PartNotes({ parts }: { parts: AreaPart[] }) {
+  const budget = parts.find((p) => p.budget);
+  const scored = parts.filter((p) => p.scored !== undefined);
+  if (!budget && scored.length === 0) return null;
+  const money = (key: string, v: number) => formatArea(key, v);
+  // The budget is scored on the estimate when there is one, so it's compared on it too.
+  const fit = budget ? (budget.scored ?? budget.value) : null;
+  return (
+    <div className="space-y-1 text-caption text-neutral-600 dark:text-neutral-400">
+      {budget && fit !== null && (
+        <p>
+          {budget.label}: {budget.scored !== undefined && "≈ "}
+          {money(budget.key, fit)},{" "}
+          {fit <= budget.budget!
+            ? `within your ${money(budget.key, budget.budget!)} budget`
+            : `${(fit / budget.budget!).toFixed(1)}× your ${money(budget.key, budget.budget!)} budget`}
+          . Full marks at or under it, none at 1.5× it.
+        </p>
+      )}
+      {scored.length > 0 && (
+        <p>
+          Ranked on {scored.map((p) => `${p.label.toLowerCase()} ≈ ${money(p.key, p.scored!)}`).join(", ")}: a small
+          sample here, so the estimate is weighed toward the county&rsquo;s typical area.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** The small amber mark beside a low-confidence value. */
 function Flag({ on }: { on: boolean }) {
   if (!on) return null;
@@ -228,8 +351,8 @@ function PriorityCaution({ parts }: { parts: AreaPart[] }) {
           ))}
         </ul>
         <p className="mt-2 text-caption text-neutral-500 dark:text-neutral-400">
-          A small area sampled by the Census (a wide margin of error), or a small police agency. It still counts in the
-          score.
+          A small area sampled by the Census (a wide margin of error), a small police agency, or a county
+          sheriff&rsquo;s one rate for farmland and suburbs alike. It still counts in the score.
         </p>
       </InfoTip>
     </span>
@@ -271,6 +394,7 @@ function Summary({ i, parts, common }: { i: number; parts: AreaPart[]; common: C
       {/* One list that grows; the toggle stays below it. */}
       {/* Rows share columns (subgrid), so the bars line up whatever each value's width. */}
       <ul className="grid grid-cols-[7.5rem_minmax(3rem,1fr)_auto] gap-x-2.5 gap-y-1.5">{bars(all ? [...top, ...rest] : top)}</ul>
+      <PartNotes parts={all ? parts : top} />
       {rest.length > 0 && parts.length > 3 && (
         <button type="button" onClick={() => setAll((a) => !a)} aria-expanded={all} className="text-label font-medium text-emerald-700 hover:underline dark:text-emerald-400">
           {all ? `Hide the other ${rest.length}` : `Show the other ${rest.length} ${rest.length === 1 ? "priority" : "priorities"}`}
@@ -329,7 +453,7 @@ export function AreaResultsList({
             className={isOpen ? "bg-neutral-50 dark:bg-neutral-900/50" : ""}
           >
             <div className="flex items-start gap-2 py-3 pl-1">
-              <span className="w-7 pt-0.5 text-label tabular-nums text-neutral-500">{rank + 1}</span>
+              <RankLabel rank={rank + 1} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <button
@@ -341,9 +465,13 @@ export function AreaResultsList({
                     {common.areas.name[i]}
                   </button>
                   <PriorityCaution parts={parts} />
-                  <Badges badges={badges.get(i)} first={rank === 0 && !Number.isNaN(common.scores.score[i])} />
+                  <Badges
+                    badges={badges.get(i)}
+                    first={rank === 0 && !Number.isNaN(common.scores.score[i])}
+                  />
                 </div>
                 <p className="text-caption text-neutral-500">{common.countyName(common.areas.county[i])}</p>
+                <WatchLine items={common.watchOuts(i)} />
                 <Fingerprint parts={parts} />
               </div>
               <span className="pt-0.5">
@@ -396,7 +524,7 @@ export function CountyResultsList({
         return (
           <li key={c.fips} data-tour={rank === 0 ? "first-result" : undefined} className={isOpen ? "bg-neutral-50 dark:bg-neutral-900/50" : ""}>
             <div className="flex items-start gap-2 py-3 pl-1">
-              <span className="w-7 pt-0.5 text-label tabular-nums text-neutral-500">{rank + 1}</span>
+              <RankLabel rank={rank + 1} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <button
@@ -416,6 +544,7 @@ export function CountyResultsList({
                 <p className="text-caption text-neutral-700 dark:text-neutral-300">
                   {c.areas.length} of your top areas · best: {common.areas.name[c.areas[0]]}
                 </p>
+                <WatchLine items={common.watchOuts(c.areas[0])} />
               </div>
               <span className="pt-0.5">
                 <ScoreNumber score={c.bestScore} />

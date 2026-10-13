@@ -9,6 +9,7 @@ import {
   formatValue,
   type CountyDataset,
   type CountyScore,
+  type Household,
   type MetricKey,
 } from "@/lib/scoring";
 
@@ -52,6 +53,8 @@ export interface PlaceProps {
   total: number;
   rel: number | null | undefined;
   laws: LawData | null;
+  /** What I'm looking for (Phase 10c): the Taxes estimate on the Laws & taxes tab is for it. */
+  household: Household;
   /** The county the Climate tab compares against, if any (remembered across places). */
   compareFips: string | null;
   onCompare: (fips: string | null) => void;
@@ -137,6 +140,7 @@ export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
     (f) => !Number.isNaN(f.value),
   );
   const koppen = data.categories.koppen[s.index];
+  const koppenAlt = data.koppenAlt?.[s.index] ?? null;
 
   return (
     <div>
@@ -191,7 +195,7 @@ export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
             )}
             {koppen && (
               <Stat label="Climate" wide>
-                <ClimateSummary code={koppen} />
+                <ClimateSummary code={koppen} alt={koppenAlt} />
               </Stat>
             )}
           </dl>
@@ -230,7 +234,7 @@ export function PlaceView(props: PlaceProps & { withIdentity: boolean }) {
         )}
         {tab === "laws" &&
           (laws ? (
-            <LawsSection laws={laws} data={data} index={s.index} />
+            <LawsSection laws={laws} data={data} index={s.index} household={props.household} />
           ) : (
             <Empty>Law and tax data couldn&rsquo;t be loaded.</Empty>
           ))}
@@ -270,6 +274,7 @@ function CostOfLivingNote({ value, data, index }: { value: number; data: CountyD
   const diff = Math.round(Math.abs(value - 100) * 10) / 10;
   const where = data.rppGeoLevel[index] === "metro" ? "metro" : "state";
   const area = data.text.rpp_source_geo[index];
+  const parent = data.info.rpp_all_parent[index];
   return (
     <>
       <p>
@@ -286,10 +291,11 @@ function CostOfLivingNote({ value, data, index }: { value: number; data: CountyD
       <CostParts data={data} index={index} />
       <p className="mt-2">
         Covers rent, goods, utilities and services (BEA Regional Price Parities, 2024). BEA publishes it for metro
-        areas and states only;{" "}
-        {where === "metro"
-          ? `this county uses its metro’s figure${area ? ` (${area})` : ""}.`
-          : `this county isn’t in a metro, so it uses ${area ?? "its state"}’s statewide figure, which runs high for rural areas.`}
+        areas and states only, so the rent part here is this county&rsquo;s own: its Census rents against{" "}
+        {where === "metro" ? `its metro’s${area ? ` (${area})` : ""}` : `all of ${area ?? "its state"}’s`}
+        {Number.isFinite(parent) && Math.abs(parent - value) >= 0.05
+          ? `, whose figure is ${formatValue("rpp_all", parent)}.`
+          : "."}
       </p>
     </>
   );
@@ -318,10 +324,19 @@ function CostParts({ data, index }: { data: CountyDataset; index: number }) {
   );
 }
 
-/** "💧 Humid South · Hot, humid summers; mild winters", Köppen type underneath. */
-function ClimateSummary({ code }: { code: string }) {
+/**
+ * "💧 Humid South · Hot, humid summers; mild winters", Köppen type underneath — and, for a
+ * county within 0.5 °C of a type's line, the other type it borders on.
+ */
+function ClimateSummary({ code, alt }: { code: string; alt?: string | null }) {
   const family = climateFamily(code);
-  if (!family) return <>{categoryLabel("koppen", code)}</>;
+  const border = alt ? (
+    <span className="block text-caption font-normal text-neutral-500">
+      Borderline: within 0.5 °C of {categoryLabel("koppen", alt)} — which nearby weather stations are used decides it.
+      Either climate filter includes it.
+    </span>
+  ) : null;
+  if (!family) return <>{categoryLabel("koppen", code)}{border}</>;
   return (
     <span className="flex items-start gap-2">
       <ClimateIcon family={family.id} className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700 dark:text-emerald-400" />
@@ -329,6 +344,7 @@ function ClimateSummary({ code }: { code: string }) {
         {family.name}
         <span className="font-normal text-neutral-600 dark:text-neutral-400"> · {family.description}</span>
         <span className="block text-caption font-normal text-neutral-500">{categoryLabel("koppen", code)}</span>
+        {border}
       </span>
     </span>
   );

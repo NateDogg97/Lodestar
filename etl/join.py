@@ -70,6 +70,9 @@ SOURCES = [
     ("bls", "BLS unemployment (LAUS)", False),
     ("distances", "Distances to airport, coast, metro", False),
     ("equality", "Racial equality (income parity, integration)", False),
+    ("zillow_county", "Zillow county home values (today's prices)", False),
+    ("newbuyer", "New buyers' property tax vs all owners (ACS PUMS)", False),
+    ("pollution", "Pollution: PM2.5, smoke, older housing, radon (Phase 11)", False),
 ]
 
 
@@ -167,7 +170,7 @@ COLUMN_ORDER = [
     "population", "median_home_value", "median_household_income", "median_gross_rent",
     # BEA
     "rpp_all", "rpp_rents", "rpp_utilities", "rpp_goods", "rpp_services",
-    "rpp_geo_level", "rpp_source_geo",
+    "rpp_geo_level", "rpp_source_geo", "rpp_all_parent", "rpp_rents_parent",
     # SEDA
     "school_achievement",
     # NOAA
@@ -204,7 +207,13 @@ def order_columns(df: pd.DataFrame) -> pd.DataFrame:
 def build() -> pd.DataFrame:
     """Full join + derive pipeline."""
     df = build_wide_table()
+    # Each county's own rents in its cost of living (Phase 10a), before real_income uses it.
+    from .rpp_local import localize
+    df = localize(df)
     df = add_derived_columns(df)
+    # Today's typical home value, for the Taxes estimate's property tax (Phase 10 follow-up).
+    from .sources.zillow_county import today_values
+    df = today_values(df)
     from .climate import add_koppen  # monthly normals -> Köppen type (Phase 6)
     df = add_koppen(df)
     df = order_columns(df)

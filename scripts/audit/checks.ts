@@ -23,19 +23,34 @@ export interface Findings {
 
 const sortedCache = new WeakMap<NationalAreas, Map<string, Float64Array>>();
 
+/**
+ * The value a measure is ranked on, re-derived independently (Phase 10e): its `_eb`
+ * estimate column where the file has one and both are known, else the published value.
+ */
+export function scoredAt(areas: NationalAreas, column: string, i: number): number {
+  const raw = areas.values.get(column)?.[i] ?? NaN;
+  const est = areas.values.get(`${column}_eb`)?.[i] ?? NaN;
+  return Number.isFinite(raw) && Number.isFinite(est) ? est : raw;
+}
+
 export function sortedResidential(areas: NationalAreas, column: string): Float64Array {
   let cache = sortedCache.get(areas);
   if (!cache) sortedCache.set(areas, (cache = new Map()));
   let s = cache.get(column);
   if (!s) {
-    const col = areas.values.get(column);
     const xs: number[] = [];
-    if (col) for (let i = 0; i < areas.n; i++) if (!Number.isNaN(col[i]) && !notResidential(areas, i)) xs.push(col[i]);
+    for (let i = 0; i < areas.n; i++) {
+      const v = scoredAt(areas, column, i);
+      if (!Number.isNaN(v) && !notResidential(areas, i)) xs.push(v);
+    }
     s = Float64Array.from(xs.sort((a, b) => a - b));
     cache.set(column, s);
   }
   return s;
 }
+
+/** Fit to a budget, re-derived (Phase 10c): 100 at or under it, 0 at 1.5× it. */
+const budgetFit = (v: number, b: number) => (v <= b ? 100 : Math.max(0, (100 * (1.5 * b - v)) / (0.5 * b)));
 
 const sortedCounties = new WeakMap<Float64Array, Float64Array>();
 function sortedKnown(col: Float64Array): Float64Array {
@@ -84,6 +99,30 @@ export const quantile = (sorted: Float64Array, q: number) => sorted[Math.min(sor
 
 const bad = (s: string) => /NaN|undefined|Infinity|null/.test(s);
 
+/**
+ * Anchored points (pollution, Phase 11), derived independently of the app: PM2.5's band
+ * points integrated numerically over N(value, 1.7) (the app uses an erf formula), capped at
+ * 50 when the area's own "pm25" flag says a monitor doubts it; smoke and older homes linear.
+ */
+function anchoredPoints(key: string, v: number, doubted: boolean): number | null {
+  if (key === "pm25") {
+    const band = (x: number) => (x <= 5 ? 100 : x <= 7 ? 75 : x <= 9 ? 50 : x <= 12 ? 25 : 0);
+    const sd = 1.7;
+    let sum = 0;
+    let wsum = 0;
+    for (let z = -8; z <= 8; z += 0.001) {
+      const w = Math.exp(-0.5 * z * z);
+      sum += w * band(v + z * sd);
+      wsum += w;
+    }
+    return doubted ? Math.min(50, sum / wsum) : sum / wsum;
+  }
+  const lin = (best: number, worst: number) => Math.max(0, Math.min(100, (100 * (worst - v)) / (worst - best)));
+  if (key === "smoke_days_thick") return lin(5, 30);
+  if (key === "pre1960_share") return lin(0, 60);
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 
 export function automaticChecks(r: RunResult): Findings {
@@ -119,8 +158,24 @@ export function automaticChecks(r: RunResult): Findings {
       sum += p.weight * (p.points ?? 50);
       w += p.weight;
       if (p.value === null) continue;
+      if (p.budget !== undefined) {
+        const want = budgetFit(scoredAt(areas, p.key, i), p.budget);
+        if (p.points === null || Math.abs(want - p.points) > 0.01) {
+          f.hard.push(`budget fit contradicts the value: ${areas.name[i]} ${p.key}=${p.value} shown ${p.points?.toFixed(2)}, derived ${want.toFixed(2)}`);
+        }
+        if (p.beats !== null) f.hard.push(`a rarity claim on budget fit: ${areas.name[i]} ${p.key}`);
+        continue;
+      }
+      const anchored = p.level === "area" ? anchoredPoints(p.key, scoredAt(areas, p.key, i), areas.lowConfidence[i].includes(p.key)) : null;
+      if (anchored !== null) {
+        if (p.points === null || Math.abs(anchored - p.points) > 0.05) {
+          f.hard.push(`anchored points contradict the value: ${areas.name[i]} ${p.key}=${p.value} shown ${p.points?.toFixed(2)}, derived ${anchored.toFixed(2)}`);
+        }
+        if (p.beats !== null) f.hard.push(`a rarity claim on anchored points: ${areas.name[i]} ${p.key}`);
+        continue;
+      }
       const d = p.level === "area"
-        ? derive(sortedResidential(areas, p.key), p.value, p.direction)
+        ? derive(sortedResidential(areas, p.key), scoredAt(areas, p.key, i), p.direction)
         : derive(sortedKnown(r.counties.values[p.key as MetricKey]), p.value, p.direction);
       if (p.points === null || Math.abs(d.points - p.points) > 0.01) {
         f.hard.push(`points contradict the value: ${areas.name[i]} ${p.key}=${p.value} shown ${p.points?.toFixed(2)} pts, derived ${d.points.toFixed(2)}`);
@@ -159,7 +214,11 @@ export function automaticChecks(r: RunResult): Findings {
         const fact = r.laws.states[r.counties.state[ci]]?.[key];
         v = fact && !isGap(fact) ? fact.v : null;
       }
-      if (v !== null && !accept.includes(v)) f.hard.push(`policy filter passed a wrong value: ${areas.name[i]} ${key}=${v}, wanted ${accept.join("/")}`);
+      // A borderline climate (within 0.5 °C of a line) passes on either of its types.
+      const alt = key === "koppen" ? r.counties.koppenAlt[ci] : null;
+      if (v !== null && !accept.includes(v) && !(alt && accept.includes(alt))) {
+        f.hard.push(`policy filter passed a wrong value: ${areas.name[i]} ${key}=${v}${alt ? `/${alt}` : ""}, wanted ${accept.join("/")}`);
+      }
       if (v === null && ns.status[i] !== 1) f.hard.push(`policy value unknown but result not marked unknown: ${areas.name[i]} ${key}`);
     }
   }
@@ -174,13 +233,13 @@ export function automaticChecks(r: RunResult): Findings {
         f.hard.push(`badge without a priority: ${label}`);
         continue;
       }
-      const d = derive(sortedResidential(areas, c.column), r.value(i, c.column), c.direction);
+      const d = derive(sortedResidential(areas, c.column), scoredAt(areas, c.column, i), c.direction);
       if ((d.beats ?? 0) < 99) f.hard.push(`false "Top 1%": ${areas.name[i]} ${c.column}=${r.value(i, c.column)} beats only ${d.beats?.toFixed(1)}%`);
     }
     for (const label of b.best) {
       const nameOf = (x: (typeof criteria)[number]) => {
         const def = areaPriority(x.column);
-        return def && x.direction === def.defaultDirection && def.badge ? def.badge : `Best for ${x.label.toLowerCase()}`;
+        return x.badge ?? (def && x.direction === def.defaultDirection && def.badge ? def.badge : `Best for ${x.label.toLowerCase()}`);
       };
       const c = criteria.find((x) => nameOf(x) === label);
       if (!c) {

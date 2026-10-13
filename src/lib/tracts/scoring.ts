@@ -17,7 +17,7 @@
 
 import { MAX_WEIGHT, type Direction, type MetricGroup, type MetricKey } from "@/lib/scoring";
 
-export type AreaGroup = MetricGroup | "safety";
+export type AreaGroup = MetricGroup | "safety" | "pollution";
 
 export interface AreaPriorityDef {
   key: string;
@@ -35,6 +35,8 @@ export interface AreaPriorityDef {
   /** Trade-off sentence words when this measure helps / hurts (default direction). */
   good?: string;
   bad?: string;
+  /** Only one "better" makes sense (no one wants dirtier air): no direction control. */
+  fixedDirection?: true;
 }
 
 const PCTL_NOTE = "National percentile among US areas (census tracts) of the same measure.";
@@ -69,7 +71,11 @@ export const AREA_PRIORITIES: readonly AreaPriorityDef[] = [
     note: "To the nearest ocean, bay or tidal river (Natural Earth's coastline follows tidal water inland), from where people in the area live. So Philadelphia, Washington, DC and the Sacramento Delta count as coastal; for beaches, add a hurricane or coastal-flood priority or check the map.",
     badge: "Closest to the coast", good: "the coast nearby", bad: "far from the coast" },
   { key: "dist_metro_mi", label: "Distance to a 500k+ metro", unit: "mi", defaultDirection: "lower", group: "location",
+    note: "To the edge of the nearest 500k+ metro's built-up area (its largest Census 2020 urban area), from where people in the area live — 0 inside it. Until 2026-10 it was to the metro's center, which made a county next door look far.",
     badge: "Closest to a big city", good: "a big city nearby", bad: "far from a big city" },
+  { key: "dist_great_lake_mi", label: "Distance to a Great Lake", unit: "mi", defaultDirection: "lower", group: "location",
+    note: "To the nearest Great Lake shore (Natural Earth), from where people in the area live. The coast measure leaves the Great Lakes out.",
+    badge: "Closest to a Great Lake", good: "a Great Lake nearby", bad: "far from the Great Lakes" },
   { key: "median_household_income", label: "Household income", unit: "$", defaultDirection: "higher", group: "people",
     note: "Census median household income in the area (ACS 5-year). The Census stops counting at $250,000: \"$250,000+\" means at least that.",
     badge: "Highest incomes", good: "high incomes", bad: "lower incomes" },
@@ -95,6 +101,17 @@ export const AREA_PRIORITIES: readonly AreaPriorityDef[] = [
     good: "little earthquake risk", bad: "earthquake risk" },
   { key: "hazard_tornado", label: "Tornadoes", unit: "pctl", defaultDirection: "lower", group: "hazards", note: PCTL_NOTE,
     good: "little tornado risk", bad: "tornado risk" },
+  // Pollution (Phase 11): scored on fixed anchors, not percentiles (./pollution.ts). No
+  // "top 1%" badges: a rank finer than the model's error would be a false claim.
+  { key: "pm25", label: "Fine particles (PM2.5)", unit: "µg/m³", defaultDirection: "lower", group: "pollution", fixedDirection: true,
+    note: "Yearly average of fine-particle air pollution where people in the area live, 2022–2024 (WashU satellite + model, ~1 km). Scored in bands — WHO's 5, 7, EPA's 9 and 12 µg/m³ — allowing for the model's ±1.7 error, so small differences don't move a score. It misses some local sources (industry, wood smoke in valleys): where a nearby EPA monitor reads well above it, the value is marked uncertain and can't score better than typical.",
+    badge: "Cleanest air", good: "clean air", bad: "more fine-particle pollution" },
+  { key: "smoke_days_thick", label: "Wildfire smoke days", unit: "days/yr", defaultDirection: "lower", group: "pollution", fixedDirection: true,
+    note: "Days a year with medium or heavy smoke overhead, 2015–2024 (NOAA satellite analysts' smoke outlines). Smoke overhead isn't always smoke at the ground: the smoke people breathe is already in PM2.5. Full points at 5 days or fewer, none at 30 or more. Fire years swing, so differences under about 10 days are noise.",
+    badge: "Fewest smoke days", good: "few wildfire-smoke days", bad: "wildfire-smoke days" },
+  { key: "pre1960_share", label: "Older homes (lead-paint risk)", unit: "%", defaultDirection: "lower", group: "pollution", fixedDirection: true,
+    note: "Share of homes built before 1960 (Census, 2019–2023): lead paint is most likely in homes this old (banned in 1978). An old home is a risk, not a hazard — paint may be removed or covered — and this isn't a measure of lead in anyone's blood. Full points at 0%, none at 60% or more.",
+    badge: "Newest homes", good: "newer homes", bad: "older homes (lead paint)" },
 ];
 
 const AREA_DEF = new Map(AREA_PRIORITIES.map((d) => [d.key, d]));
@@ -132,6 +149,8 @@ export interface AreaSearch {
   areaWeights: Partial<Record<string, number>>;
   areaDirections: Partial<Record<string, Direction>>;
   areaLimits: Partial<Record<string, { min?: number; max?: number }>>;
+  /** Phase 10c: a budget for this measure (home price or monthly rent) scores fit to it. */
+  budgets?: Partial<Record<string, number>>;
 }
 
 /** One area-level measure ranking areas. */
@@ -140,6 +159,10 @@ export interface AreaCriterion {
   label: string;
   weight: number;
   direction: Direction;
+  /** Scored as fit to this budget instead of by direction (`budgetPoints`). */
+  budget?: number;
+  /** "Best of your results" badge for a measure that isn't an `AREA_PRIORITIES` one (Taxes). */
+  badge?: string;
 }
 
 export interface AreaLimit {
@@ -159,8 +182,10 @@ export function areaCriteria(search: AreaSearch): { criteria: AreaCriterion[]; l
   for (const def of AREA_PRIORITIES) {
     const weight = clampWeight(search.areaWeights[def.key]);
     if (weight > 0) {
+      const budget = search.budgets?.[def.key];
       criteria.push({ column: def.key, label: def.label, weight,
-        direction: search.areaDirections[def.key] ?? def.defaultDirection });
+        direction: budget || def.fixedDirection ? def.defaultDirection : search.areaDirections[def.key] ?? def.defaultDirection,
+        ...(budget ? { budget } : {}) });
     }
     const l = search.areaLimits[def.key];
     if (l && (l.min !== undefined || l.max !== undefined)) limits.push({ column: def.key, label: def.label, ...l });

@@ -19,6 +19,8 @@ export const tractDataUrl = (fips: string) => `${DATA_URL}/tracts/${fips}.json`;
 export const tractShapesUrl = (fips: string) => `${DATA_URL}/tracts/${fips}.topo.json`;
 /** Every area's scoring columns, for ranking areas nationwide (Phase 8f). */
 export const nationalAreasUrl = () => `${DATA_URL}/tracts/areas.json`;
+/** How old each pollution source's area figures are (etl/pollution/carry.py). */
+export const pollutionStatusUrl = () => `${DATA_URL}/tracts/pollution.json`;
 
 export type Cell = string | number | boolean | null;
 export type Row = Record<string, Cell>;
@@ -154,7 +156,9 @@ export function parseCountyAreas(payload: unknown): CountyAreas {
 // ---------------------------------------------------------------------------
 // Measures shown inside a county
 
-export type AreaFormat = "dollars" | "percent" | "pctl" | "miles" | "number" | "minutes" | "rate" | "walk" | "change" | "density";
+export type AreaFormat =
+  | "dollars" | "percent" | "pctl" | "miles" | "number" | "minutes" | "rate" | "walk" | "change" | "density" | "pm25" | "days"
+  | "taxrate" | "peryear";
 
 export interface AreaMeasure {
   key: string;
@@ -169,6 +173,9 @@ export interface AreaMeasure {
 export const AREA_MEASURES: AreaMeasure[] = [
   { key: "median_home_value", label: "Home value (Census)", format: "dollars", colorable: true,
     note: "Census median value of owner-occupied homes in this area, averaged over 2019–2023." },
+  { key: "property_tax_rate", label: "Property tax rate", format: "taxrate", colorable: true,
+    note: "Property taxes paid ÷ home values, owner-occupied homes in this area (Census, 2019–2023). Rates differ by city, township and school district. It's what owners pay on average; where assessments are capped until a sale, a new buyer pays more." },
+  { key: "taxes", label: "Taxes (estimate)", format: "peryear" },
   { key: "zhvi", label: "Home value (Zillow, by ZIP)", format: "dollars", colorable: true,
     note: "Zillow Home Value Index for the area's ZIP: the typical home, all types incl. condos. Recent." },
   { key: "zori", label: "Rent (Zillow, by ZIP)", format: "dollars", note: "Zillow Observed Rent Index for the ZIP: typical asking rent." },
@@ -205,7 +212,11 @@ export const AREA_MEASURES: AreaMeasure[] = [
     note: "From where people in the area live to the nearest downtown of the metro's main cities (Dallas or Fort Worth, say): each one's densest cluster of jobs." },
   { key: "dist_airport_mi", label: "To a major airport", format: "miles", colorable: true },
   { key: "dist_coast_mi", label: "To the coast", format: "miles", note: "Ocean, bays and tidal water (Natural Earth)." },
-  { key: "dist_metro_mi", label: "To a 500k+ metro", format: "miles" },
+  { key: "dist_metro_mi", label: "To a 500k+ metro", format: "miles",
+    note: "To the edge of the metro's built-up area (Census 2020 urban area); 0 inside it." },
+  { key: "dist_great_lake_mi", label: "To a Great Lake", format: "miles", note: "The nearest Great Lake shore (Natural Earth)." },
+  { key: "dist_town_mi", label: "To a town center", format: "miles",
+    note: "The nearest town or city of 15,000+ people (GeoNames' point for it)." },
   { key: "commute_minutes", label: "Average commute", format: "minutes" },
   { key: "work_from_home_share", label: "Work from home", format: "percent" },
   { key: "violent_rate", label: "Violent crime", format: "rate", colorable: true,
@@ -222,6 +233,19 @@ export const AREA_MEASURES: AreaMeasure[] = [
   { key: "hazard_coastal_flood", label: "Coastal flood risk", format: "pctl" },
   { key: "hazard_earthquake", label: "Earthquake risk", format: "pctl" },
   { key: "hazard_tornado", label: "Tornado risk", format: "pctl" },
+  // Pollution (Phase 11, etl/pollution/): from the area's own census blocks, weighted by who lives where.
+  { key: "pm25", label: "Fine particles (PM2.5)", format: "pm25", colorable: true,
+    note: "Yearly average fine-particle pollution where people here live, 2022–2024 (WashU ACAG V6.GL.03, ~1 km satellite + model, ±1.7 µg/m³). WHO's guideline is 5; the current federal standard (under review) is 9." },
+  { key: "smoke_days_thick", label: "Wildfire smoke days", format: "days", colorable: true,
+    note: "Days a year with medium or heavy smoke overhead, 2015–2024 (NOAA Hazard Mapping System). Overhead, not necessarily at the ground." },
+  { key: "smoke_days", label: "Any smoke overhead", format: "days",
+    note: "Days a year with any smoke outline overhead, light haze included (NOAA HMS, 2015–2024)." },
+  { key: "pre1960_share", label: "Homes built before 1960", format: "percent", colorable: true,
+    note: "Census, 2019–2023. Lead paint is most likely in homes this old — a risk, not a measure of lead exposure." },
+  { key: "pre1980_share", label: "Homes built before 1980", format: "percent",
+    note: "Census, 2019–2023. Lead paint was banned for homes in 1978; the Census counts by decade, so 1980 is the nearest cut." },
+  { key: "radon_above4", label: "Radon tests above action level", format: "percent", colorable: true,
+    note: "The chance a home radon test here reads above EPA's 4 pCi/L action level, by ZIP area (Harvard model of 6M+ home tests, 2001–2021, PNAS 2025). Tests are mostly taken in basements and lowest floors. Radon varies house to house: test any home." },
 ];
 
 export const AREA_MEASURE = new Map(AREA_MEASURES.map((m) => [m.key, m]));
@@ -285,6 +309,14 @@ export function formatArea(key: string, v: number | null): string {
       return `${v > 0 ? "+" : ""}${v.toFixed(1)}%`;
     case "density":
       return `${Math.round(v).toLocaleString()} /sq mi`;
+    case "pm25":
+      return `${v.toFixed(1)} µg/m³`;
+    case "days":
+      return `${Math.round(v)} days/yr`;
+    case "taxrate":
+      return `${v.toFixed(2)}%`;
+    case "peryear":
+      return `$${Math.round(v).toLocaleString()}/yr`;
     default:
       return Math.round(v).toLocaleString();
   }
@@ -301,3 +333,5 @@ export function groupAreas(areas: Area[]): { name: string; areas: Area[]; popula
 export * from "./scoring";
 export * from "./national";
 export * from "./verdicts";
+export * from "./pollution";
+export * from "./taxes";

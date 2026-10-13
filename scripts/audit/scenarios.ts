@@ -3,11 +3,11 @@
  * each with what a knowledgeable person would expect of the results. An expectation
  * returns the results that break it; any means the audit fails.
  */
-import { AREA_PRIORITIES, COUNTY_METRICS_NOW_AREA } from "@/lib/tracts";
+import { AREA_PRIORITIES, areaPoints, areaWatchOuts, COUNTY_METRICS_NOW_AREA, isAnchored, parseNationalAreas, scoreNational } from "@/lib/tracts";
 import { METRICS, NOT_IN_FILTERS, type Direction, type MetricKey } from "@/lib/scoring";
 import { DEFAULT_PREFERENCES, EMPTY_PREFERENCES, type Preferences } from "@/components/finder/preferences";
 
-import { derive, quantile, sortedResidential } from "./checks";
+import { derive, quantile, scoredAt, sortedResidential } from "./checks";
 import type { RunResult } from "./run";
 
 export type Expectation = (r: RunResult) => string[];
@@ -35,7 +35,7 @@ const allTop = (n: number, label: string, pred: (r: RunResult, i: number) => boo
 
 /** A value in the best `share` of the residential distribution for its direction. */
 const extreme = (column: string, direction: Direction, share = 0.02) => (r: RunResult, i: number) => {
-  const v = r.value(i, column);
+  const v = scoredAt(r.areas, column, i);
   if (Number.isNaN(v)) return false;
   const s = sortedResidential(r.areas, column);
   if (direction === "lower") return v <= quantile(s, share);
@@ -92,7 +92,15 @@ const composite: Scenario[] = [
       weights: { coldest_month_low_f: 4, rpp_all: 3, income_tax_top_rate: 2 },
       area: { weights: { hazard_risk: 3, violent_rate: 3, median_home_value: 3 }, limits: { dist_airport_mi: { max: 90 } } },
     }),
-    checks: [allTop(50, "coldest month below 30°F", (r, i) => countyValue(r, i, "coldest_month_low_f") >= 30), allTop(100, "airport over 90 mi", (r, i) => r.value(i, "dist_airport_mi") <= 90)],
+    // Phase 10a (2026-10-12): rural Appalachia now reads as cheap as it is (its own rents, not
+    // its state's), so a 26°F east-Tennessee winter can trade against cost by #13. The top
+    // ten stay warm and the top 25 above 25°F. Winters weigh 4 of 18 here, so further down a
+    // cheap, safe plateau town at 23°F can earn its place: a hard line is a must-have.
+    checks: [
+      allTop(10, "coldest month below 30°F", (r, i) => countyValue(r, i, "coldest_month_low_f") >= 30),
+      allTop(25, "coldest month below 25°F", (r, i) => countyValue(r, i, "coldest_month_low_f") >= 25),
+      allTop(100, "airport over 90 mi", (r, i) => r.value(i, "dist_airport_mi") <= 90),
+    ],
   },
   {
     name: "Remote worker: cheap and quiet, within reach of a city",
@@ -165,7 +173,8 @@ const composite: Scenario[] = [
     intent: "Policy filter + county cost of living + area wildfire risk.",
     expect: "Only states where marijuana is legal for adults; cheap Midwest cities (MO, OH, IL, MN, MI); wildfire risk near zero.",
     prefs: P({ weights: { rpp_all: 3 }, categories: { marijuana_status: ["recreational"] }, area: { weights: { hazard_wildfire: 3, walkability: 2 } } }),
-    checks: [allTop(100, "wildfire risk above the 30th percentile", (r, i) => r.value(i, "hazard_wildfire") <= 30)],
+    // Phase 10a: cheaper rural counties now compete on cost; the top 50 stay near zero wildfire.
+    checks: [allTop(50, "wildfire risk above the 30th percentile", (r, i) => r.value(i, "hazard_wildfire") <= 30)],
   },
   {
     name: "Counties only (no area priorities)",
@@ -302,7 +311,10 @@ const composite: Scenario[] = [
     intent: "Household income direction lower (a cheap area to live), rent lower, cost of living lower.",
     expect: "Very poor areas: incomes under $30k. A reminder that 'lower' on income means poverty, not bargains.",
     prefs: P({ weights: { rpp_all: 3 }, area: { weights: { median_household_income: 3, median_gross_rent: 3 }, directions: { median_household_income: "lower" } } }),
-    checks: [allTop(20, "income over $30k", (r, i) => r.value(i, "median_household_income") <= 30_000)],
+    // Phase 10a/10e: the cheapest counties (Greene AL, Jefferson MS) rise on cost; incomes there
+    // run $31–35k — still deep poverty, which is the point this search makes.
+    // Ranked on the estimate (Phase 10e): Forkland AL publishes $37,000 ± $19,894; ranked as $35,200.
+    checks: [allTop(10, "income over $36k", (r, i) => scoredAt(r.areas, "median_household_income", i) <= 36_000)],
   },
   {
     name: "Hot summers wanted (hottest month flipped higher), low humidity proxy: little rain",
@@ -313,13 +325,37 @@ const composite: Scenario[] = [
   },
 ];
 
-/** One priority at a time, at its default direction: the top 20 must sit in the best 2%. */
+/** The `n`th best points any area in play earns on an anchored measure (Phase 11). */
+const nthBestPoints = (r: RunResult, column: string, n: number) => {
+  const pts: number[] = [];
+  for (let i = 0; i < r.areas.n; i++) {
+    if (r.ns && r.ns.status[i] > 1) continue; // excluded or out of play
+    const p = areaPoints(r.areas, column, i, "lower");
+    if (!Number.isNaN(p)) pts.push(p);
+  }
+  return pts.sort((a, b) => b - a)[n - 1] ?? -Infinity;
+};
+
+/**
+ * One priority at a time, at its default direction: the top 20 must sit in the best 2%.
+ * Anchored measures (pollution) tie every area past the best anchor, so there the top 20
+ * must be the 20 best-scoring areas (ties by population), whatever their values.
+ */
 const singles: Scenario[] = AREA_PRIORITIES.map((d) => ({
   name: `Single priority: ${d.label} (${d.defaultDirection})`,
   intent: `Only ${d.label.toLowerCase()} weighted, ${d.defaultDirection} is better.`,
-  expect: "The top 20 are in the best 2% of US areas on this measure; ties broken by population.",
+  expect: isAnchored(d.key)
+    ? "The top 20 are the 20 best-scoring US areas on this measure (anchored points, not ranks); ties broken by population."
+    : "The top 20 are in the best 2% of US areas on this measure; ties broken by population.",
   prefs: P({ area: { weights: { [d.key]: 3 } } }),
-  checks: [allTop(20, `not in the best 2% of ${d.label}`, extreme(d.key, d.defaultDirection))],
+  checks: [
+    isAnchored(d.key)
+      ? (r) => {
+          const cut = nthBestPoints(r, d.key, 20);
+          return allTop(20, `not among the 20 best points on ${d.label}`, (rr, i) => areaPoints(rr.areas, d.key, i, "lower") >= cut - 1e-9)(r);
+        }
+      : allTop(20, `not in the best 2% of ${d.label}`, extreme(d.key, d.defaultDirection)),
+  ],
 }));
 
 const flipped: Scenario[] = (
@@ -363,4 +399,158 @@ const countySingles: Scenario[] = METRICS.filter((m) => !COUNTY_METRICS_NOW_AREA
   ],
 }));
 
-export const SCENARIOS: Scenario[] = [...composite, ...singles, ...flipped, ...countySingles];
+/**
+ * Results that don't mislead (Phase 10, 2026-10-12): the outliers that started it, and the
+ * household inputs that fix them. Jackson Hole topped "good schools + low taxes" with $2M homes.
+ */
+const NO_INCOME_TAX = new Set(["AK", "FL", "NH", "NV", "SD", "TN", "TX", "WA", "WY"]);
+const outliers: Scenario[] = [
+  {
+    name: "Good schools and low taxes (the Jackson Hole case)",
+    intent: "Nearby schools 5, Taxes 3 — no household set.",
+    expect: "Taxes are dollars on each county's typical home, so resort counties (Teton WY, Pitkin CO, Blaine ID) fall out; results spread across several low-tax states; no top-5% home price at the top without a watch-out.",
+    prefs: P({ weights: { taxes: 3 }, area: { weights: { nearby_school_pctl: 5 } } }),
+    checks: [
+      allTop(100, "a resort county", (r, i) => !["56039", "08097", "16013"].includes(r.areas.county[i])),
+      // Homes pricier than 95% of US areas (about $1.1M) always carry a watch-out. Taxes use the
+      // county's typical home, so a pricey neighbourhood in a cheap county (Knoxville's west end)
+      // shows its county's taxes: the home value itself is what warns.
+      allTop(25, "an unwarned top-5% home price", (r, i) => {
+        const v = scoredAt(r.areas, "median_home_value", i);
+        const pricier = Number.isNaN(v) ? 0 : derive(sortedResidential(r.areas, "median_home_value"), v, "higher").beats ?? 0;
+        return pricier < 95 || areaWatchOuts(r.areas, i, r.search).some((w) => w.key === "median_home_value");
+      }),
+      spread(4),
+    ],
+  },
+  {
+    name: "Buying on a $400k budget, schools and safety",
+    intent: "Buy, budget $400k; nearby schools 4, violent crime 3 (home value turned on by the budget).",
+    expect: "Suburbs and towns whose typical home is near or under $400k with strong schools; no mobile-home parks or $30k homes winning on price.",
+    prefs: P({ household: { tenure: "buy", budget: 400_000 }, area: { weights: { median_home_value: 3, nearby_school_pctl: 4, violent_rate: 3 } } }),
+    checks: [
+      allTop(50, "typical home over 1.2× the budget", (r, i) => scoredAt(r.areas, "median_home_value", i) <= 480_000),
+      allTop(50, "a mobile-home park", (r, i) => !r.areas.lowConfidence[i].includes("mobile_homes")),
+      allTop(25, "schools below the 75th percentile", (r, i) => r.value(i, "nearby_school_pctl") >= 75),
+    ],
+  },
+  {
+    name: "Renting on $1,500 a month, walkable",
+    intent: "Rent, budget $1,500/mo; walkability 4 (rent turned on by the budget).",
+    expect: "Walkable neighborhoods whose typical rent is near or under $1,500.",
+    prefs: P({ household: { tenure: "rent", budget: 1_500 }, area: { weights: { median_gross_rent: 3, walkability: 4 } } }),
+    checks: [allTop(50, "typical rent over $1,800", (r, i) => scoredAt(r.areas, "median_gross_rent", i) <= 1_800), allTop(50, "walkability under 15", (r, i) => r.value(i, "walkability") >= 15)],
+  },
+  {
+    name: "Taxes by area (Washtenaw, 2026-10-13)",
+    intent: "Taxes 5, nearby schools 1 — areas are the results.",
+    expect: "Each area's Taxes uses its own property tax rate: inside Washtenaw, a higher rate is a higher estimate (Ypsilanti city over the townships), and Taxes is counted once — as the area's, not also its county's.",
+    prefs: P({ weights: { taxes: 5 }, area: { weights: { nearby_school_pctl: 1 } } }),
+    checks: [
+      (r) => {
+        const out: string[] = [];
+        const idx = [...r.areas.geoid.keys()].filter((i) => r.areas.county[i] === "26161" && Number.isFinite(r.value(i, "property_tax_rate_eb")));
+        idx.sort((a, b) => r.value(a, "property_tax_rate_eb") - r.value(b, "property_tax_rate_eb"));
+        for (let k = 1; k < idx.length; k++) {
+          if (r.value(idx[k], "taxes") + 1e-6 < r.value(idx[k - 1], "taxes")) out.push(`a higher rate with lower taxes: ${r.areas.name[idx[k]]}`);
+        }
+        const low = r.value(idx[0], "taxes");
+        const high = r.value(idx[idx.length - 1], "taxes");
+        if (!(high > 1.2 * low)) out.push(`Washtenaw's areas' taxes barely differ: $${Math.round(low)}–$${Math.round(high)}`);
+        for (const i of r.top.slice(0, 25)) {
+          const n = r.parts(i).filter((p) => p.key === "taxes" || p.key === "taxes_rate").length;
+          if (n !== 1) out.push(`Taxes counted ${n} times for ${r.areas.name[i]}`);
+        }
+        return out;
+      },
+    ],
+  },
+  {
+    name: "Lowest taxes on a $400k income",
+    intent: "Taxes 5, household income $400k (county results).",
+    expect: "At that income the state income tax dominates: states without one (NH, SD, WY, FL, TN, TX, NV…).",
+    prefs: P({ household: { income: 400_000 }, weights: { taxes: 5 } }),
+    checks: [
+      (r) => r.rankedCounties.slice(0, 50).filter((c) => !NO_INCOME_TAX.has(r.counties.state[c.index])).map((c) => `a state with an income tax: ${r.countyName(c.fips)}`),
+    ],
+  },
+  {
+    name: "Cheapest homes, and what they don't say",
+    intent: "Home value lower 5, nothing else.",
+    expect: "The cheapest areas — and every one with violent crime in the worst 5% of the US says so.",
+    prefs: P({ area: { weights: { median_home_value: 5 } } }),
+    checks: [
+      allTop(50, "worst-5% violent crime without a watch-out", (r, i) => {
+        const v = scoredAt(r.areas, "violent_rate", i);
+        const s = sortedResidential(r.areas, "violent_rate");
+        const worse = Number.isNaN(v) ? 0 : derive(s, v, "higher").beats ?? 0;
+        return worse < 95 || areaWatchOuts(r.areas, i, r.search).some((w) => w.key === "violent_rate");
+      }),
+    ],
+  },
+];
+
+/**
+ * Pollution (Phase 11e): a clean-air search must not surface a place a monitor says is
+ * dirtier than the model (Portola's wood-smoke valley read cleaner than Reno), and pollution
+ * must change nothing unless it's weighted.
+ */
+const POLLUTION_COLUMNS = ["pm25", "pm25_doubt", "smoke_days_thick", "pre1960_share", "radon_above4"];
+const pollution: Scenario[] = [
+  {
+    name: "Clean air (PM2.5) and few smoke days",
+    intent: "PM2.5 5, wildfire smoke days 3.",
+    expect: "Clean-air areas (mostly under WHO's 5 µg/m³ or close) with few smoke days; none whose PM2.5 a nearby monitor doubts; several states.",
+    prefs: P({ area: { weights: { pm25: 5, smoke_days_thick: 3 } } }),
+    checks: [
+      allTop(100, "a PM2.5 value a monitor doubts", (r, i) => !r.areas.lowConfidence[i].includes("pm25")),
+      allTop(50, "PM2.5 over 7 µg/m³", (r, i) => r.value(i, "pm25") <= 7),
+      allTop(50, "more than 15 smoke days a year", (r, i) => r.value(i, "smoke_days_thick") <= 15),
+      spread(4),
+    ],
+  },
+  {
+    name: "Young family who cares about the air and old paint",
+    intent: "Nearby schools 4, PM2.5 3, older homes 3, homes under $500k.",
+    expect: "Strong schools in newer suburbs with typical-or-better air; no doubted PM2.5 in the top 20.",
+    prefs: P({ area: { weights: { nearby_school_pctl: 4, pm25: 3, pre1960_share: 3 }, limits: { median_home_value: { max: 500_000 } } } }),
+    checks: [
+      allTop(20, "schools below the 65th percentile", (r, i) => r.value(i, "nearby_school_pctl") >= 65),
+      allTop(20, "a PM2.5 value a monitor doubts", (r, i) => !r.areas.lowConfidence[i].includes("pm25")),
+      allTop(20, "more than 30% of homes built before 1960", (r, i) => r.value(i, "pre1960_share") <= 30),
+    ],
+  },
+  {
+    name: "Pollution unweighted changes nothing",
+    intent: "The default search, scored again on areas with every pollution column removed.",
+    expect: "Identical scores: a measure nobody weights moves no one (Watch out may still speak).",
+    prefs: DEFAULT_PREFERENCES,
+    checks: [
+      (r) => {
+        if (!r.ns) return [];
+        const stripped = parseNationalAreas({
+          format: "areas-v1",
+          n: r.areas.n,
+          columns: {
+            geoid: r.areas.geoid,
+            label: r.areas.label,
+            low_confidence: r.areas.lowConfidence.map((f) => f.filter((x) => x !== "pm25" && x !== "pre1960_share").join(";")),
+            ...Object.fromEntries(
+              [...r.areas.values].filter(([k]) => !POLLUTION_COLUMNS.includes(k)).map(([k, v]) => [k, Array.from(v, (x) => (Number.isNaN(x) ? null : x))]),
+            ),
+          },
+        });
+        const again = scoreNational(stripped, r.search);
+        const diff: string[] = [];
+        for (let i = 0; i < r.areas.n && diff.length < 5; i++) {
+          const a = r.ns.score[i];
+          const b = again.score[i];
+          if (!(Number.isNaN(a) && Number.isNaN(b)) && Math.abs(a - b) > 1e-9) diff.push(`score changed: ${r.areas.name[i]}`);
+        }
+        return diff;
+      },
+    ],
+  },
+];
+
+export const SCENARIOS: Scenario[] = [...composite, ...singles, ...flipped, ...countySingles, ...outliers, ...pollution];

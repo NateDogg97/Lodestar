@@ -13,6 +13,7 @@ import {
   type MetricContribution,
 } from "@/lib/scoring";
 
+import { WatchLine } from "./area-results";
 import { scoreColor, UNKNOWN_COLOR } from "./score-colors";
 
 const PAGE_SIZE = 50;
@@ -24,9 +25,11 @@ interface ListProps {
   relative: Map<string, number | null>;
   selectedFips: string | null;
   onSelect: (fips: string) => void;
+  /** What a county is among the worst in the US at, unasked (Phase 10d). */
+  watchOuts: (index: number) => { key: string; text: string }[];
 }
 
-export function ResultsList({ ranked, data, relative, selectedFips, onSelect }: ListProps) {
+export function ResultsList({ ranked, data, relative, selectedFips, onSelect, watchOuts }: ListProps) {
   const [visible, setVisible] = useState(PAGE_SIZE);
 
   if (ranked.length === 0) {
@@ -45,6 +48,7 @@ export function ResultsList({ ranked, data, relative, selectedFips, onSelect }: 
           <ResultRow
             key={s.fips}
             rank={i + 1}
+            watch={watchOuts(s.index)}
             score={s}
             data={data}
             rel={relative.get(s.fips)}
@@ -68,6 +72,7 @@ export function ResultsList({ ranked, data, relative, selectedFips, onSelect }: 
 
 function ResultRow({
   rank,
+  watch,
   score: s,
   data,
   rel,
@@ -75,6 +80,7 @@ function ResultRow({
   onSelect,
 }: {
   rank: number;
+  watch: { key: string; text: string }[];
   score: CountyScore;
   data: CountyDataset;
   rel: number | null | undefined;
@@ -104,6 +110,7 @@ function ResultRow({
             {data.countyName[s.index]}, {data.state[s.index]}
             <StatusBadges score={s} />
           </span>
+          <WatchLine items={watch} />
           <Reasons score={s} />
         </span>
 

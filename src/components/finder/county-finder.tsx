@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
-import { applyStateLaws, lawSource, type LawData, type LawSourceSummary } from "@/lib/laws";
+import { applyStateLaws, lawSource, taxSchedules, type LawData, type LawSourceSummary } from "@/lib/laws";
 import {
   CATEGORY_KEYS,
   COUNTY_CATEGORY_KEYS,
@@ -11,11 +11,14 @@ import {
   STATE_CATEGORY_KEYS,
   STATE_METRIC_KEYS,
   METRIC_KEYS,
+  parseSchedule,
   prepareDataset,
   rankCounties,
   scoreCounties,
   subsetDataset,
+  countyWatchOuts,
   topRelativeScores,
+  withTaxes,
   type CategoryKey,
   type CountyDataset,
   type MetricKey,
@@ -50,7 +53,9 @@ import type { InsideLayer, ResultMarks } from "./county-map";
 import {
   AREA_MEASURE,
   areaCriteria,
+  areaTaxSearch,
   areaValue,
+  areaWatchOuts,
   countiesOf,
   countyMatches,
   notResidential,
@@ -62,6 +67,8 @@ import {
   scoreNational,
   topAreas,
   US_TYPICAL_COUNTY,
+  withAreaTaxes,
+  areaTaxRate,
   type ResultBadges,
 } from "@/lib/tracts";
 import { AreaResultsList, CountyBestAreas, CountyResultsList, ResultsHeader, type ResultCap } from "./area-results";
@@ -245,10 +252,14 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   // computed, so they have no influence at all. Everything below works on
   // `scoped`; `data` (all counties) is only used by the map for names/shapes.
   const excludedKey = excludedStates(deferred).join(",");
+  // Taxes in dollars depend on the household (Phase 10b/10c): recomputed when it changes.
+  const schedules = useMemo(() => taxSchedules(laws), [laws]);
+  const householdKey = JSON.stringify(deferred.household);
   const scoped = useMemo(() => {
     const out = excludedKey ? excludedKey.split(",") : [];
-    return out.length ? subsetDataset(data, (i) => !out.includes(data.state[i])) : data;
-  }, [data, excludedKey]);
+    const kept = out.length ? subsetDataset(data, (i) => !out.includes(data.state[i])) : data;
+    return withTaxes(kept, schedules, JSON.parse(householdKey));
+  }, [data, excludedKey, schedules, householdKey]);
 
   const prepared = useMemo(() => prepareDataset(scoped), [scoped]);
   // Option counts beside each category filter: states for policies, counties for climate type.
@@ -289,10 +300,23 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   const areaSearch = useMemo(() => areaCriteria(toAreaSearch(deferred)), [deferred]);
   const hasAreaFilters = areaSearch.criteria.length > 0 || areaSearch.limits.length > 0;
   const nationalState = useNationalAreas(hasAreaFilters);
-  const national = nationalState.status === "ready" ? nationalState.data : null;
+  // Taxes by area (2026-10-13): each area's own estimate, with its own property tax rate.
+  const national = useMemo(
+    () => (nationalState.status === "ready" ? withAreaTaxes(nationalState.data, scoped, schedules, JSON.parse(householdKey)) : null),
+    [nationalState, scoped, schedules, householdKey],
+  );
+  // With areas as the results, Taxes and the tax-rate limits are the area's, not its
+  // county's shared part: the county part is scored without them.
+  const areaTax = useMemo(() => areaTaxSearch(scoringInput), [scoringInput]);
+  const areaCountyScores = useMemo(() => scoreCounties(prepared, areaTax.county), [prepared, areaTax]);
+  const areaCountyByFips = useMemo(() => new Map(areaCountyScores.map((s) => [s.fips, s])), [areaCountyScores]);
   const nationalSearch = useMemo(
-    () => ({ criteria: areaSearch.criteria, limits: areaSearch.limits, counties: countyParts(scores) }),
-    [areaSearch, scores],
+    () => ({
+      criteria: [...areaSearch.criteria, ...areaTax.criteria].sort((a, b) => b.weight - a.weight),
+      limits: [...areaSearch.limits, ...areaTax.limits],
+      counties: countyParts(areaCountyScores),
+    }),
+    [areaSearch, areaTax, areaCountyScores],
   );
   const nscores = useMemo(
     () => (national && hasAreaFilters ? scoreNational(national, nationalSearch) : null),
@@ -318,6 +342,12 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     () => (national ? resultBadges(national, topIdx, nationalSearch) : new Map<number, ResultBadges>()),
     [national, topIdx, nationalSearch],
   );
+  // "Watch out" on results (Phase 10d): an area's own measures, its taxes included.
+  const areaWatch = useCallback(
+    (i: number) => (national ? areaWatchOuts(national, i, nationalSearch) : []),
+    [national, nationalSearch],
+  );
+  const countyWatch = useCallback((i: number) => countyWatchOuts(prepared, i, scoringInput), [prepared, scoringInput]);
   const [viewChoice, setViewChoice] = useState<"areas" | "counties" | null>(null);
   const resultsView = viewChoice ?? (hasAreaFilters ? "areas" : "counties");
   // The map in area mode: the counties holding your top areas, colored by their best area.
@@ -434,6 +464,15 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   const showPlace = view === "place" && selected !== null;
   const insideOpen = showPlace && insideFips !== null && insideFips === selectedFips;
   const areasState = useCountyAreas(insideOpen ? insideFips : null);
+  // An area page's Taxes uses the area's rate estimate, which only the national file has:
+  // load it for an open area page too, so the page matches what Taxes ranks on.
+  const pageNationalState = useNationalAreas(insideOpen && selectedArea !== null);
+  const selectedAreaRate = useMemo(() => {
+    const nat =
+      nationalState.status === "ready" ? nationalState.data : pageNationalState.status === "ready" ? pageNationalState.data : null;
+    const i = nat && selectedArea ? nat.geoid.indexOf(selectedArea) : -1;
+    return nat && i >= 0 ? areaTaxRate(nat, i) : undefined;
+  }, [nationalState, pageNationalState, selectedArea]);
   const placeInUrl = insideOpen && selectedArea ? selectedArea : showPlace ? selectedFips : null;
 
   const [hoverAreas, setHoverAreas] = useState<string[]>([]);
@@ -466,7 +505,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       areas: national,
       scores: nscores,
       search: nationalSearch,
-      county: scoresByFips.get(fips),
+      county: areaCountyByFips.get(fips),
       matches,
       indexByGeoid,
       listed: insideAll ? matches : topHere,
@@ -477,8 +516,9 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       onReveal: setInsideAll,
       ruledOut,
       hiddenCount: areasState.data.areas.areas.length - matches.length,
+      watchOuts: areaWatch,
     };
-  }, [insideOpen, areasState, national, nscores, nationalSearch, scoresByFips, deferred.includeUnknown, topIdx, resultCap, insideAll]);
+  }, [insideOpen, areasState, national, nscores, nationalSearch, areaCountyByFips, deferred.includeUnknown, topIdx, resultCap, insideAll, areaWatch]);
 
   const baseInsideLayer = useMemo<Omit<InsideLayer, "highlight"> | null>(() => {
     if (!insideOpen || areasState.status !== "ready") return null;
@@ -551,7 +591,8 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   const openSearch = (next: Preferences) => {
     addRecent(prefs);
     addRecent(next);
-    reset(next);
+    // The household is this device's, not the search's (Phase 10c).
+    reset({ ...next, household: prefs.household });
   };
 
   // Escape leaves the place view (unless typing in a field).
@@ -599,6 +640,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         total: areaMode ? countyResults.length : ranked.length,
         rel: mapRelative.get(selected.fips),
         laws,
+        household: deferred.household,
         compareFips,
         onCompare: compareWith,
         onBack: backToList,
@@ -616,7 +658,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
                   areas={national}
                   scores={nscores}
                   search={nationalSearch}
-                  county={selected}
+                  county={areaCountyByFips.get(selected.fips)}
                   matches={selectedMatches}
                   inTop={countyResults.find((c) => c.fips === selected.fips)?.areas.length ?? 0}
                   cap={resultCap}
@@ -667,7 +709,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       }}
       prefs={prefs}
       onChange={setPrefs}
-      onDefaults={() => reset(DEFAULT_PREFERENCES)}
+      onDefaults={() => reset({ ...DEFAULT_PREFERENCES, household: prefs.household })}
       onClearAll={() => reset(EMPTY_PREFERENCES)}
       resetKey={resetKey}
       matchCount={areaMode ? matchingAreas : ranked.length}
@@ -714,10 +756,11 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
               areas={national}
               scores={nscores}
               search={nationalSearch}
-              countyScores={scoresByFips}
+              countyScores={areaCountyByFips}
               countyName={countyName}
               onOpenArea={openArea}
               onPreview={preview}
+              watchOuts={areaWatch}
             />
           ) : (
             <CountyResultsList
@@ -727,10 +770,11 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
               areas={national}
               scores={nscores}
               search={nationalSearch}
-              countyScores={scoresByFips}
+              countyScores={areaCountyByFips}
               countyName={countyName}
               onOpenArea={openArea}
               onPreview={preview}
+              watchOuts={areaWatch}
             />
           )}
         </>
@@ -768,6 +812,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         relative={relative}
         selectedFips={selectedFips}
         onSelect={selectFromList}
+        watchOuts={countyWatch}
       />
     </div>
   );
@@ -821,6 +866,13 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
             county: scoped.countyName[i],
           };
         })(placeProps.score.index),
+        taxes: {
+          data: scoped,
+          index: placeProps.score.index,
+          schedule: parseSchedule(schedules[scoped.state[placeProps.score.index]]),
+          household: deferred.household,
+          rate: selectedAreaRate,
+        },
       }
     : null;
 

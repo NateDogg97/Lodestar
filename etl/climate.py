@@ -286,17 +286,74 @@ def koppen(t_c: list[float], p_mm: list[float]) -> str:
     return group + second + third
 
 
+# A type this close to a line is borderline (Phase 10 follow-up, 2026-10-13): Ann Arbor's
+# July mean is 21.8 °C from its three nearest stations and 22.2 °C at the University of
+# Michigan station alone — Dfb one way, Dfa (what references print) the other. Which
+# stations are averaged moves a month's mean by about this much.
+KOPPEN_BORDER_C = 0.5
+
+
+def koppen_alt(t_c: list[float], p_mm: list[float], base: str | None = None) -> str | None:
+    """The type a ±KOPPEN_BORDER_C shift of every month would give instead, or None."""
+    base = base or koppen(t_c, p_mm)
+    for d in (KOPPEN_BORDER_C, -KOPPEN_BORDER_C):
+        alt = koppen([t + d for t in t_c], p_mm)
+        if alt != base:
+            return alt
+    return None
+
+
+def _series(g: pd.DataFrame) -> tuple[list[float], list[float]]:
+    t_c = [((hi + lo) / 2 - 32) * 5 / 9 for hi, lo in zip(g["tmax_f"], g["tmin_f"])]
+    return t_c, [p * 25.4 for p in g["precip_in"]]
+
+
 def koppen_column(monthly: pd.DataFrame) -> pd.DataFrame:
-    """fips -> koppen, for counties with all 12 months of highs, lows and precipitation."""
+    """fips -> koppen and koppen_alt (the borderline neighbour, or null), for counties with
+    all 12 months of highs, lows and precipitation."""
     rows = []
     for code, g in monthly.groupby("fips"):
         g = g.sort_values("month")
         if len(g) != 12 or g[["tmax_f", "tmin_f", "precip_in"]].isna().any().any():
             continue
-        t_c = [((hi + lo) / 2 - 32) * 5 / 9 for hi, lo in zip(g["tmax_f"], g["tmin_f"])]
-        p_mm = [p * 25.4 for p in g["precip_in"]]
-        rows.append((code, koppen(t_c, p_mm)))
-    return pd.DataFrame(rows, columns=["fips", "koppen"])
+        t_c, p_mm = _series(g)
+        base = koppen(t_c, p_mm)
+        rows.append((code, base, koppen_alt(t_c, p_mm, base)))
+    return pd.DataFrame(rows, columns=["fips", "koppen", "koppen_alt"])
+
+
+def published_koppen_alt() -> int:
+    """Add koppen_alt to the published counties.json from the published monthly normals
+    (no rebuild). The base type stays as published; returns how many are borderline."""
+    from .build import to_app_payload
+
+    payload = json.loads(config.PUBLISH_PATH.read_text(encoding="utf-8"))
+    df = pd.DataFrame(payload["rows"], columns=payload["columns"])
+    months = json.loads(PUBLISH_PATH.read_text(encoding="utf-8"))
+    keys = [m["key"] for m in months["measures"]]
+    alts, mismatched = {}, 0
+    for fips, series in months["counties"].items():
+        by = dict(zip(keys, series))
+        if any(v is None for k in ("tmax_f", "tmin_f", "precip_in") for v in by[k]):
+            continue
+        g = pd.DataFrame({"tmax_f": by["tmax_f"], "tmin_f": by["tmin_f"], "precip_in": by["precip_in"]})
+        t_c, p_mm = _series(g)
+        published = df.loc[df["fips"] == fips, "koppen"]
+        base = published.iloc[0] if len(published) and isinstance(published.iloc[0], str) else koppen(t_c, p_mm)
+        # The published monthly file is rounded to 0.1 °F: a type that differs from the
+        # published one under that rounding is itself borderline.
+        recomputed = koppen(t_c, p_mm)
+        if recomputed != base:
+            mismatched += 1
+            alts[fips] = recomputed
+        else:
+            alts[fips] = koppen_alt(t_c, p_mm, base)
+    df["koppen_alt"] = df["fips"].map(alts)
+    log.info("koppen_alt: %d borderline counties (%d differ under the published rounding)",
+             int(df["koppen_alt"].notna().sum()), mismatched)
+    config.PUBLISH_PATH.write_text(json.dumps(to_app_payload(df), separators=(",", ":"), allow_nan=False),
+                                   encoding="utf-8")
+    return int(df["koppen_alt"].notna().sum())
 
 
 def add_koppen(df: pd.DataFrame) -> pd.DataFrame:
@@ -304,3 +361,11 @@ def add_koppen(df: pd.DataFrame) -> pd.DataFrame:
     if not monthly_path().exists():
         return df
     return df.merge(koppen_column(load_monthly()), on="fips", how="left")
+
+
+if __name__ == "__main__":
+    # python -m etl.climate --koppen-alt   (add borderline climate types to the published file)
+    import sys
+
+    if "--koppen-alt" in sys.argv:
+        print(f"{published_koppen_alt()} borderline counties")

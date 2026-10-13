@@ -151,11 +151,18 @@ export function prepareDataset(data: CountyDataset): PreparedDataset {
   const percentiles = {} as Record<MetricKey, Float64Array>;
   const bounds = {} as Record<MetricKey, PercentileBounds>;
   for (const key of METRIC_KEYS) {
-    percentiles[key] = percentileRanks(data.values[key]);
-    bounds[key] = percentileBounds(data.values[key]);
+    const column = data.values[key];
+    let ranks = rankCache.get(column);
+    if (!ranks) rankCache.set(column, (ranks = { percentiles: percentileRanks(column), bounds: percentileBounds(column) }));
+    percentiles[key] = ranks.percentiles;
+    bounds[key] = ranks.bounds;
   }
   return { data, percentiles, bounds };
 }
+
+// Ranks per column array: a household change (`withTaxes`, each keystroke in a budget) makes
+// a new dataset with only the taxes column new, so the rest aren't ranked again.
+const rankCache = new WeakMap<Float64Array, { percentiles: Float64Array; bounds: PercentileBounds }>();
 
 function clampWeight(w: number | undefined): number {
   if (w === undefined || !Number.isFinite(w)) return 0;
@@ -190,8 +197,10 @@ export function scoreCounties(prepared: PreparedDataset, input: ScoringInput): C
     // Policy filters follow the same rule: no value is unknown, never a guess.
     for (const f of categoryFilters) {
       const v = data.categories[f.category][i];
+      // A borderline climate passes on either of its types (koppenAlt).
+      const alt = f.category === "koppen" ? data.koppenAlt?.[i] : null;
       if (v === null) unknownFilters.push(f.category);
-      else if (!f.accept.has(v)) failedFilters.push(f.category);
+      else if (!f.accept.has(v) && !(alt && f.accept.has(alt))) failedFilters.push(f.category);
     }
     const status: CountyStatus = failedFilters.length
       ? "excluded"
@@ -288,4 +297,41 @@ export function explainScore(score: CountyScore, n = 3): ScoreExplanation {
       .sort((a, b) => a.impact - b.impact)
       .slice(0, n),
   };
+}
+
+/** A caution on a result: a measure nobody asked about where it's among the worst in the US. */
+export interface CountyWatchOut {
+  key: MetricKey;
+  text: string;
+}
+
+/** County measures worth a caution when unweighted (Phase 10d), and how each reads. */
+const COUNTY_WATCH: { key: MetricKey; text: (pct: number) => string }[] = [
+  { key: "taxes", text: (p) => `Taxes higher than in ${p}% of US counties` },
+  { key: "rpp_all", text: (p) => `Costlier to live than ${p}% of US counties` },
+  { key: "median_home_value", text: (p) => `Homes cost more than in ${p}% of US counties` },
+  { key: "hazard_risk", text: (p) => `Higher natural hazard risk than ${p}% of US counties` },
+];
+
+/**
+ * What a county is among the worst 5% of US counties at, on measures the search doesn't
+ * weigh (Phase 10d). `keys` limits which are checked (area results check only what isn't
+ * measured by area). Changes no ranking.
+ */
+export function countyWatchOuts(
+  prepared: PreparedDataset,
+  i: number,
+  input: ScoringInput,
+  keys?: readonly MetricKey[],
+  share = 5,
+): CountyWatchOut[] {
+  const out: CountyWatchOut[] = [];
+  for (const w of COUNTY_WATCH) {
+    if (keys && !keys.includes(w.key)) continue;
+    if ((input.weights[w.key] ?? 0) > 0) continue;
+    // Share of counties strictly lower: all of these are worse when higher.
+    const below = prepared.bounds[w.key].lo[i];
+    if (Number.isFinite(below) && below >= 100 - share) out.push({ key: w.key, text: w.text(Math.floor(below)) });
+  }
+  return out;
 }

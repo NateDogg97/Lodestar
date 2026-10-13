@@ -589,6 +589,377 @@ def test_missing_source_degrades(fixtures: dict[str, pd.DataFrame]) -> None:
           "the absent source's column is simply missing, not null-filled")
 
 
+def test_rpp_local() -> None:
+    """Phase 10a: a county's own rent moves its cost of living; parents keep their level."""
+    print("\nrpp_local (cost of living below the metro)")
+    from . import rpp_local
+
+    rows = []
+    # Six metros of two counties each, on a clean power law, so the fit is known.
+    for k, base in enumerate((700, 900, 1100, 1400, 1800, 2300)):
+        rents = 100 * (base / 1200) ** 1.2
+        total = 100 * (rents / 100) ** 0.2
+        for j, rent in enumerate((base * 0.8, base * 1.25)):
+            rows.append({"fips": f"9{k}00{j}", "state": "AA", "rpp_geo_level": "metro",
+                         "rpp_source_geo": f"Metro {k}", "rpp_all": total, "rpp_rents": rents,
+                         "median_gross_rent": rent, "population": 100_000,
+                         "median_household_income": 70_000})
+    # A state's non-metro counties: a resort town, a poor one, and one with no rent.
+    for j, rent in enumerate((2400.0, 500.0, None)):
+        rows.append({"fips": f"9900{j}", "state": "BB", "rpp_geo_level": "state",
+                     "rpp_source_geo": "BB", "rpp_all": 92.0, "rpp_rents": 70.0,
+                     "median_gross_rent": rent, "population": 20_000,
+                     "median_household_income": 60_000})
+    df = pd.DataFrame(rows)
+    out = rpp_local.localize(df)
+    by = out.set_index("fips")
+    metro0 = out[out["rpp_source_geo"] == "Metro 0"]
+    check(abs(metro0["rpp_all"].mean() - metro0["rpp_all_parent"].iloc[0]) < 0.5,
+          f"a metro's counties average back to its published value ({metro0['rpp_all'].mean():.2f})")
+    check(by.loc["99000", "rpp_all"] > 92.0 > by.loc["99001", "rpp_all"],
+          f"resort county above its state, poor county below "
+          f"({by.loc['99000', 'rpp_all']:.1f} / {by.loc['99001', 'rpp_all']:.1f})")
+    check(by.loc["99002", "rpp_all"] == 92.0, "no ACS rent keeps the state's value")
+    again = rpp_local.localize(out)
+    check(bool((again["rpp_all"] - out["rpp_all"]).abs().max() < 1e-9), "running it twice changes nothing")
+    check(abs(by.loc["99000", "real_income"] - 60_000 / (by.loc["99000", "rpp_all"] / 100)) < 1e-6,
+          "real_income follows the localized index")
+
+
+def test_tract_estimates() -> None:
+    """Phase 10e: noisy values move toward what's typical nearby; precise ones barely move."""
+    print("\ntracts.shrink (empirical-Bayes scoring estimates)")
+    from .tracts.shrink import shrink_log_medians, shrink_rates
+
+    # One county of six areas around $300k, plus a precise and a noisy outlier at $900k.
+    est = [300e3, 280e3, 320e3, 310e3, 290e3, 305e3, 900e3, 900e3, 2_000_001.0]
+    moe = [20e3, 20e3, 20e3, 20e3, 20e3, 20e3, 30e3, 600e3, None]
+    county = ["99001"] * 9
+    state = ["99"] * 9
+    keep = [False] * 8 + [True]  # a top-code floor is left as is
+    out = shrink_log_medians(est, moe, county, state, [True] * 9, keep)
+    check(abs(out[6] - 900e3) / 900e3 < 0.05, f"a precise outlier stays ({out[6]:,.0f})")
+    check(out[7] < 700e3, f"a noisy outlier moves toward its county ({out[7]:,.0f})")
+    check(out[8] == 2_000_001.0, "a top-coded value is left as published")
+    check(abs(out[0] - 300e3) / 300e3 < 0.05, "a typical value barely moves")
+
+    # Crime: a big agency at its true rate, a tiny one reporting zero, one tiny and high.
+    rate = [250.0, 260.0, 240.0, 0.0, 3000.0]
+    pop = [500_000, 400_000, 300_000, 900, 900]
+    months = [12, 12, 12, 12, 3]
+    agency = ["A", "B", "C", "D", "E"]
+    eb = shrink_rates(rate, pop, months, agency, ["99"] * 5)
+    check(abs(eb[0] - 250) < 5, f"a large agency keeps its rate ({eb[0]:.0f})")
+    check(eb[3] > 50, f"zero crimes in 900 person-years isn't a perfect record ({eb[3]:.0f})")
+    check(eb[4] < 1500, f"a tiny agency's spike is pulled in ({eb[4]:.0f})")
+
+
+def test_koppen_borderline() -> None:
+    """A month within 0.5 °C of a line makes the county borderline; far from one it isn't."""
+    print("\nclimate.koppen_alt (borderline climate types)")
+    from .climate import koppen, koppen_alt
+
+    # Ann Arbor-like: July mean 21.8 °C (Dfb), 0.2 °C under the 22 °C hot-summer line.
+    t = [-4.6, -3.4, 1.5, 8.4, 14.6, 19.6, 21.8, 20.8, 16.5, 9.8, 3.7, -1.7]
+    p = [64, 53, 64, 84, 91, 99, 89, 81, 76, 69, 64, 58]
+    check(koppen(t, p) == "Dfb" and koppen_alt(t, p) == "Dfa", "Dfb within 0.2 °C of Dfa is borderline")
+    hot = [x + 3 for x in t]
+    check(koppen_alt(hot, p) is None, "3 °C from every line: not borderline")
+
+
+def test_crime_shared_rates() -> None:
+    """A county sheriff's one rate over farmland and suburbs is flagged; a city's isn't."""
+    print("\ntracts.crime.shared_rates (one agency's rate over many areas)")
+    from .tracts.crime import shared_rates
+
+    sheriff, city = "Washtenaw County (sheriff or county police)", "Ann Arbor"
+    agency = pd.Series([sheriff] * 9 + [city] * 9 + [sheriff])
+    density = pd.Series([20, 40, 80, 150, 300, 900, 2000, 5000, 8900] + [3000] * 9 + [10])
+    population = pd.Series([3000] * 18 + [20])  # the last is too small to be a place to live
+    shared, wide = shared_rates(agency, density, population, pd.Series([True] * 19))
+    check(int(shared[0]) == 9 and int(shared[9]) == 9, "every rated area knows how many share its rate")
+    check(bool(wide[:9].all()), "a sheriff over 9 areas from 20 to 8,900 people/sq mi is flagged")
+    check(not bool(wide[9:18].any()), "a city's rate isn't, however many areas share it")
+    one_kind = shared_rates(pd.Series([sheriff] * 9), pd.Series([50.0] * 9), pd.Series([3000] * 9),
+                            pd.Series([True] * 9))[1]
+    check(not bool(one_kind.any()), "a sheriff over similar rural areas isn't")
+
+
+def test_edges_and_hazard_ratings() -> None:
+    """Distance to a shape's edge (0 inside), and FEMA's rating words kept beside the rates."""
+    print("\nedges.distance_to / nri.hazard_columns")
+    from shapely.geometry import box
+
+    from .edges import distance_to
+    from .sources.nri import hazard_columns
+
+    square = box(-84.0, 42.0, -83.0, 43.0)  # about 51 x 69 miles
+    lat = np.array([42.5, 42.5, 42.5])
+    lon = np.array([-83.5, -82.5, -84.25])
+    d, idx = distance_to(lat, lon, [square])
+    check(d[0] == 0.0, "a point inside the shape is 0 from it")
+    check(abs(d[1] - 0.5 * 69.17 * np.cos(np.radians(42.5))) < 0.5, f"east of it: half a degree of longitude ({d[1]:.1f} mi)")
+    check(abs(d[2] - 0.25 * 69.17 * np.cos(np.radians(42.5))) < 0.5, f"west of it: a quarter degree ({d[2]:.1f} mi)")
+    # At 45°N, 1.2° of longitude east (~59 mi) is nearer than 1.0° of latitude north (~69 mi),
+    # though it's farther in raw degrees: the nearest is chosen in miles.
+    east, north = box(-88.8, 44.5, -88.0, 45.5), box(-90.5, 46.0, -89.5, 47.0)
+    d, idx = distance_to(np.array([45.0]), np.array([-90.0]), [north, east])
+    check(idx[0] == 1 and abs(d[0] - 1.2 * 69.17 * np.cos(np.radians(45.0))) < 1.0,
+          f"the nearest in miles, not in degrees ({d[0]:.1f} mi to shape {idx[0]})")
+
+    t = pd.DataFrame({"ALR_NPCTL": [4.2], "RISK_RATNG": ["Relatively Moderate"],
+                      **{f"{p}_ALR_NPCTL": [10.0] for p in ("HRCN", "WFIR", "IFLD", "ERQK", "TRND", "SWND", "HAIL", "WNTW", "CWAV", "HWAV")},
+                      "CFLD_ALR_NPCTL": [None],
+                      **{f"{p}_RISKR": ["Very Low"] for p in ("HRCN", "WFIR", "IFLD", "ERQK", "TRND", "SWND", "HAIL", "WNTW", "CWAV", "HWAV")},
+                      "CFLD_RISKR": ["Not Applicable"]})
+    h = hazard_columns(t)
+    check(h["hazard_rating"].iloc[0] == "Relatively Moderate", "FEMA's overall rating is kept")
+    check(h["hazard_coastal_flood"].iloc[0] == 0.0 and h["hazard_coastal_flood_rating"].iloc[0] == "Not Applicable",
+          "not applicable is zero, and says so")
+    check(h["hazard_strong_wind"].iloc[0] == 10.0, "display-only hazards come along")
+
+
+def test_pollution_grid() -> None:
+    """The cell containing a point, never interpolated; no-data and off-grid are unknown."""
+    print("\npollution.grid (sampling a regular lat/lon surface)")
+    import tempfile
+
+    import h5py
+
+    from .pollution.grid import Grid, mean_of
+
+    # 4 x 5 cells of 0.01 degrees, centres at 42.005.. and -84.005..; one no-data cell.
+    vals = np.arange(20, dtype=np.float32).reshape(4, 5)
+    vals[1, 1] = -999.9
+    with tempfile.TemporaryDirectory() as tmp:
+        path = f"{tmp}/g.nc"
+        with h5py.File(path, "w") as f:
+            f["lat"] = np.float32(42.005 + 0.01 * np.arange(4))
+            f["lon"] = np.float32(-84.005 + 0.01 * np.arange(5))
+            f["PM25"] = vals
+            f["PM25"].attrs["units"] = "ug/m3"
+        g = Grid.from_netcdf(path, "PM25")
+    lat = np.array([42.0051, 42.0149, 42.0151, 42.0150, 41.99, 42.02, np.nan])
+    lon = np.array([-84.0049, -84.0049, -84.0049, -83.9951, -84.0, -84.0, -84.0])
+    v = g.sample(lat, lon)
+    check(v[0] == 0.0 and v[1] == 5.0, "a point takes its own cell's value")
+    check(v[2] == 5.0 or v[2] == 10.0, "on a boundary it takes one cell, never a blend")
+    check(np.isnan(v[3]), "a no-data cell (-999.9) is unknown, not a number")
+    check(np.isnan(v[4]) and np.isnan(v[6]), "off the grid, or no point: unknown")
+    check(g.units == "ug/m3", "units come with the grid")
+    m = mean_of([g, Grid(g.values + 3, g.lat0, g.lon0, g.dlat, g.dlon)])
+    check(abs(m.sample(np.array([42.005]), np.array([-84.005]))[0] - 1.5) < 1e-6
+          and np.isnan(m.sample(np.array([42.015]), np.array([-83.995]))[0]),
+          "a multi-year mean is cell by cell, and unknown in any year stays unknown")
+
+
+def test_pollution_blocks() -> None:
+    """The PL 94-171 geo header: blocks with people, by the documented field order."""
+    print("\npollution.blocks (2020 blocks: population and internal point)")
+    from .pollution.blocks import AT, FIELDS, parse_geo
+
+    def line(sumlev: str, geocode: str, pop: str, lat: str, lon: str) -> str:
+        f = [""] * len(FIELDS)
+        f[AT["SUMLEV"]], f[AT["GEOCODE"]], f[AT["POP100"]] = sumlev, geocode, pop
+        f[AT["INTPTLAT"]], f[AT["INTPTLON"]] = lat, lon
+        return "|".join(f) + "\n"
+
+    lines = [line("050", "26161", "372258", "+42.2", "-083.8"),       # a county: not a block
+             line("750", "261610001001000", "23", "+42.2808", "-083.7430"),
+             line("750", "261610001001001", "0", "+42.2810", "-083.7400")]  # nobody lives there
+    df = parse_geo(lines)
+    check(len(df) == 1 and df.iloc[0]["block"] == "261610001001000", "only populated blocks")
+    check(df.iloc[0]["pop"] == 23 and abs(df.iloc[0]["lon"] + 83.743) < 1e-9, "population and the internal point")
+    try:
+        parse_geo(["PLST|MI|750|00|00\n"])  # a block row with 5 fields, not 97
+        check(False, "a changed layout should raise")
+    except ValueError:
+        check(True, "a header with another field count raises, not misreads")
+
+
+def test_pollution_exposure() -> None:
+    """Population-weighted, from blocks: a polluted corner isn't diluted; unknown stays unknown."""
+    print("\npollution.exposure (blocks -> areas and counties)")
+    from .pollution.exposure import exposure
+
+    # County 99001: tract A is big — 1,000 people in a polluted corner, 10 in clean fields;
+    # tract B is clean. County 99003: tract C mostly unknown (a sliver has a value).
+    blocks = pd.DataFrame({
+        "block": [f"b{k}" for k in range(7)],
+        "tract": ["99001000100", "99001000100", "99001000200", "99001000200",
+                  "99003000100", "99003000100", "99003000100"],
+        "pop": [1000, 10, 500, 500, 100, 100, 50],
+    })
+    blocks["county"] = blocks["tract"].str[:5]
+    values = np.array([20.0, 5.0, 6.0, 8.0, np.nan, np.nan, 9.0])
+    tracts, counties = exposure(blocks, values, "pm25", benchmark=9.0)
+    t = tracts.set_index("tract")
+    a = t.at["99001000100", "pm25"]
+    check(abs(a - (1000 * 20 + 10 * 5) / 1010) < 0.01, f"the corner where people live sets the value ({a})")
+    check(t.at["99001000100", "pm25_above"] == 99.0, "share above the benchmark is of residents (1000 of 1010)")
+    check(t.at["99001000100", "pm25_max"] == 20.0, "the worst block is kept")
+    check(pd.isna(t.at["99003000100", "pm25"]) and t.at["99003000100", "pm25_coverage"] == 20.0,
+          "a value for 20% of a place's people doesn't stand for all of them")
+    c = counties.set_index("county")
+    expect = (1000 * 20 + 10 * 5 + 500 * 6 + 500 * 8) / 2010
+    check(abs(c.at["99001", "pm25"] - expect) < 0.01, "the county is built from the same blocks")
+    check(c.at["99001", "pm25_worst_tract"] == "99001000100" and c.at["99001", "pm25_worst"] == round(a, 2),
+          "the county names its worst area")
+    # Rule 6: a county run alone gives its tracts the same values as the national run.
+    alone, _ = exposure(blocks[blocks["county"] == "99001"], values[:4], "pm25", benchmark=9.0)
+    check(alone.set_index("tract")["pm25"].equals(t.loc[alone["tract"], "pm25"]),
+          "a tract's value doesn't depend on which counties are run together")
+
+
+def test_pollution_monitors() -> None:
+    """EPA annual means: complete years, events included, POCs averaged, 2+ years per site."""
+    print("\npollution.monitors (EPA PM2.5 annual means by site)")
+    from .pollution.monitors import site_means
+
+    def row(year, poc, mean, event="No Events", complete="Y", standard="PM25 Annual 2024", site="0064"):
+        return {"State Code": "42", "County Code": "003", "Site Num": site, "Parameter Code": 88101, "POC": poc,
+                "Latitude": 40.32, "Longitude": -79.87, "Pollutant Standard": standard, "Year": year,
+                "Completeness Indicator": complete, "Event Type": event, "Arithmetic Mean": mean,
+                "Local Site Name": "Liberty"}
+    rows = [row(2022, 1, 11.0), row(2022, 2, 13.0),                       # two instruments: 12
+            row(2023, 1, 14.0, "Events Included"), row(2023, 1, 12.5, "Events Excluded"),
+            row(2024, 1, 99.0, complete="N"),                              # incomplete: dropped
+            row(2024, 1, 50.0, standard="PM25 24-hour 2024"),              # another standard
+            row(2023, 1, 9.0, site="9999")]                                # one year only
+    out = site_means([pd.DataFrame(rows)]).set_index("site")
+    check(list(out.index) == ["42-003-0064"], "a site needs two complete years")
+    check(out.at["42-003-0064", "pm25"] == 13.0 and out.at["42-003-0064", "years"] == 2,
+          "instruments averaged per year; smoke events kept (12 and 14 -> 13)")
+
+
+def test_pollution_doubt() -> None:
+    """A monitor well above the surface doubts it nearby; it never gives anyone a value."""
+    print("\npollution.doubt (monitors that read above the surface)")
+    from .pollution.doubt import centers, disagreeing, nearest_monitor, within
+    from .pollution.exposure import share
+    from .pollution.grid import Grid
+
+    grid = Grid(np.full((100, 100), 8.0, dtype=np.float32), 40.005, -80.995, 0.01, 0.01)
+    monitors = pd.DataFrame({"site": ["hot", "low", "fine"], "name": ["Hot", "Low", "Fine"],
+                             "lat": [40.30, 40.80, 40.50], "lon": [-80.70, -80.20, -80.50],
+                             "pm25": [12.0, 5.0, 9.5]})
+    d = disagreeing(monitors, grid)
+    check(list(d["site"]) == ["hot"], "only a monitor over the surface by > 2 doubts it (not one below it)")
+    # Blocks: two next to the hot monitor (~1 and ~4 mi), one 10 mi away.
+    blocks = pd.DataFrame({"block": ["a", "b", "c"], "tract": ["99001000100", "99001000100", "99001000200"],
+                           "county": ["99001"] * 3, "pop": [300, 100, 600],
+                           "lat": [40.31, 40.35, 40.44], "lon": [-80.70, -80.65, -80.70]})
+    near = within(blocks["lat"].to_numpy(), blocks["lon"].to_numpy(), d)
+    check(list(near) == [True, True, False], "within 5 miles of the monitor, by great-circle distance")
+    s = share(blocks, near, "county", "pm25_doubt").set_index("county")
+    check(s.at["99001", "pm25_doubt"] == 40.0, "the county's doubt is the share of its residents (400 of 1,000)")
+    c = centers(pd.DataFrame({"t": ["x", "x"], "pop": [1, 1], "lat": [52.0, 52.0], "lon": [179.0, -179.0]}), "t")
+    check(abs(abs(c.at[0, "lon"]) - 180.0) < 1e-6, "a population center across the antimeridian stays there")
+    n = nearest_monitor(blocks, monitors, "pm25").set_index("tract")
+    check(n.at["99001000200", "pm25_monitor_site"] == "hot" and n.at["99001000200", "pm25_monitor"] == 12.0,
+          "the nearest monitor is shown with its own reading, beside (not as) the area's value")
+
+
+def test_pollution_smoke() -> None:
+    """HMS plumes: densest plume per cell, a day not analyzed isn't a clear day."""
+    print("\npollution.smoke (days with smoke overhead)")
+    import shapely
+
+    from .pollution.smoke import count, rasterize
+
+    light = shapely.box(-84.0, 42.0, -83.0, 43.0)      # Michigan-ish, Light
+    heavy = shapely.box(-83.5, 42.0, -83.0, 42.5)      # inside it, Heavy
+    r = rasterize(np.array([light, heavy]), np.array([1, 3], dtype=np.uint8))
+    check(r.max() == 3 and (r == 3).sum() == 100 and (r == 1).sum() == 300,
+          "a cell takes the densest plume over its centre (0.05 deg cells: 100 heavy, 300 light)")
+    day = (np.array([light, heavy]), np.array([1, 3], dtype=np.uint8))
+    clear = (np.array([], dtype=object), np.array([], dtype=np.uint8))
+    a, t, n = count([day, clear, None, None])
+    pt = (np.array([42.2]), np.array([-83.2]))
+    check(n == 2, "a day with no file is not analyzed (2 of 4)")
+    check(abs(a.sample(*pt)[0] - 182.5) < 1e-3 and abs(t.sample(*pt)[0] - 182.5) < 1e-3,
+          "1 smoky day of 2 analyzed is half the year, not a quarter")
+    out = (np.array([42.8]), np.array([-83.8]))
+    check(t.sample(*out)[0] == 0 and a.sample(*out)[0] == 182.5, "a Light plume isn't a thick day")
+
+
+def test_pollution_lead() -> None:
+    """Older housing: pre-1960 and pre-1980 shares of B25034, margins by the proportion rule."""
+    print("\npollution.lead (older housing, lead-paint risk)")
+    from .pollution.lead import shares
+
+    cols = ["year_built_total", "built_1970s", "built_1960s", "built_1950s", "built_1940s", "built_before_1940"]
+    est = pd.DataFrame([[1000, 200, 100, 100, 50, 50], [40, 0, 0, 10, 5, 5]], columns=cols, dtype=float)
+    moe = pd.DataFrame([[0, 30, 20, 20, 10, 10], [10, 0, 0, 12, 8, 8]], columns=cols, dtype=float)
+    out = shares(est, moe)
+    check(out.at[0, "pre1960_share"] == 20.0 and out.at[0, "pre1980_share"] == 50.0,
+          "before 1960 = 1950s + 1940s + earlier; before 1980 adds the 60s and 70s")
+    check(abs(out.at[0, "pre1960_share_moe"] - 100 * np.sqrt(20**2 + 10**2 + 10**2) / 1000) < 0.06,
+          "a fixed total's share MOE is the numerator's (summed in quadrature) over it")
+    check(out.at[1, "lead_low_confidence"] == "1" and out.at[0, "lead_low_confidence"] == "",
+          "a tiny place's wide margin is flagged low confidence")
+
+
+def test_pollution_radon() -> None:
+    """ZIP radon: the year is the mean of 12 months; a blank month makes the ZIP unknown."""
+    print("\npollution.radon (share of homes above 4 pCi/L, by ZIP area)")
+    from .pollution.radon import annual
+
+    rows = []
+    for zcta, p4 in ((1001, 0.10), (2002, 0.30)):
+        for month in range(1, 13):
+            winter = 0.06 if month in (1, 2, 12) else -0.02     # tests read higher in winter
+            rows.append({"ZCTA": zcta, "month": month, "threshold_label": ">148 Bq/m3",
+                         "exceedance_probability": p4 + winter, "bootstrap_95ci_width": 0.2})
+            rows.append({"ZCTA": zcta, "month": month, "threshold_label": ">74 Bq/m3",
+                         "exceedance_probability": 2 * p4, "bootstrap_95ci_width": 0.3})
+    rows[-1]["exceedance_probability"] = float("nan")  # ZIP 02002: one blank month
+    out = annual(pd.DataFrame(rows)).set_index("zcta")
+    check(abs(out.at["01001", "above4"] - 100 * (0.10 + (3 * 0.06 - 9 * 0.02) / 12)) < 1e-9,
+          "the year is the mean of the 12 months, as a % (ZCTA keeps its leading zero)")
+    check(abs(out.at["01001", "radon_ci"] - 20.0) < 1e-9 and abs(out.at["01001", "above2"] - 20.0) < 1e-9,
+          "the 2 pCi/L share and the 4 pCi/L CI width come along")
+    check(pd.isna(out.at["02002", "above2"]) and out.at["02002", "above4"] > 0,
+          "a ZIP with a blank month is unknown for that threshold, not an 11-month year")
+    try:
+        annual(pd.DataFrame([{**rows[0], "threshold_label": ">200 Bq/m3"}]))
+        check(False, "an unknown threshold should raise")
+    except ValueError:
+        check(True, "an unknown threshold raises, not mislabels")
+
+
+def test_pollution_backfill() -> None:
+    """Area files gain the pollution columns; PM2.5 is flagged where most residents are doubted."""
+    print("\ntracts.backfill --pollution (area files)")
+    from .tracts.backfill import POLLUTION, patch_pollution
+
+    payload = {"columns": ["geoid", "low_confidence"],
+               "rows": [["99001000100", "crime;pm25"], ["99001000200", ""], ["99001000300", ""]]}
+    by = {"99001000100": {"pm25": 11.04, "pm25_doubt": 80.0, "pm25_monitor_site": "42-003-0064",
+                          "pre1960_share": 40.4, "flags": {"pre1960_share"}},
+          "99001000200": {"pm25": 7.96, "pm25_doubt": 20.0, "radon_above4": float("nan"), "flags": set()}}
+    counts = patch_pollution(payload, by)
+    at = {c: payload["columns"].index(c) for c in payload["columns"]}
+    a, b, c = payload["rows"]
+    check(all(k in at for k in POLLUTION), "every pollution column is added")
+    check(a[at["pm25"]] == 11.0 and a[at["pm25_monitor_site"]] == "42-003-0064", "values rounded, monitor id kept as text")
+    check(a[at["low_confidence"]].split(";") == ["crime", "pm25", "pre1960_share"],
+          "doubted by most residents -> pm25 flag; ACS margin -> pre1960 flag; others kept, none doubled")
+    check(b[at["low_confidence"]] == "" and b[at["radon_above4"]] is None, "a minority doubted isn't flagged; NaN is null")
+    check(c[at["pm25"]] is None and counts["pollution"] == 2 and counts["doubted"] == 1, "an area with no row stays unknown")
+
+    from .tracts.backfill import pollution_gate
+
+    healthy = {"residential": 1000, "residential_l48": 900, "known_pm25": 1000, "known_smoke_days_thick": 1000,
+               "known_pre1960_share": 990, "known_radon_above4": 850}
+    check(pollution_gate(healthy) == [], "full PM2.5 and smoke, 94% radon in the lower 48: passes")
+    check(pollution_gate({**healthy, "known_pm25": 500}) == ["pm25: 50.0% of residential areas have a value (floor 99%)"],
+          "a source that collapsed fails the run")
+    check(pollution_gate({"residential": 10, "residential_l48": 0, "known_pm25": 10, "known_smoke_days_thick": 10,
+                          "known_pre1960_share": 10}) == [],
+          "Hawaii alone: no radon expected, no failure")
+
+
 def test_noaa_per_variable_station_selection() -> None:
     print("\nNOAA: stations are selected per variable group, not per county")
     from .sources import noaa
@@ -767,8 +1138,8 @@ def test_phase5_sources() -> None:
     # NRI: "Not Applicable" is a real zero; any other blank stays unknown.
     def haz(prefix: str, pct, rating) -> dict:
         return {f"{prefix}_ALR_NPCTL": pct, f"{prefix}_RISKR": rating}
-    row = {"STCOFIPS": "12086", "ALR_NPCTL": 79.8, "NRI_VER": "December 2025"}
-    for p in ("HRCN", "WFIR", "IFLD", "ERQK", "TRND"):
+    row = {"STCOFIPS": "12086", "ALR_NPCTL": 79.8, "NRI_VER": "December 2025", "RISK_RATNG": "Relatively High"}
+    for p in ("HRCN", "WFIR", "IFLD", "ERQK", "TRND", "SWND", "HAIL", "WNTW", "CWAV", "HWAV"):
         row.update(haz(p, 50.0, "Relatively Low"))
     row.update(haz("CFLD", None, "Not Applicable"))
     inland = dict(row, STCOFIPS="08031", **haz("HRCN", None, "Insufficient Data"))
@@ -1091,6 +1462,118 @@ def test_tract_acs_confidence() -> None:
     check("median_home_value" not in df.at[2, "low_confidence"], "a top-coded value isn't flagged for its missing MOE")
 
 
+def test_pollution_carry_over() -> None:
+    """A pollution source that's down, or collapses, keeps the live tables; the run goes on."""
+    print("\npollution.carry (last month's tables when a source is down)")
+    import json
+    import tempfile
+    from pathlib import Path
+
+    from .pollution import carry
+
+    live = {
+        "tracts": pd.DataFrame({"tract": ["26161400100", "26161400200", "39049000100"], "pm25": [7.1, 7.4, 8.0]}),
+        "counties": pd.DataFrame({"county": ["26161", "39049"], "pm25": [7.2, 8.0]}),
+    }
+    saved = (carry.live_table, carry.DIR, carry.STATUS)
+    with tempfile.TemporaryDirectory() as tmp:
+        carry.live_table = lambda name, kind: live[kind].copy()
+        carry.DIR, carry.STATUS = Path(tmp) / "pollution", Path(tmp) / "pollution.json"
+        try:
+            sources = {"pm25": {"computed": "2026-09-03", "carried": False}}
+
+            def down():
+                raise RuntimeError("HTTP 503 from the source")
+
+            t, c = carry.run("pm25", down, ["26"], sources, today="2026-11-03")
+            check(t.equals(live["tracts"]) and c.equals(live["counties"]), "a failed source keeps the live tables")
+            check(sources["pm25"] == {"computed": "2026-09-03", "carried": True, "attempted": "2026-11-03"},
+                  "its computed date stays the old one, marked carried", sources)
+            check(not (carry.DIR / "pm25_tracts.csv").exists(), "nothing new published for it")
+
+            # Michigan only, and one of its two areas lost its value: below the 95% floor.
+            thin = (pd.DataFrame({"tract": ["26161400100", "26161400200"], "pm25": [7.0, None]}),
+                    pd.DataFrame({"county": ["26161"], "pm25": [7.0]}))
+            carry.run("pm25", lambda: thin, ["26"], sources, today="2026-11-03")
+            check(sources["pm25"]["carried"], "a collapsed source counts as down")
+
+            fresh = (pd.DataFrame({"tract": ["26161400100", "26161400200"], "pm25": [7.0, 7.3]}),
+                     pd.DataFrame({"county": ["26161"], "pm25": [7.1]}))
+            carry.run("pm25", lambda: fresh, ["26"], sources, today="2026-11-03")
+            check(sources["pm25"] == {"computed": "2026-11-03", "carried": False}, "a good run is dated today")
+            pub = carry._read((carry.DIR / "pm25_tracts.csv").read_text())
+            check(list(pub["tract"]) == ["26161400100", "26161400200", "39049000100"]
+                  and list(pub["pm25"]) == [7.0, 7.3, 8.0],
+                  "the published table: fresh Michigan, Ohio kept from the live one", pub.to_dict("list"))
+
+            carry.live_table = lambda name, kind: None
+            try:
+                carry.run("smoke", down, ["26"], {}, today="2026-11-03")
+                check(False, "nothing live: the failure is raised")
+            except RuntimeError:
+                check(True, "nothing live (the first run): the failure is raised, as before")
+            carry.write_status(sources, today="2026-11-03")
+            s = json.loads(carry.STATUS.read_text())
+            check(s["format"] == 1 and s["sources"]["pm25"]["computed"] == "2026-11-03", "pollution.json written")
+        finally:
+            carry.live_table, carry.DIR, carry.STATUS = saved
+
+
+def test_area_property_tax() -> None:
+    """Property tax by area (2026-10-13): the tract rate, its margin and flag, city centers, backfill."""
+    print("\nproperty tax by area: rate, margin, centers, backfill")
+    from .tracts import acs as tract_acs
+    from .tracts.backfill import patch_taxes
+    from .tracts.national import tax_groups
+
+    def row(tract: str, taxes: float, taxes_moe: float, value: float, value_moe: float) -> dict:
+        base = {f"{v}{s}": 0 for v in config.ACS_TRACT_VARIABLES for s in ("E", "M")}
+        base.update({"state": "26", "county": "161", "tract": tract, "B25090_001E": str(taxes),
+                     "B25090_001M": str(taxes_moe), "B25082_001E": str(value), "B25082_001M": str(value_moe)})
+        return base
+
+    df = tract_acs.parse(pd.DataFrame([
+        row("400100", 15_000_000, 1_000_000, 1_000_000_000, 50_000_000),   # 1.5%, tight
+        row("400200", 2_000_000, 1_500_000, 100_000_000, 40_000_000),      # 2.0%, CV > 40%
+        row("400300", 0, 0, 0, 0),                                          # no owned homes
+    ]))
+    check(abs(df.at[0, "property_tax_rate"] - 1.5) < 1e-9, "rate = aggregate taxes / aggregate value, in %")
+    expected = 100 * (1_000_000**2 + 0.015**2 * 50_000_000**2) ** 0.5 / 1_000_000_000
+    check(abs(df.at[0, "property_tax_rate_moe"] - expected) < 1e-9, "margin by the Census ratio formula")
+    check("property_tax_rate" not in df.at[0, "low_confidence"], "a tight rate isn't flagged")
+    check("property_tax_rate" in df.at[1, "low_confidence"], "a wide-margin rate is flagged like a median")
+    check(pd.isna(df.at[2, "property_tax_rate"]), "no owner-occupied value: unknown, not 0")
+
+    county = ["26161"] * 7
+    place = ["Ypsilanti"] * 3 + [None] * 3 + ["Chelsea"]
+    groups = tax_groups(county, place)
+    check(groups[:3] == ["26161|Ypsilanti"] * 3, "a city's areas are one group", groups)
+    check(groups[3:6] == ["26161|"] * 3, "areas in no city are one group")
+    # A wide-margin rate in a lone small city shrinks toward the whole county's median
+    # (1.7%), not the state's — the other state here sits at 1.0%.
+    from .tracts.shrink import shrink_log_medians
+    rates = [2.0, 1.9, 2.1, 1.3, 1.4, 1.5, 1.7, 1.0, 1.0, 1.0, 1.0]
+    moes = [0.05] * 6 + [1.5] + [0.05] * 4
+    eb = shrink_log_medians(rates, moes, groups + ["26999|"] * 4, ["26"] * 11, [True] * 11, [False] * 11,
+                            parent=county + ["26999"] * 4)
+    state_only = shrink_log_medians(rates, moes, groups + ["26999|"] * 4, ["26"] * 11, [True] * 11, [False] * 11)
+    check(abs(eb[6] - 1.7) < 0.05, f"a city with too few areas centers on its county ({eb[6]:.2f}%)")
+    check(state_only[6] < eb[6] - 0.05, f"without the county fallback it drifts to the state ({state_only[6]:.2f}%)")
+    check(abs(eb[0] - 2.0) < 0.05, "a big city's own tight rate barely moves")
+
+    payload = {"columns": ["geoid", "low_confidence"], "rows": [["26161400100", "x"], ["26161400200", ""]]}
+    by_geoid = {"26161400100": {"property_tax_rate": 1.4567, "property_tax_rate_moe": 0.2, "flags": set()},
+                "26161400200": {"property_tax_rate": 2.0, "property_tax_rate_moe": 1.5, "flags": {"property_tax_rate"}}}
+    patch_taxes(payload, by_geoid)
+    counts = patch_taxes(payload, by_geoid)  # twice: idempotent
+    at = {c: k for k, c in enumerate(payload["columns"])}
+    rows = payload["rows"]
+    check(rows[0][at["property_tax_rate"]] == 1.46, "rate kept to hundredths")
+    check(rows[0][at["low_confidence"]] == "x" and rows[1][at["low_confidence"]] == "property_tax_rate",
+          "flag added once, other flags kept", [r[at["low_confidence"]] for r in rows])
+    check(counts == {"taxes": 2, "taxes_flagged": 1}, "counts", counts)
+
+
 def main() -> int:
     print("=" * 70)
     print("OFFLINE TEST SUITE — no network required")
@@ -1120,12 +1603,28 @@ def main() -> int:
         test_gazetteer_encoding_guard()
         test_app_payload_is_compact_and_lossless_where_it_matters()
         test_tract_acs_confidence()
+        test_area_property_tax()
+        test_pollution_carry_over()
         test_tract_today_prices()
         test_tract_backfill_audit_columns()
         test_tract_crime_rates()
         test_demographics()
         test_racial_equality()
         test_tract_crime_and_gate()
+        test_rpp_local()
+        test_tract_estimates()
+        test_koppen_borderline()
+        test_crime_shared_rates()
+        test_edges_and_hazard_ratings()
+        test_pollution_grid()
+        test_pollution_blocks()
+        test_pollution_exposure()
+        test_pollution_monitors()
+        test_pollution_doubt()
+        test_pollution_smoke()
+        test_pollution_lead()
+        test_pollution_radon()
+        test_pollution_backfill()
 
         fixtures = _make_synthetic()
         try:

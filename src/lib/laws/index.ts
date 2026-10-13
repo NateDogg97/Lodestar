@@ -7,11 +7,12 @@
  * (`checked`). The app must show all three wherever it shows a value.
  */
 
-import { STATE_CATEGORY_KEYS, STATE_METRIC_KEYS, type CountyDataset } from "@/lib/scoring";
+import { parseSchedule, STATE_CATEGORY_KEYS, STATE_METRIC_KEYS, type CountyDataset } from "@/lib/scoring";
 
 export const LAWS_FORMAT = "laws-v1";
 
-export type LawType = "numeric" | "ordinal" | "boolean" | "nominal";
+/** `schedule`: income tax brackets in a compact form (see `parseSchedule`). */
+export type LawType = "numeric" | "ordinal" | "boolean" | "nominal" | "schedule";
 
 export interface LawDef {
   key: string;
@@ -122,7 +123,45 @@ export function formatLaw(def: LawDef, fact: LawFact): string {
         return String(n);
     }
   }
+  if (def.type === "schedule") return formatSchedule(fact.v);
   return LABELS[def.key]?.[fact.v] ?? fact.v.replace(/_/g, " ");
+}
+
+const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+const pct = (r: number) => `${Number((r * 100).toFixed(2))}%`;
+
+/** Brackets, short enough for a row: "1–13.3%, 10 brackets", "4.25% flat", "None". */
+function formatSchedule(v: string): string {
+  const s = parseSchedule(v);
+  if (s === "none") return "None";
+  if (!s) return v;
+  const rates = s.single.map((b) => b.rate).filter((r) => r > 0);
+  const lo = Math.min(...rates);
+  const hi = Math.max(...rates);
+  return lo === hi ? `${pct(hi)} flat` : `${pct(lo).replace("%", "")}–${pct(hi)}, ${s.single.length} brackets`;
+}
+
+/** The rest of a schedule, for its "i": "Single filer: $5,540 standard deduction, $153 credit." */
+export function scheduleDetail(v: string): string | null {
+  const s = parseSchedule(v);
+  if (!s || s === "none") return null;
+  const extras = [
+    s.deduction[0] > 0 ? `${usd(s.deduction[0])} standard deduction` : null,
+    s.exemption[0] > 0 ? `${usd(s.exemption[0])} personal exemption` : null,
+    s.credit[0] > 0 ? `${usd(s.credit[0])} personal credit` : null,
+  ].filter(Boolean);
+  const brackets = s.single.map((b) => `${pct(b.rate)} over ${usd(b.over)}`).join(", ");
+  return `Single filer: ${brackets}.${extras.length ? ` ${extras.join(", ")}.` : ""} Married couples have their own brackets.`;
+}
+
+/** Each state's income tax brackets (`income_tax_brackets`), for the Taxes estimate. */
+export function taxSchedules(laws: LawData | null): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
+  for (const [st, facts] of Object.entries(laws?.states ?? {})) {
+    const f = facts.income_tax_brackets;
+    out[st] = f && !isGap(f) ? f.v : null;
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

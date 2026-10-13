@@ -8,14 +8,29 @@
  */
 
 import { CATEGORY_KEYS, COUNTY_CATEGORY_KEYS, type CategoryKey } from "./categories";
-import { METRIC_KEYS, STATE_METRIC_KEYS, type MetricKey } from "./metrics";
+import { COMPUTED_METRIC_KEYS, METRIC_KEYS, STATE_METRIC_KEYS, type MetricKey } from "./metrics";
 
 export const PAYLOAD_FORMAT = "counties-columnar-v1";
 
 /** Text columns kept for display: the nearest major airport (IATA code) and 500k+ metro (name). */
 // rpp_source_geo: the metro (or state) whose price parity a county carries.
-export const TEXT_COLUMNS = ["nearest_airport", "nearest_metro", "rpp_source_geo"] as const;
+export const TEXT_COLUMNS = [
+  "nearest_airport", "nearest_metro", "rpp_source_geo",
+  // FEMA's own rating words (etl/sources/nri.py), beside the loss-rate percentiles we rank.
+  "hazard_rating", "hazard_hurricane_rating", "hazard_wildfire_rating", "hazard_inland_flood_rating",
+  "hazard_coastal_flood_rating", "hazard_earthquake_rating", "hazard_tornado_rating", "hazard_strong_wind_rating",
+  "hazard_hail_rating", "hazard_winter_rating", "hazard_cold_rating", "hazard_heat_rating",
+] as const;
 export type TextColumn = (typeof TEXT_COLUMNS)[number];
+
+/**
+ * FEMA's rating words, coded 0–8 in the published file to keep it under the service
+ * worker's precache limit (etl/build.py FEMA_RATINGS — the same order).
+ */
+export const FEMA_RATINGS = [
+  "Very Low", "Relatively Low", "Relatively Moderate", "Relatively High", "Very High",
+  "Not Applicable", "Insufficient Data", "No Rating", "No Expected Annual Losses",
+] as const;
 
 /**
  * Numeric columns shown but never scored or filtered (2026-10-04): who lives here —
@@ -26,6 +41,19 @@ export const INFO_COLUMNS = [
   "white_share", "hispanic_share", "black_share", "asian_share", "other_race_share", "diversity_index", "gini_index",
   // The two parts of racial equality (etl/sources/equality.py).
   "income_parity", "integration",
+  // The metro's or state's published cost of living, before the county's own rents (etl/rpp_local.py).
+  "rpp_all_parent",
+  // Taxes inputs (Phase 10 follow-up, 2026-10-13): today's typical home (Zillow, etl/sources/
+  // zillow_county.py) and what a new buyer pays in property tax over all owners (etl/sources/newbuyer.py).
+  "home_value_today", "new_buyer_ratio",
+  // Hazards FEMA rates that are shown, never ranked (etl/sources/nri.py DISPLAY_HAZARDS).
+  "hazard_strong_wind", "hazard_hail", "hazard_winter", "hazard_cold", "hazard_heat",
+  // The nearest Great Lake shore (etl/edges.py), for the county page.
+  "dist_great_lake_mi",
+  // Pollution (Phase 11, etl/pollution/county.py): from the county's own blocks. Ranked by
+  // area, never by county (one level per filter), so the county page only shows them.
+  "pm25", "pm25_above", "pm25_worst", "pm25_doubt", "smoke_days_thick", "smoke_days", "pre1960_share",
+  "radon_above4", "radon_above4_worst",
 ] as const;
 export type InfoColumn = (typeof INFO_COLUMNS)[number];
 
@@ -42,6 +70,11 @@ export interface CountyDataset {
   values: Record<MetricKey, Float64Array>;
   /** One array per policy category (a law value such as "medical"), null where unknown. */
   categories: Record<CategoryKey, (string | null)[]>;
+  /**
+   * A borderline county's other climate type (etl/climate.py `koppen_alt`): a ±0.5 °C shift
+   * of its months would give it. A climate must-have accepts either. Null when not borderline.
+   */
+  koppenAlt: (string | null)[];
   /** Descriptive text columns (not scored), null where unknown. */
   text: Record<TextColumn, (string | null)[]>;
   /** Descriptive numeric columns (not scored), NaN where unknown. */
@@ -87,13 +120,24 @@ export function parseCountyPayload(payload: unknown): CountyDataset {
   }
   // A missing metric is unknown for every county — never a crash. See `missingColumns`.
   // State-level metrics are never in this file; `applyStateLaws` fills them.
-  const missingColumns = METRIC_KEYS.filter((k) => !col.has(k) && !STATE_METRIC_KEYS.includes(k));
+  const missingColumns = METRIC_KEYS.filter(
+    (k) => !col.has(k) && !STATE_METRIC_KEYS.includes(k) && !COMPUTED_METRIC_KEYS.includes(k),
+  );
 
   const rows = payload.rows;
   const n = rows.length;
   const text = (name: string): (string | null)[] => {
     const i = col.get(name);
     return rows.map((r) => (i === undefined || r[i] == null ? null : String(r[i])));
+  };
+
+  // FEMA's rating words come coded (FEMA_RATINGS); an older file has the words themselves.
+  const rating = (name: string): (string | null)[] => {
+    const i = col.get(name);
+    return rows.map((r) => {
+      const v = i === undefined ? null : r[i];
+      return typeof v === "number" ? (FEMA_RATINGS[v] ?? null) : v == null ? null : String(v);
+    });
   };
 
   const fips = text("fips") as string[];
@@ -129,7 +173,10 @@ export function parseCountyPayload(payload: unknown): CountyDataset {
         COUNTY_CATEGORY_KEYS.includes(k) && col.has(k) ? text(k) : new Array<string | null>(n).fill(null),
       ]),
     ) as Record<CategoryKey, (string | null)[]>,
-    text: Object.fromEntries(TEXT_COLUMNS.map((c) => [c, text(c)])) as Record<TextColumn, (string | null)[]>,
+    koppenAlt: col.has("koppen_alt") ? text("koppen_alt") : new Array<string | null>(n).fill(null),
+    text: Object.fromEntries(
+      TEXT_COLUMNS.map((c) => [c, c.endsWith("_rating") ? rating(c) : text(c)]),
+    ) as Record<TextColumn, (string | null)[]>,
     info: Object.fromEntries(
       INFO_COLUMNS.map((c) => {
         const i = col.get(c);
@@ -165,6 +212,7 @@ export function subsetDataset(data: CountyDataset, keep: (index: number) => bool
     rppGeoLevel: pick(data.rppGeoLevel),
     values,
     categories,
+    koppenAlt: pick(data.koppenAlt),
     text: Object.fromEntries(TEXT_COLUMNS.map((c) => [c, pick(data.text[c])])) as Record<TextColumn, (string | null)[]>,
     info: Object.fromEntries(INFO_COLUMNS.map((c) => [c, Float64Array.from(idx, (i) => data.info[c][i])])) as Record<
       InfoColumn,

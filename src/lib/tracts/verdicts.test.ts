@@ -28,9 +28,11 @@ describe("area page verdicts", () => {
     expect(aroundVerdict(null, 40)).toBe("Long commute");
     expect(marketVerdict(7.6)).toBe("Prices up 7.6% in a year (typical +1.6%)");
     expect(locationVerdict(272, "Minneapolis-St. Paul-Bloomington, MN-WI")).toBe("Far from big metros · 272 mi to Minneapolis");
-    expect(locationVerdict(10, "Austin-Round Rock-San Marcos, TX")).toBe("In or near the Austin metro");
+    expect(locationVerdict(0, "Austin-Round Rock-San Marcos, TX")).toBe("In the Austin metro");
+    // Washtenaw, MI: 9.4 mi from the edge of Detroit's built-up area (31.7 to its center).
+    expect(locationVerdict(9.4, "Detroit-Warren-Dearborn, MI")).toBe("Next to the Detroit metro · 9 mi from its edge");
     expect(locationVerdict(104, "Winston-Salem, NC")).toBe("Far from big metros · 104 mi to Winston-Salem");
-    expect(locationVerdict(30, "Nashville-Davidson--Murfreesboro--Franklin, TN")).toBe("30 mi to Nashville");
+    expect(locationVerdict(30, "Nashville-Davidson--Murfreesboro--Franklin, TN")).toBe("30 mi from the Nashville metro");
   });
 
   it("say 'too little to rate' when the ETL withdrew a crime rate, 'no data' when there was none", () => {
@@ -89,7 +91,11 @@ describe("area page verdicts", () => {
       { label: "Tornadoes", p: 97.7 },
       { label: "Wildfire", p: 86.6 },
     ];
-    expect(hazardsVerdict(11.1, hz)).toBe("Very low overall — but tornadoes");
-    expect(hazardsVerdict(85, hz)).toBe("Very high risk overall");
+    expect(hazardsVerdict(11.1, hz)).toBe("Very low loss rate overall — but tornadoes");
+    expect(hazardsVerdict(85, hz)).toBe("Very high loss rate overall");
+  });
+
+  it("names FEMA's own rating beside the loss rate (Washtenaw: 4th pctl, FEMA Relatively Moderate)", () => {
+    expect(hazardsVerdict(4.2, [], "Relatively Moderate")).toBe("Very low loss rate overall · FEMA: Relatively Moderate");
   });
 });

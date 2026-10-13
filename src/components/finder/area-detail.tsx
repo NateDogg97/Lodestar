@@ -25,17 +25,28 @@ import {
   standing,
   tradeOff,
   notResidential,
+  pollutionVerdict,
+  EPA_PM25,
+  WHO_PM25,
+  RADON_WATCH,
   US_TYPICAL,
+  taxesAtRate,
   type Area,
+  type AreaTaxContext,
   type AreaLimit,
   type AreaPart,
   type CountyAreas,
   type School,
+  pollutionFreshness,
+  type PollutionStatus,
 } from "@/lib/tracts";
-import { formatValue, type MetricKey } from "@/lib/scoring";
+import { formatDay } from "@/lib/laws";
+import { formatValue, TAXABLE_SPENDING_SHARE, type MetricKey } from "@/lib/scoring";
 import { ordinal } from "@/lib/scoring/format";
 
+import { WatchLine } from "./area-results";
 import type { AreaRankingView } from "./inside-view";
+import { usePollutionStatus } from "./use-tract-data";
 import { isGold, scoreColor, trackOverflow } from "./score-colors";
 
 /**
@@ -108,6 +119,8 @@ const ICONS = {
   chart: "M4 19h16M6 15l4-4 3 3 5-6",
   alert: "M12 4l9 16H3zM12 10v4M12 17h.01",
   people: "M16 20v-1a4 4 0 00-4-4H8a4 4 0 00-4 4v1M10 11a3 3 0 100-6 3 3 0 000 6M20 20v-1a3.5 3.5 0 00-2.5-3.4M15.5 5.3a3 3 0 010 5.4",
+  air: "M3 8h11a3 3 0 10-3-3M3 12h15a3 3 0 11-3 3M3 16h7",
+  receipt: "M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3",
 } as const;
 
 function Chevron({ up, className = "h-4 w-4" }: { up: boolean; className?: string }) {
@@ -314,11 +327,14 @@ function MiniStat({ label, value, typical }: { label: string; value: string; typ
   );
 }
 
-/** A FEMA risk percentile: longer and redder is more risk. */
-function RiskRow({ label, p }: { label: string; p: number }) {
+/** A FEMA loss-rate percentile: longer and redder is more risk; FEMA's own rating under the name. */
+function RiskRow({ label, p, rating }: { label: string; p: number; rating?: string | null }) {
   return (
     <div className="grid grid-cols-[7rem_minmax(0,1fr)_6rem] items-center gap-2.5 text-label">
-      <span className="font-medium">{label}</span>
+      <span className="font-medium">
+        {label}
+        {rating && <span className="block text-caption font-normal text-neutral-500">FEMA: {rating}</span>}
+      </span>
       <Track>
         <span className="block h-full rounded-full" style={{ width: `${Math.max(2, p)}%`, backgroundColor: scoreColor(100 - p) }} />
       </Track>
@@ -417,9 +433,21 @@ export function PriorityBar({ c, full, showLevel = true }: { c: AreaPart; full: 
             </span>
             <span className="text-right text-caption tabular-nums text-neutral-500">{Math.round(c.points)} pts</span>
           </div>
+          {c.scored !== undefined && (
+            <Note>
+              Ranked as ≈ {formatArea(c.key, c.scored)}: a small sample here (a wide margin, or a small police agency), so
+              the estimate is weighed toward what&rsquo;s typical nearby.
+            </Note>
+          )}
           {full && (
             <Note>
-              {standing(c)} · weight {c.weight} ·{" "}
+              {/* The budget is scored on the estimate when there is one, so it's compared here too. */}
+              {c.budget !== undefined && c.value !== null
+                ? (c.scored ?? c.value) <= c.budget
+                  ? `within your ${formatArea(c.key, c.budget)} budget`
+                  : `${((c.scored ?? c.value) / c.budget).toFixed(1)}× your ${formatArea(c.key, c.budget)} budget`
+                : standing(c)}{" "}
+              · weight {c.weight} ·{" "}
               <span className={(c.impact ?? 0) >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}>
                 effect {(c.impact ?? 0) >= 0 ? "+" : "−"}
                 {Math.abs(Math.round(c.impact ?? 0))}
@@ -478,6 +506,7 @@ function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRa
       {(more: boolean) => (
         <>
           <p className="text-body">{tradeOff(parts)}</p>
+          <WatchLine items={ranking.watchOuts(i)} />
           {(more ? byEffect : byEffect.slice(0, 3)).map((c) => (
             <PriorityBar key={c.key} c={c} full={more} />
           ))}
@@ -559,6 +588,13 @@ const HAZARDS = [
   { key: "hazard_inland_flood", label: "Inland flooding" },
   { key: "hazard_coastal_flood", label: "Coastal flooding" },
   { key: "hazard_earthquake", label: "Earthquakes" },
+  // Shown, never ranked (Phase 10 follow-up, 2026-10-13): FEMA rates them, and in much of the
+  // country they're what happens (strong wind in Washtenaw, MI: "Relatively High").
+  { key: "hazard_strong_wind", label: "Strong wind" },
+  { key: "hazard_hail", label: "Hail" },
+  { key: "hazard_winter", label: "Winter storms" },
+  { key: "hazard_cold", label: "Cold waves" },
+  { key: "hazard_heat", label: "Heat waves" },
 ] as const;
 
 const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v)}%`);
@@ -570,6 +606,7 @@ export function AreaDetail({
   countyName,
   ranking,
   countyEquality,
+  taxes,
 }: {
   area: Area;
   county: CountyAreas;
@@ -577,6 +614,8 @@ export function AreaDetail({
   ranking: AreaRankingView | null;
   /** The county's racial equality, shown in "Who lives here" (county-wide). */
   countyEquality?: PeopleEquality;
+  /** For the area's own tax estimate (its county, the state's brackets, the household). */
+  taxes?: AreaTaxContext;
 }) {
   const v = (key: string) => areaValue(area, key);
   const flagged = new Set(area.lowConfidence);
@@ -602,7 +641,7 @@ export function AreaDetail({
         <PriceStat area={area} ranking={ranking} label="Home value" census="median_home_value" zillow="zhvi" />
         <PriceStat area={area} ranking={ranking} label="Rent" census="median_gross_rent" zillow="zori" />
         <Stat k="median_household_income" text={formatAreaValue(area, "median_household_income")} flagged={flagged.has("median_household_income")} />
-        <Stat k="violent_rate" text={formatAreaValue(area, "violent_rate")} flagged={flagged.has("crime")} />
+        <Stat k="violent_rate" text={formatAreaValue(area, "violent_rate")} flagged={flagged.has("crime") || flagged.has("crime_wide")} />
         <Stat k="commute_minutes" text={formatAreaValue(area, "commute_minutes")} flagged={flagged.has("commute_minutes")} />
         <Stat k="walkability" text={formatAreaValue(area, "walkability")} flagged={flagged.has("walkability")} />
       </dl>
@@ -663,8 +702,15 @@ export function AreaDetail({
               typicalText={US_TYPICAL.property_rate.toLocaleString()}
               max={4000}
               maxText="4,000+"
-              flagged={flagged.has("crime")}
+              flagged={flagged.has("crime") || flagged.has("crime_wide")}
             />
+            {typeof r.crime_shared === "number" && r.crime_shared > 1 && (
+              <Note>
+                {flagged.has("crime_wide")
+                  ? `One rate for all ${r.crime_shared} areas policed by ${String(r.crime_agency)}, from farmland to suburbs: the FBI reports crime by police agency, so it can't tell them apart. Treat it as the county's, not this area's.`
+                  : `The same rate for all ${r.crime_shared} areas policed by ${String(r.crime_agency)}: the FBI reports crime by police agency, not by neighborhood.`}
+              </Note>
+            )}
             <Note>
               {r.crime_agency && r.crime_note
                 ? `${String(r.crime_agency)} ${String(r.crime_note)}. `
@@ -686,7 +732,7 @@ export function AreaDetail({
           typicalText={String(US_TYPICAL.violent_rate)}
           max={800}
           maxText="800+"
-          flagged={flagged.has("crime")}
+          flagged={flagged.has("crime") || flagged.has("crime_wide")}
         />
       </AreaSection>
 
@@ -774,11 +820,14 @@ export function AreaDetail({
             {v("dist_metro_mi") !== null && (
               <PlaceRow
                 name={r.nearest_metro ? String(r.nearest_metro).split(",")[0] : "Big metro"}
-                sub="Nearest metro of 500k+"
-                value={formatArea("dist_metro_mi", v("dist_metro_mi"))}
+                sub="Nearest metro of 500k+, to the edge of its built-up area"
+                value={v("dist_metro_mi") === 0 ? "In it" : formatArea("dist_metro_mi", v("dist_metro_mi"))}
               />
             )}
             {v("dist_coast_mi") !== null && <PlaceRow name="Coast" sub="Ocean, bays, tidal water" value={formatArea("dist_coast_mi", v("dist_coast_mi"))} />}
+            {v("dist_great_lake_mi") !== null && v("dist_great_lake_mi")! <= 150 && (
+              <PlaceRow name="Great Lakes" sub="Nearest Great Lake shore" value={formatArea("dist_great_lake_mi", v("dist_great_lake_mi"))} />
+            )}
             <CompareBar
               label="Work from home"
               value={v("work_from_home_share")}
@@ -795,9 +844,22 @@ export function AreaDetail({
       >
         <PlaceRow
           name={r.nearest_downtown ? `Downtown ${String(r.nearest_downtown)}` : county.downtownMetro?.split(",")[0].split("-")[0] ?? "Downtown"}
-          sub="Nearest downtown"
+          sub="Nearest downtown of the metro's main cities"
           value={formatArea("dist_downtown_mi", v("dist_downtown_mi"))}
         />
+        {/* A town of its own, nearer than the metro's downtown (Phase 10 follow-up: Ypsilanti
+            measured only to Ann Arbor). Shown, never ranked. */}
+        {r.nearest_town &&
+          r.nearest_town !== r.nearest_downtown &&
+          v("dist_town_mi") !== null &&
+          v("dist_downtown_mi") !== null &&
+          v("dist_town_mi")! < v("dist_downtown_mi")! && (
+            <PlaceRow
+              name={String(r.nearest_town)}
+              sub="Nearest town or city center (15,000+ people)"
+              value={formatArea("dist_town_mi", v("dist_town_mi"))}
+            />
+          )}
         <CompareBar
           label="Average commute"
           value={v("commute_minutes")}
@@ -855,8 +917,145 @@ export function AreaDetail({
         )}
       </AreaSection>
 
-      <HazardsSection id="hazards" get={v} />
+      <TaxesSection area={area} county={county} countyName={countyName} ranking={ranking} context={taxes} />
+
+      <HazardsSection id="hazards" get={v} rating={(k) => (typeof r[k] === "string" ? String(r[k]) : null)} />
+      <PollutionSection
+        id="pollution"
+        level="area"
+        get={v}
+        flagged={(k) => flagged.has(k)}
+        monitor={
+          typeof r.pm25_monitor_name === "string" && v("pm25_monitor") !== null
+            ? { name: String(r.pm25_monitor_name), km: v("pm25_monitor_km"), value: v("pm25_monitor")! }
+            : null
+        }
+      />
     </div>
+  );
+}
+
+const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+const pct2 = (x: number) => `${x.toFixed(2)}%`;
+
+/**
+ * Taxes (2026-10-13): this area's property tax rate beside its county's and the spread
+ * across the county's areas — rates differ by city, township and school district — and
+ * the household's yearly estimate with this area's rate: the sum Taxes ranks areas by
+ * (lib/tracts/taxes.ts).
+ */
+function TaxesSection({
+  area,
+  county,
+  countyName,
+  ranking,
+  context,
+}: {
+  area: Area;
+  county: CountyAreas;
+  countyName: string;
+  ranking: AreaRankingView | null;
+  context?: AreaTaxContext;
+}) {
+  const published = areaValue(area, "property_tax_rate");
+  const flagged = area.lowConfidence.includes("property_tax_rate");
+  const i = ranking?.indexByGeoid.get(area.geoid);
+  // The rate the estimate uses — the one Taxes ranks on: the area's estimate (toward its
+  // city's typical area), else as published.
+  const est = context?.rate ?? NaN;
+  const own = published === null ? NaN : Number.isFinite(est) ? est : published;
+  const countyRate = context ? context.data.values.property_tax_effective_rate[context.index] : NaN;
+  const t = context ? taxesAtRate(context.data, context.index, own, context.schedule, context.household) : null;
+  const h = context?.household ?? {};
+  const buying = h.tenure === "buy" && !!h.budget;
+  const place = countyName.split(",")[0];
+  // The spread across the county's areas, leaving out rates whose margins are too wide to trust.
+  const rates = county.areas
+    .filter((a) => !a.lowConfidence.includes("property_tax_rate"))
+    .map((a) => areaValue(a, "property_tax_rate"))
+    .filter((x): x is number => x !== null && x > 0)
+    .sort((a, b) => a - b);
+  const range = rates.length >= 3 ? ([rates[0], rates[rates.length - 1]] as const) : null;
+  const ratio = published !== null && countyRate > 0 ? published / countyRate : null;
+  const versus =
+    ratio === null ? "" : ratio >= 1.05 ? ` · higher than ${place}'s ${pct2(countyRate)}` : ratio <= 0.95 ? ` · lower than ${place}'s ${pct2(countyRate)}` : ` · about ${place}'s`;
+  const lead =
+    published === null
+      ? `No rate of its own${Number.isFinite(countyRate) ? `: ${place}'s ${pct2(countyRate)} is used` : ""}`
+      : `Property tax ${pct2(published)}${versus}`;
+  // The bill on this area's own typical home, for context (Taxes ranks on the county's typical
+  // home without a budget: home prices are their own priority).
+  const today = ranking && i !== undefined ? (ranking.areas.values.get("median_home_value")?.[i] ?? NaN) : NaN;
+  const areaHome = Number.isFinite(today) ? today : (areaValue(area, "zhvi") ?? areaValue(area, "median_home_value"));
+  const ownHomeBill = t && t.home !== null && !buying && areaHome ? (t.rate / 100) * t.newBuyer * areaHome : null;
+  return (
+    <AreaSection
+      id="taxes"
+      icon="receipt"
+      title="Taxes"
+      lead={lead}
+      details={
+        <>
+          {t && (
+            <div className="space-y-1.5">
+              <SubHead>The estimate</SubHead>
+              <Note>
+                {t.home === null
+                  ? "Property tax: none counted — renting, it's in the rent."
+                  : `Property tax ${usd(t.property)}: ${pct2(t.rate)} (${
+                      t.rateSource === "county"
+                        ? `${place}'s — the Census has no rate for this area`
+                        : published !== null && Math.abs(t.rate - published) >= 0.01
+                          ? `this area's ${pct2(published)}, estimated at ${pct2(t.rate)} for its sampling margin`
+                          : "this area's"
+                    })${t.newBuyer !== 1 ? ` × ${t.newBuyer.toFixed(2)} for a new buyer` : ""} on ${
+                      buying ? "your" : `${place}'s typical`
+                    } ${usd(t.home)} home.`}
+              </Note>
+              <Note>
+                State income tax {usd(t.income)} on {h.income ? "your" : "the US median household's"} {usd(t.householdIncome)}; sales tax{" "}
+                {usd(t.sales)} on about {Math.round(TAXABLE_SPENDING_SHARE * 100)}% of it. Both are the same across {place}.
+              </Note>
+              {ownHomeBill !== null && (
+                <Note>
+                  On this area&rsquo;s own typical home ({usd(areaHome!)} today), property tax would be about {usd(ownHomeBill)} a year.
+                </Note>
+              )}
+            </div>
+          )}
+          <Note>
+            Property taxes paid ÷ home values of the owner-occupied homes here (Census, 2019–2023): what owners pay on average.
+            Rates differ inside a county by city, township and school district. Where assessments are capped until a sale
+            (Michigan, California, Florida, Texas…), a buyer pays more than the average owner. Without a budget, Taxes uses the
+            county&rsquo;s typical home, so areas differ by their rate, not their prices — home value is its own priority.
+          </Note>
+        </>
+      }
+    >
+      <div className="space-y-1.5">
+        <Row label="Property tax rate · this area">
+          <span className="font-medium tabular-nums">{published === null ? "—" : pct2(published)}</span>
+          <FlagMark on={flagged} />
+        </Row>
+        {Number.isFinite(countyRate) && (
+          <Row label={`${place} (whole county)`}>
+            <span className="font-medium tabular-nums">{pct2(countyRate)}</span>
+          </Row>
+        )}
+        {range && (
+          <Row label={`Across ${place}'s areas`}>
+            <span className="font-medium tabular-nums">
+              {pct2(range[0])} – {pct2(range[1])}
+            </span>
+          </Row>
+        )}
+        {t && (
+          <Row label={h.income || h.budget ? "Your taxes here (estimate)" : "Taxes here (estimate)"}>
+            <span className="font-semibold tabular-nums">{usd(t.total)}/yr</span>
+          </Row>
+        )}
+      </div>
+    </AreaSection>
   );
 }
 
@@ -967,10 +1166,25 @@ export function PeopleSection({
  * Natural hazards (FEMA National Risk Index percentiles), for an area or a county:
  * the overall risk and the worst hazard up front, the others on tap.
  */
-export function HazardsSection({ id, get }: { id: string; get: (key: string) => number | null }) {
+export function HazardsSection({
+  id,
+  get,
+  rating = () => null,
+}: {
+  id: string;
+  get: (key: string) => number | null;
+  /** FEMA's own rating word for a column (`<key>_rating`, `hazard_rating` overall), if known. */
+  rating?: (key: string) => string | null;
+}) {
   const overall = get("hazard_risk");
-  const hazards = HAZARDS.map((h): { label: string; p: number | null } => ({ label: h.label, p: get(h.key) }));
-  const risky = hazards.filter((h): h is { label: string; p: number } => h.p !== null && h.p > 0).sort((a, b) => b.p - a.p);
+  const hazards = HAZARDS.map((h): { label: string; p: number | null; rating: string | null } => ({
+    label: h.label,
+    p: get(h.key),
+    rating: rating(`${h.key}_rating`),
+  }));
+  const risky = hazards
+    .filter((h): h is { label: string; p: number; rating: string | null } => h.p !== null && h.p > 0)
+    .sort((a, b) => b.p - a.p);
   const none = hazards.filter((h) => h.p === 0).map((h) => h.label.toLowerCase());
   const overallWord = overall === null ? null : hazardWord(overall);
   if (overall === null && risky.length === 0) return null;
@@ -979,17 +1193,19 @@ export function HazardsSection({ id, get }: { id: string; get: (key: string) => 
       id={id}
       icon="alert"
       title="Natural hazards"
-      lead={hazardsVerdict(overall, hazards)}
+      lead={hazardsVerdict(overall, hazards, rating("hazard_rating"))}
       details={
         risky.length > 1 || none.length > 0 ? (
           <>
             {risky.slice(1).map((h) => (
-              <RiskRow key={h.label} label={h.label} p={h.p} />
+              <RiskRow key={h.label} label={h.label} p={h.p} rating={h.rating} />
             ))}
-            {none.length > 0 && <Note>None: {none.join(", ")}.</Note>}
+            {none.length > 0 && <Note>None (FEMA: can&rsquo;t happen here): {none.join(", ")}.</Note>}
             <Note>
-              FEMA National Risk Index (Dec 2025): where this place ranks nationally on the share of its buildings, people and
-              farms expected to be lost to each hazard in a typical year. Longer bar = more risk.
+              FEMA National Risk Index (Dec 2025). The bars and words are the <strong>loss rate</strong>: where this place
+              ranks nationally on the share of its buildings, people and farms expected to be lost to each hazard in a
+              typical year — what ranks results. &ldquo;FEMA:&rdquo; is FEMA&rsquo;s own rating, which ranks dollars at
+              risk with how vulnerable and resilient the community is, so a well-off county can rate higher there.
             </Note>
           </>
         ) : undefined
@@ -1005,11 +1221,165 @@ export function HazardsSection({ id, get }: { id: string; get: (key: string) => 
                 : "bg-rose-50 text-rose-900 dark:bg-rose-950 dark:text-rose-200"
           }`}
         >
-          Overall: {overallWord.toLowerCase()} · {ordinal(Math.round(overall))} percentile
+          Overall loss rate: {overallWord.toLowerCase()} · {ordinal(Math.round(overall))} percentile
         </span>
       )}
-      {risky[0] && <RiskRow label={risky[0].label} p={risky[0].p} />}
+      {risky[0] && <RiskRow label={risky[0].label} p={risky[0].p} rating={risky[0].rating} />}
     </AreaSection>
+  );
+}
+
+/**
+ * Pollution (Phase 11), for an area or a county: the air (PM2.5) against the typical US
+ * area, with the monitor caution; smoke, older homes and radon. County pages add the
+ * share of residents over EPA's standard and the worst area; area pages the nearest EPA
+ * monitor's reading — shown beside the value, never as it.
+ */
+export function PollutionSection({
+  id,
+  level,
+  get,
+  flagged = () => false,
+  monitor = null,
+}: {
+  id: string;
+  level: "area" | "county";
+  get: (key: string) => number | null;
+  flagged?: (key: string) => boolean;
+  monitor?: { name: string; km: number | null; value: number } | null;
+}) {
+  // Area figures come from the monthly refresh, which says how old each source is; a
+  // county's are rebuilt by hand with counties.json, so the age applies to areas only.
+  const status = usePollutionStatus(level === "area");
+  const pm25 = get("pm25");
+  const doubt = get("pm25_doubt");
+  const smoke = get("smoke_days_thick");
+  const lead = get("pre1960_share");
+  const radon = get("radon_above4");
+  if (pm25 === null && smoke === null && lead === null && radon === null) return null;
+  const doubted = flagged("pm25");
+  const place = level === "area" ? "this area" : "this county";
+  const one = (x: number) => x.toFixed(1);
+  return (
+    <AreaSection
+      id={id}
+      icon="air"
+      title="Pollution"
+      lead={pollutionVerdict({ pm25, doubted, smoke, radon })}
+      details={
+        <>
+          {get("smoke_days") !== null && (
+            <Row label="Any smoke overhead, light haze included">{Math.round(get("smoke_days")!)} days a year</Row>
+          )}
+          {get("pre1980_share") !== null && <Row label="Homes built before 1980">{pct(get("pre1980_share"))}</Row>}
+          {get("radon_above2") !== null && (
+            <Row label="Radon tests above 2 pCi/L (EPA: consider fixing)">{pct(get("radon_above2"))}</Row>
+          )}
+          {level === "county" && get("radon_above4_worst") !== null && (
+            <Row label="Radon: worst area in the county">{pct(get("radon_above4_worst"))} of tests above 4 pCi/L</Row>
+          )}
+          <Note>
+            PM2.5: WashU ACAG V6.GL.03, 2022–2024 average, a ~1 km satellite and chemistry model calibrated to EPA
+            monitors (±1.7 µg/m³), taken at every census block where people live and weighted by who lives there. It
+            smooths over local sources — industry, ports, wood smoke in valleys. WHO&rsquo;s guideline is 5 µg/m³; the
+            federal standard of 9 is under review. Smoke: NOAA Hazard Mapping System, days with smoke outlined overhead,
+            2015–2024 — overhead isn&rsquo;t always at the ground. Older homes: Census 2019–2023; lead paint was banned
+            in 1978, and an old home is a risk, not a measure of lead exposure. Radon: the chance a home test reads above
+            EPA&rsquo;s 4 pCi/L action level, by ZIP area (Harvard model of 6M+ tests, mostly basements and lowest
+            floors, 2001–2021){
+              get("radon_ci") !== null ? `, give or take about ${Math.round(get("radon_ci")! / 2)} points here` : ""
+            }. Estimates for screening, not your address.
+          </Note>
+        </>
+      }
+    >
+      {pm25 !== null && (
+        <CompareBar
+          label="Fine particles (PM2.5)"
+          value={pm25}
+          text={`${one(pm25)} µg/m³`}
+          typical={US_TYPICAL.pm25}
+          typicalText={`${US_TYPICAL.pm25}`}
+          max={15}
+          maxText="15+"
+          // A doubted value isn't shown as better or worse than typical: a monitor says it may be neither.
+          neutral={doubted}
+          flagged={doubted}
+        />
+      )}
+      {pm25 !== null && (
+        <Note>
+          WHO guideline {WHO_PM25}, federal standard {EPA_PM25} µg/m³ (under review).
+          {level === "county" && get("pm25_above") !== null && ` ${pct(get("pm25_above"))} of residents live above ${EPA_PM25}.`}
+          {level === "county" && get("pm25_worst") !== null && ` Worst area: ${one(get("pm25_worst")!)}.`}
+        </Note>
+      )}
+      {doubt !== null && doubt > 0 && (
+        <Note>
+          {doubted ? "Uncertain: " : ""}
+          {Math.round(doubt)}% of residents live within 5 miles of an EPA monitor that measured more than the model
+          there — local sources the model misses.{doubted ? " Scored no better than typical." : ""}
+        </Note>
+      )}
+      {monitor && (
+        <Row label={`Nearest EPA monitor: ${monitor.name}${monitor.km !== null ? `, ${Math.round(monitor.km)} km` : ""}`}>
+          measured {one(monitor.value)} µg/m³
+        </Row>
+      )}
+      {smoke !== null && (
+        <CompareBar
+          label="Wildfire smoke days"
+          value={smoke}
+          text={`${Math.round(smoke)} a year`}
+          typical={US_TYPICAL.smoke_days_thick}
+          typicalText={`${US_TYPICAL.smoke_days_thick}`}
+          max={35}
+          maxText="35+"
+        />
+      )}
+      {lead !== null && (
+        <Row label="Homes built before 1960 (lead-paint risk)">
+          {pct(lead)}
+          <FlagMark on={flagged("pre1960_share")} />
+        </Row>
+      )}
+      {radon !== null && (
+        <Row label="Radon tests above EPA’s action level">
+          <span className={radon >= RADON_WATCH ? "font-semibold text-amber-800 dark:text-amber-300" : undefined}>
+            {pct(radon)}
+          </span>
+        </Row>
+      )}
+      {radon !== null && <Note>Radon varies house to house — test any home before you buy, whatever {place} shows.</Note>}
+      {status && <PollutionAge status={status} />}
+    </AreaSection>
+  );
+}
+
+/**
+ * When the pollution figures were last updated, and which are older than they should be: a
+ * source the monthly refresh couldn't reach keeps its last figures (etl/pollution/carry.py).
+ */
+function PollutionAge({ status }: { status: PollutionStatus }) {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const { updated, stale } = pollutionFreshness(status, today);
+  if (stale.length === 0) return updated ? <Note>Pollution figures updated {formatDay(updated)}.</Note> : null;
+  return (
+    <p className="flex items-start gap-1 text-caption text-amber-800 dark:text-amber-300">
+      <Icon name="warning" className="mt-[3px] h-3 w-3 shrink-0" />
+      <span>
+        {stale
+          .map(
+            (s) =>
+              `${s.label} figures are ${s.since ? `from ${formatDay(s.since)}` : "older than usual"}: ${
+                s.unavailable ? "its source was unavailable at the last monthly update" : "they're overdue for an update"
+              }.`,
+          )
+          .join(" ")}{" "}
+        These are multi-year averages, so they change little month to month.
+      </span>
+    </p>
   );
 }
 

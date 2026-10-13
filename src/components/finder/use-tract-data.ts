@@ -6,6 +6,9 @@ import type { Topology } from "topojson-specification";
 import {
   nationalAreasUrl,
   parseCountyAreas,
+  parsePollutionStatus,
+  pollutionStatusUrl,
+  type PollutionStatus,
   parseNationalAreas,
   type NationalAreas,
   parseTractIndex,
@@ -132,4 +135,27 @@ export function useNationalAreas(enabled: boolean): NationalAreasState {
     };
   }, [enabled]);
   return enabled ? state : { status: "idle" };
+}
+
+let pollutionPending: Promise<PollutionStatus | null> | null = null;
+
+/**
+ * How old the area pollution figures are (pollution.json), fetched once when an area page
+ * shows them. Null until it loads, and when it's missing or unreadable: then nothing is said.
+ */
+export function usePollutionStatus(enabled: boolean): PollutionStatus | null {
+  const [status, setStatus] = useState<PollutionStatus | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    pollutionPending ??= fetch(pollutionStatusUrl())
+      .then((res) => (res.ok ? res.json() : null))
+      .then(parsePollutionStatus)
+      .catch(() => null);
+    pollutionPending.then((s) => !cancelled && setStatus(s));
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
+  return enabled ? status : null;
 }

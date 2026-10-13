@@ -173,10 +173,13 @@ def table(county_fips: str, geojson: dict) -> pd.DataFrame:
     df["dist_airport_mi"] = dist[:, 0]
     df["nearest_airport"] = airports["code"].to_numpy()[idx[:, 0]]
 
-    metros = _metros()
-    idx, dist = nearest_points(lat, lon, metros["lat"].to_numpy(), metros["lon"].to_numpy())
-    df["dist_metro_mi"] = dist[:, 0]
-    df["nearest_metro"] = metros["cbsa_name"].to_numpy()[idx[:, 0]]
+    # To the edge of the nearest 500k+ metro's built-up area, the nearest Great Lake and the
+    # nearest town center of 20k+ people (etl/edges.py, Phase 10 follow-up, 2026-10-13).
+    from ..edges import edge_columns
+
+    edge = edge_columns(lat, lon, with_towns=True)
+    for c in edge.columns:
+        df[c] = edge[c].to_numpy()
 
     clat, clon = _coastline()
     df["dist_coast_mi"] = nearest_distance(lat, lon, clat, clon)

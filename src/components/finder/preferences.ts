@@ -2,8 +2,11 @@ import {
   CATEGORIES,
   COST_PARTS,
   DIRECTIONS,
+  getMetric,
+  LIMIT_ONLY,
   NOT_IN_FILTERS,
   METRIC_KEYS,
+  type Household,
   type CategoryFilter,
   type CategoryKey,
   type Direction,
@@ -41,6 +44,11 @@ export interface Preferences {
   includeStates: Record<OptionalState, boolean>;
   /** Priorities and limits that only apply inside a county (Filters → Inside a county). */
   area: AreaPrefs;
+  /**
+   * What I'm looking for (Phase 10c): buy or rent, budget, income, filing. Belongs to this
+   * device, not the search: never in a shared link, and kept when a link or saved search opens.
+   */
+  household: Household;
 }
 
 export interface AreaPrefs {
@@ -53,10 +61,12 @@ const EMPTY_AREA: AreaPrefs = { weights: {}, directions: {}, limits: {} };
 
 /** The search, for ranking areas inside a county (lib/tracts/scoring). */
 export function toAreaSearch(prefs: Preferences): AreaSearch {
+  const col = budgetColumn(prefs.household);
   return {
     areaWeights: prefs.area.weights,
     areaDirections: prefs.area.directions,
     areaLimits: prefs.area.limits,
+    budgets: col ? { [col]: prefs.household.budget! } : {},
   };
 }
 
@@ -78,6 +88,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   includeStates: { AK: false, HI: false },
   // Schools are the nearest specific schools, an area measure (Phase 8f).
   area: { weights: { nearby_school_pctl: 3 }, directions: {}, limits: {} },
+  household: {},
 };
 
 export const EMPTY_PREFERENCES: Preferences = {
@@ -88,7 +99,34 @@ export const EMPTY_PREFERENCES: Preferences = {
   includeUnknown: true,
   includeStates: { AK: false, HI: false },
   area: EMPTY_AREA,
+  household: {},
 };
+
+/** Budget fit (Phase 10c): the area measure a budget is for, by tenure. */
+export function budgetColumn(household: Household): string | null {
+  if (!(household.budget && household.budget > 0)) return null;
+  return household.tenure === "buy" ? "median_home_value" : household.tenure === "rent" ? "median_gross_rent" : null;
+}
+
+/**
+ * The household change, and what it implies (Phase 10c): a new budget turns its measure
+ * (home value or rent) on at 3 if it was off, so setting one always does something visible.
+ * Switching between buying and renting moves the priority with the budget: left on the old
+ * measure, it would score "cheaper is better" there with no budget.
+ */
+export function withHousehold(prefs: Preferences, household: Household): Preferences {
+  const before = budgetColumn(prefs.household);
+  const col = budgetColumn(household);
+  const next = { ...prefs, household };
+  if (col && col !== before) {
+    const weights = { ...prefs.area.weights };
+    const moved = before ? (weights[before] ?? 0) : 0;
+    if (before) delete weights[before];
+    if (!(weights[col] ?? 0)) weights[col] = moved || 3;
+    next.area = { ...prefs.area, weights };
+  }
+  return next;
+}
 
 /** States left out of scoring entirely under these preferences. */
 export function excludedStates(prefs: Preferences): string[] {
@@ -133,7 +171,15 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
     includeUnknown: typeof raw.includeUnknown === "boolean" ? raw.includeUnknown : true,
     includeStates: { AK: false, HI: false },
     area: { weights: {}, directions: {}, limits: {} },
+    household: {},
   };
+  if (isRecord(raw.household)) {
+    const h = raw.household;
+    if (h.tenure === "buy" || h.tenure === "rent") out.household.tenure = h.tenure;
+    if (isNumber(h.budget) && h.budget > 0) out.household.budget = h.budget;
+    if (isNumber(h.income) && h.income > 0) out.household.income = h.income;
+    if (h.filing === "single" || h.filing === "joint") out.household.filing = h.filing;
+  }
   if (isRecord(raw.weights)) {
     for (const [k, w] of Object.entries(raw.weights)) {
       if (known.has(k) && isNumber(w)) out.weights[k as MetricKey] = Math.min(5, Math.max(0, w));
@@ -209,6 +255,17 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
     delete out.limits[k];
   }
   if (partWeight > 0 && out.weights.rpp_all === undefined) out.weights.rpp_all = partWeight;
+  // One Taxes priority (Phase 10b): the tax rates are limits only; a search that weighted
+  // any of them gets Taxes at the largest of their weights.
+  const taxWeight = Math.max(0, ...[...LIMIT_ONLY].map((k) => out.weights[k] ?? 0));
+  for (const k of LIMIT_ONLY) {
+    delete out.weights[k];
+    delete out.directions[k];
+  }
+  if (taxWeight > 0 && out.weights.taxes === undefined) out.weights.taxes = taxWeight;
+  for (const k of Object.keys(out.directions) as MetricKey[]) {
+    if (getMetric(k).fixedDirection) delete out.directions[k];
+  }
   return out;
 }
 

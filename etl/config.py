@@ -282,10 +282,13 @@ PLAUSIBLE_RANGES = {
     "hazard_earthquake": (0, 100), "hazard_tornado": (0, 100),
     "dist_airport_mi": (0, 1_000),   # remote Alaska: the Aleutians are ~830 mi out
     "dist_coast_mi": (0, 1_300),     # northwest Minnesota is ~1,160 mi from tidal water
-    "dist_metro_mi": (0, 2_200),     # Alaska has no 500k+ metro: Seattle is 1,400–2,000 mi
+    "dist_metro_mi": (0, 3_000),     # Alaska has no 500k+ metro: Seattle's built-up edge is 1,400–2,800 mi
+    "dist_great_lake_mi": (0, 4_500),  # Hawaii is ~4,000 mi from Lake Michigan
     "property_tax_effective_rate": (0.0, 4.0),  # unorganized Alaska boroughs levy ~none
-    "rpp_all": (70, 140),
-    "rpp_rents": (30, 220),
+    # Phase 10a: each county's own rents, not its metro's or state's — so wider than BEA's
+    # published range (Issaquena, MS reads 63; San Mateo's rents 238).
+    "rpp_all": (55, 150),
+    "rpp_rents": (10, 260),  # Issaquena, MS: its own rents ≈ 12.6
     "rpp_utilities": (50, 220),
     "rpp_goods": (80, 130),
     "rpp_services": (60, 160),
@@ -390,6 +393,20 @@ ACS_TRACT_VARIABLES = {
     "B03002_009": "race_two_plus_nh",
     "B03002_012": "race_hispanic",
     "B19083_001": "gini_index",
+    # Older housing — lead-paint risk (Phase 11d, 2026-10-13). B25034 bins by decade, so
+    # "before 1978" (the lead-paint ban) can't be computed; before 1960 (EJScreen's
+    # definition) and before 1980 can.
+    "B25034_001": "year_built_total",
+    "B25034_007": "built_1970s",
+    "B25034_008": "built_1960s",
+    "B25034_009": "built_1950s",
+    "B25034_010": "built_1940s",
+    "B25034_011": "built_before_1940",
+    # Property tax by area (2026-10-13): aggregate taxes ÷ aggregate value of owner-occupied
+    # homes, as for counties (ACS_VARIABLES) — rates differ by city, township and school
+    # district inside a county (Washtenaw's areas run 1.1–2.1%).
+    "B25090_001": "aggregate_real_estate_taxes",
+    "B25082_001": "aggregate_home_value",
 }
 # ACS top-codes: a median at these values means "this much or more". (Household income
 # was missing until the full audit, 2026-10-04: 483 areas at the cap were flagged "low
@@ -450,3 +467,7 @@ GEONAMES_CITIES_URL = "https://download.geonames.org/export/dump/cities15000.zip
 DOWNTOWN_MIN_SHARE = 0.30
 DOWNTOWN_SEARCH_MI = 5.0
 
+
+# The public data bucket the app reads (R2, behind this domain): what's live now. The
+# pollution run falls back to the tables it last published here when a source is down.
+DATA_URL = os.environ.get("DATA_URL", "https://data.lodestarmap.com").strip().rstrip("/")

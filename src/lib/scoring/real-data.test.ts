@@ -98,14 +98,22 @@ describe("who lives here (display only, 2026-10-04)", () => {
 });
 
 describe("rankings agree with common knowledge", () => {
-  it("cost of living: Cleveland beats San Francisco, and the SF metro is dead last", () => {
+  it("cost of living: Cleveland beats San Francisco, and the priciest are coastal CA and NY suburbs", () => {
     const { get, ranked } = run({ weights: { rpp_all: 5 } });
     expect(get(CUYAHOGA).score!).toBeGreaterThan(get(SAN_FRANCISCO).score!);
     expect(get(SAN_FRANCISCO).score!).toBeLessThan(5);
-    // BEA 2024: San Francisco-Oakland-Fremont is the priciest metro (its five
-    // counties tie), then Miami, then Los Angeles.
-    const bottom5 = ranked.slice(-5).map((r) => data.fips[r.index]).sort();
-    expect(bottom5).toEqual(["06001", "06013", "06041", "06075", "06081"]);
+    // BEA 2024 metros, each county's own rents within them (etl/rpp_local.py): San
+    // Mateo and Marin (SF), Orange (LA), Nassau and Suffolk (NY) and Manhattan.
+    const bottom8 = ranked.slice(-8).map((r) => data.fips[r.index]);
+    for (const f of ["06081", "06041", "06059", "36059", "36061"]) expect(bottom8).toContain(f);
+    expect(bottom8.every((f) => ["06", "36", "12"].includes(f.slice(0, 2)))).toBe(true);
+  });
+
+  it("cost of living: resort counties outside metros read expensive, not as their state", () => {
+    const { get } = run({ weights: { rpp_all: 5 } });
+    // Teton WY (Jackson) took Wyoming's 92.7 before Phase 10a — cheaper than most of the US.
+    expect(get("56039").score!).toBeLessThan(10);
+    expect(get("08097").score!).toBeLessThan(10); // Pitkin CO (Aspen)
   });
 
   it("schools: Howard County MD is near the top, Baltimore city near the bottom", () => {
@@ -269,5 +277,20 @@ describe("the States filter", () => {
     expect(new Set(only.ranked.map((r) => data.state[r.index]))).toEqual(new Set(["TX", "MD"]));
     expect(only.get(TRAVIS).score).toBe(base.get(TRAVIS).score);
     expect(only.get(SAN_FRANCISCO).status).toBe("excluded");
+  });
+
+  it("a borderline climate passes on either type (Phase 10 follow-up: Ann Arbor is Dfb by 0.2 °C)", () => {
+    const i = data.indexByFips.get("26161")!;
+    expect(data.categories.koppen[i]).toBe("Dfb");
+    expect(data.koppenAlt[i]).toBe("Dfa");
+    const scores = scoreCounties(prepareDataset(data), { weights: {}, categoryFilters: [{ category: "koppen", accept: ["Dfa"] }] });
+    expect(scores[i].status).toBe("match");
+  });
+
+  it("the county file stays under the service worker's 2 MB precache limit (offline use)", async () => {
+    // Serwist skips files over 2 MB: past it, the app loses its dataset offline. FEMA's rating
+    // words are coded for this (etl/build.py FEMA_RATINGS) — see before adding a column.
+    const { statSync } = await import("node:fs");
+    expect(statSync(join(process.cwd(), "public/data/counties.json")).size).toBeLessThan(2 * 1024 * 1024);
   });
 });

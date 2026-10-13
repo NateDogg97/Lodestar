@@ -4,8 +4,27 @@ import { useState, type ReactNode } from "react";
 
 import { InfoTip } from "@/components/ui/info-tip";
 import { Modal } from "@/components/ui/modal";
-import { formatDay, formatLaw, isGap, isStale, type LawData, type LawDef, type LawFact, type LawGap } from "@/lib/laws";
-import { formatValue, type CountyDataset } from "@/lib/scoring";
+import {
+  formatDay,
+  formatLaw,
+  isGap,
+  isStale,
+  scheduleDetail,
+  taxSchedules,
+  type LawData,
+  type LawDef,
+  type LawFact,
+  type LawGap,
+} from "@/lib/laws";
+import {
+  countyTaxes,
+  formatValue,
+  parseSchedule,
+  TAXABLE_SPENDING_SHARE,
+  US_MEDIAN_HOUSEHOLD_INCOME,
+  type CountyDataset,
+  type Household,
+} from "@/lib/scoring";
 
 import { LawSourcesList } from "./data-sources";
 
@@ -13,7 +32,13 @@ interface Props {
   laws: LawData;
   data: CountyDataset;
   index: number;
+  household: Household;
 }
+
+const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+
+/** New buyers pay this much more than the average owner before it's worth saying (Phase 10 follow-up). */
+const NEW_BUYER_NOTE = 1.05;
 
 /**
  * The place view's "Laws & taxes" tab (LAWS.md §10). Every value's source
@@ -21,9 +46,10 @@ interface Props {
  * "i" beside it, with its notes; "Sources" lists every law's source. Stale
  * values are marked; a deliberately blank value says why.
  */
-export function LawsSection({ laws, data, index }: Props) {
+export function LawsSection({ laws, data, index, household }: Props) {
   const state = data.state[index];
   const facts = laws.states[state] ?? {};
+  const taxes = countyTaxes(data, index, parseSchedule(taxSchedules(laws)[state]), household);
   const propertyTax = data.values.property_tax_effective_rate[index];
   const propertySource = laws.countySources.property_tax_effective_rate;
   const [sourcesOpen, setSourcesOpen] = useState(false);
@@ -53,12 +79,42 @@ export function LawsSection({ laws, data, index }: Props) {
         </div>
       </Modal>
       <ul className="-mx-2 mt-3 divide-y divide-neutral-200 dark:divide-neutral-800">
+        {taxes && (
+          <Row
+            name={household.income || household.budget ? "Your taxes here (estimate)" : "Taxes here (estimate)"}
+            value={`${usd(taxes.total)}/yr`}
+            badges={
+              taxes.newBuyer >= NEW_BUYER_NOTE && taxes.home !== null ? (
+                <Badge tone="amber">New buyers pay ~{Math.round((taxes.newBuyer - 1) * 100)}% more property tax</Badge>
+              ) : undefined
+            }
+            detail={[
+              taxes.home === null
+                ? "Property tax: none counted — renting, it's in the rent."
+                : `Property tax ${usd(taxes.property)}: ${formatValue("property_tax_effective_rate", propertyTax)}${
+                    taxes.newBuyer !== 1 ? ` × ${taxes.newBuyer.toFixed(2)} for a new buyer` : ""
+                  } on ${household.tenure === "buy" && household.budget ? "your" : "the typical"} ${usd(taxes.home)} home${
+                    household.tenure === "buy" && household.budget ? " budget" : " (Zillow, today)"
+                  }, at the county's average rate. Rates differ inside the county by city, township and school district: each area's page has its own rate and estimate.`,
+              `State income tax ${usd(taxes.income)} on ${household.income ? "your" : "the US median household's"} ${usd(
+                taxes.householdIncome,
+              )} income, filing ${household.filing === "single" ? "single" : "jointly"}.`,
+              `Sales tax ${usd(taxes.sales)} on about ${Math.round(TAXABLE_SPENDING_SHARE * 100)}% of that income.`,
+              taxes.newBuyer >= NEW_BUYER_NOTE && taxes.home !== null
+                ? `Owners who bought here in the last 1–4 years pay about ${Math.round((taxes.newBuyer - 1) * 100)}% more property tax per dollar of value than all owners (Census microdata, 2019–2023): assessments are capped until a home sells. Where the cap resets the year after a sale (Michigan), the real gap is likely larger.`
+                : null,
+              household.income ? null : `Set your income in Filters → What I’m looking for (the US median is ${usd(US_MEDIAN_HOUSEHOLD_INCOME)}).`,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          />
+        )}
         {propertySource && (
           <Row
             name="Property tax rate (this county)"
             value={formatValue("property_tax_effective_rate", Number.isNaN(propertyTax) ? null : propertyTax)}
             source={{ name: propertySource.sourceName, url: propertySource.sourceUrl }}
-            detail={propertySource.method}
+            detail={`${propertySource.method} The county's average: its areas' own rates are on their pages.`}
           />
         )}
         {laws.laws.map((def) => {
@@ -91,7 +147,7 @@ function FactRow({ def, fact }: { def: LawDef; fact: LawFact }) {
         </>
       }
       source={{ name: fact.sourceName, url: fact.sourceUrl, asOf: fact.sourceDate, checked: fact.checked }}
-      detail={fact.notes}
+      detail={def.type === "schedule" ? [scheduleDetail(fact.v), fact.notes].filter(Boolean).join(" ") : fact.notes}
       quote={fact.quote}
     />
   );

@@ -4,6 +4,8 @@ import type { CountyScore } from "@/lib/scoring";
 
 import {
   areaLimitResults,
+  areaWatchOuts,
+  budgetPoints,
   countiesOf,
   countyParts,
   distinctNames,
@@ -308,5 +310,62 @@ describe("not residential, and home values that aren't houses (results audit)", 
     const top = topAreas(a, scoreNational(a, s), 10, true);
     expect(top).toEqual([1, 2]);
     expect(resultBadges(a, top, s).get(1)?.best).toEqual([]);
+  });
+});
+
+describe("results that don't mislead (Phase 10, 2026-10-12)", () => {
+  // Twenty areas in one county; area 0 is a noisy, very cheap small sample; 19 is a $2M enclave.
+  const n = 20;
+  const values = Array.from({ length: n }, (_, k) => 150_000 + k * 25_000);
+  values[19] = 2_000_000;
+  const a = parseNationalAreas({
+    format: "areas-v1",
+    n,
+    columns: {
+      geoid: Array.from({ length: n }, (_, k) => `48001${String(k + 1).padStart(6, "0")}`),
+      label: Array.from({ length: n }, (_, k) => `Area ${k}`),
+      low_confidence: Array.from({ length: n }, (_, k) => (k === 0 ? "median_home_value" : "")),
+      population: Array.from({ length: n }, () => 3000),
+      median_home_value: [20_000, ...values.slice(1)],
+      // The ETL's estimate: the $20k sample is ranked as $260k; everything else as published.
+      median_home_value_eb: [260_000, ...values.slice(1)],
+      violent_rate: Array.from({ length: n }, (_, k) => (k === 19 ? 100 : 200 + k)),
+    },
+  });
+  const s = (criteria: NationalSearch["criteria"]) => ({ criteria, limits: [], counties: countyParts([county("48001", "match", null)]) });
+
+  it("ranks a noisy value on its estimate, and says so", () => {
+    const { criteria } = areaCriteria({ areaWeights: { median_home_value: 1 }, areaDirections: {}, areaLimits: {} });
+    const sc = scoreNational(a, s(criteria));
+    // On its published $20k it would be the cheapest; on its $260k estimate four areas are cheaper.
+    expect(sc.score[0]).toBeLessThan(sc.score[1]);
+    const part = explainArea(a, 0, s(criteria), undefined)[0];
+    expect(part.value).toBe(20_000); // shown as published
+    expect(part.scored).toBe(260_000);
+  });
+
+  it("scores fit to a budget, not cheaper-is-better", () => {
+    expect(budgetPoints(300_000, 400_000)).toBe(100);
+    expect(budgetPoints(400_000, 400_000)).toBe(100);
+    expect(budgetPoints(500_000, 400_000)).toBeCloseTo(50);
+    expect(budgetPoints(700_000, 400_000)).toBe(0);
+    const { criteria } = areaCriteria({ areaWeights: { median_home_value: 3 }, areaDirections: {}, areaLimits: {}, budgets: { median_home_value: 400_000 } });
+    expect(criteria[0].budget).toBe(400_000);
+    const sc = scoreNational(a, s(criteria));
+    // Every area at or under budget ties at 100: the cheapest gets no extra credit.
+    expect(sc.score[1]).toBe(100);
+    expect(sc.score[5]).toBe(100);
+    const part = explainArea(a, 1, s(criteria), undefined)[0];
+    expect(part.beats).toBeNull(); // no "top 1%" for fitting a budget
+    expect(tradeOff([part])).toMatch(/within your budget/);
+  });
+
+  it("warns about what wasn't asked, never about what was", () => {
+    const { criteria } = areaCriteria({ areaWeights: { violent_rate: 3 }, areaDirections: {}, areaLimits: {} });
+    const warn = areaWatchOuts(a, 19, s(criteria));
+    expect(warn.map((w) => w.key)).toEqual(["median_home_value"]);
+    expect(warn[0].text).toBe("Homes cost more than in 100% of US areas");
+    const asked = areaCriteria({ areaWeights: { median_home_value: 1 }, areaDirections: { median_home_value: "higher" }, areaLimits: {} });
+    expect(areaWatchOuts(a, 19, s(asked.criteria))).toEqual([]);
   });
 });

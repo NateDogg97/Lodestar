@@ -55,6 +55,8 @@ NUMBERS = {  # column -> decimals kept
     "nearby_school_pctl": 0, "nearby_hs_pctl": 0,
     "walkability": 1, "violent_rate": 0, "property_rate": 0,
     "dist_downtown_mi": 1, "dist_airport_mi": 1, "dist_coast_mi": 0, "dist_metro_mi": 1,
+    # Phase 10 follow-up (2026-10-13): the nearest Great Lake shore (etl/edges.py).
+    "dist_great_lake_mi": 0,
     "kids_share": 0, "density_per_sq_mi": 0, "commute_minutes": 0,
     # Results audit (2026-10-04): mostly group quarters → not a result; mostly mobile
     # homes → the home value gets a caution.
@@ -63,8 +65,23 @@ NUMBERS = {  # column -> decimals kept
     "diversity_index": 1,
     "hazard_risk": 0, "hazard_hurricane": 0, "hazard_wildfire": 0, "hazard_inland_flood": 0,
     "hazard_coastal_flood": 0, "hazard_earthquake": 0, "hazard_tornado": 0,
+    # Phase 10e: scoring-only estimates with sampling noise pulled toward what's typical
+    # nearby (etl/tracts/shrink.py). Shown values and must-have limits use the columns above.
+    "median_home_value_eb": 0, "median_gross_rent_eb": 0, "median_household_income_eb": 0,
+    "violent_rate_eb": 0, "property_rate_eb": 0,
+    # Phase 11 (etl/pollution/): what areas are ranked on (PM2.5, thick-smoke days, older
+    # housing) or cautioned about (PM2.5 doubt, radon). Detail stays in the county files.
+    "pm25": 1, "pm25_doubt": 0, "smoke_days_thick": 1, "pre1960_share": 0, "radon_above4": 0,
+    # Property tax by area (2026-10-13): the area's own rate (taxes paid ÷ home values) and its
+    # estimate toward the county's typical area — the Taxes estimate uses the estimate.
+    "property_tax_rate": 2, "property_tax_rate_eb": 2,
 }
 COLUMNS = TEXT + list(NUMBERS)
+EB = {"median_home_value_eb": "median_home_value", "median_gross_rent_eb": "median_gross_rent",
+      "median_household_income_eb": "median_household_income",
+      "violent_rate_eb": "violent_rate", "property_rate_eb": "property_rate",
+      "property_tax_rate_eb": "property_tax_rate"}
+ROUND_TO.update({eb: ROUND_TO[src] for eb, src in EB.items() if src in ROUND_TO})
 
 # Census column -> the Zillow index (by ZIP) that brings it to today's prices.
 TODAY = {"median_home_value": "zhvi", "median_gross_rent": "zori"}
@@ -152,21 +169,85 @@ def today_prices(payload: dict, national: dict[str, float]) -> dict[str, list[fl
     return out
 
 
-def _rows_from_county(payload: dict, national: dict[str, float]) -> list[list]:
+def _rounded(c: str, v: float | None) -> float | int | None:
+    if v is None or c not in NUMBERS:
+        return v
+    v = round(float(v) / ROUND_TO[c]) * ROUND_TO[c] if c in ROUND_TO else round(float(v), NUMBERS[c])
+    return int(v) if NUMBERS[c] == 0 else v
+
+
+# What `shrink` needs per area, beyond the published columns.
+AUX = ["median_home_value", "median_home_value_moe", "median_gross_rent", "median_gross_rent_moe",
+       "median_household_income", "median_household_income_moe", "crime_agency", "crime_population",
+       "crime_months", "violent_rate", "property_rate", "population", "group_quarters_share",
+       "property_tax_rate", "property_tax_rate_moe", "place"]
+
+
+def _rows_from_county(payload: dict, national: dict[str, float]) -> tuple[list[list], list[dict]]:
+    """The county's published rows, and per row the inputs `add_estimates` needs."""
     cols = payload["columns"]
     at = {c: cols.index(c) for c in COLUMNS if c in cols}
     today = today_prices(payload, national)
-    out = []
+    topcoded, mobile = _topcoded(payload), _mobile(payload)
+    out, aux = [], []
     for k, r in enumerate(payload["rows"]):
         row = []
         for c in COLUMNS:
             v = today[c][k] if c in today else r[at[c]] if c in at else None
-            if c in NUMBERS and v is not None:
-                v = round(float(v) / ROUND_TO[c]) * ROUND_TO[c] if c in ROUND_TO else round(float(v), NUMBERS[c])
-                v = int(v) if NUMBERS[c] == 0 else v
-            row.append(v)
+            row.append(_rounded(c, v))
         out.append(row)
-    return out
+        a = {c: (r[cols.index(c)] if c in cols else None) for c in AUX}
+        a.update(today={c: today[c][k] for c in TODAY}, topcoded=topcoded[k], mobile=mobile[k])
+        aux.append(a)
+    return out, aux
+
+
+def tax_groups(county: list[str], place: list[str | None]) -> list[str]:
+    """The center each area's tax rate shrinks toward: its city within the county (areas in
+    no city together). `shrink_log_medians` centers a group with too few rated areas on its
+    whole county (`parent`), not on the areas left once the cities are split off."""
+    return [f"{c}|{p or ''}" for c, p in zip(county, place)]
+
+
+def add_estimates(rows: list[list], aux: list[dict]) -> None:
+    """Fill the `*_eb` columns of `rows` in place (etl/tracts/shrink.py)."""
+    from .shrink import shrink_log_medians, shrink_rates
+
+    at = {c: k for k, c in enumerate(COLUMNS)}
+    geoid = [r[at["geoid"]] for r in rows]
+    county, state = [g[:5] for g in geoid], [g[:2] for g in geoid]
+    residential = [(a["population"] or 0) > 50 and (a["group_quarters_share"] or 0) < 50 for a in aux]
+    for col in ("median_home_value", "median_gross_rent", "median_household_income"):
+        census = [a[col] for a in aux]
+        # Left as published: a top-code floor, a mobile-home "value", or a value that is
+        # Zillow's ZIP value rather than this area's Census estimate.
+        keep = [col in a["topcoded"] or (col == "median_home_value" and a["mobile"]) for a in aux]
+        eb = shrink_log_medians(census, [a[f"{col}_moe"] for a in aux], county, state, residential, keep)
+        for k, a in enumerate(aux):
+            shown = a["today"][col] if col in TODAY else census[k]
+            from_census = census[k] not in (None, 0) and not keep[k]
+            est = shown * (eb[k] / census[k]) if (shown is not None and from_census and eb[k]) else shown
+            rows[k][at[f"{col}_eb"]] = _rounded(f"{col}_eb", est)
+    # Property tax rate: a ratio with a margin, shrunk like the medians (a rate of 0 — no
+    # taxes paid — stays as published: there's no log of it). Cities levy their own millage,
+    # so an area centers on its city's typical area, and the rest of the county on its own
+    # (`tax_groups`), not on one county median that would pull a city's rate to the townships'.
+    rate = [a["property_tax_rate"] for a in aux]
+    eb = shrink_log_medians(rate, [a["property_tax_rate_moe"] for a in aux],
+                            tax_groups(county, [a["place"] for a in aux]), state, residential,
+                            [False] * len(aux), parent=county)
+    for k in range(len(rows)):
+        rows[k][at["property_tax_rate_eb"]] = _rounded("property_tax_rate_eb", eb[k])
+    pop = [a["crime_population"] for a in aux]
+    months = [a["crime_months"] for a in aux]
+    agency = [a["crime_agency"] for a in aux]
+    # Zero violent and zero property crime is no report (src/lib/tracts/national.ts).
+    silent = [a["violent_rate"] == 0 and a["property_rate"] == 0 for a in aux]
+    for col in ("violent_rate", "property_rate"):
+        rate = [None if silent[k] else a[col] for k, a in enumerate(aux)]
+        eb = shrink_rates(rate, pop, months, agency, state)
+        for k in range(len(rows)):
+            rows[k][at[f"{col}_eb"]] = _rounded(f"{col}_eb", eb[k])
 
 
 def build(merge_live: bool) -> dict:
@@ -174,14 +255,21 @@ def build(merge_live: bool) -> dict:
     if merge_live:
         try:
             live = requests.get(LIVE_URL, timeout=config.HTTP_TIMEOUT).json()
-            if live.get("format") == AREAS_FORMAT and list(live.get("columns", {})) == COLUMNS:
+            if live.get("format") == AREAS_FORMAT and "geoid" in live.get("columns", {}):
+                # A live file from before a column was added (the Phase 10e estimates,
+                # pollution, property tax by area) lacks it: those areas read it as unknown
+                # (the app's fallback) until their county is rebuilt. Rejecting the file
+                # instead would drop every county not rebuilt in this run.
                 cols = live["columns"]
+                missing = [c for c in COLUMNS if c not in cols]
+                if missing:
+                    log.warning("live areas.json lacks %s: unknown for counties not rebuilt here", missing)
                 for i in range(live["n"]):
-                    r = [cols[c][i] for c in COLUMNS]
+                    r = [cols[c][i] if c in cols else None for c in COLUMNS]
                     rows.setdefault(r[0][:5], []).append(r)
                 log.info("live areas.json: %d areas in %d counties", sum(map(len, rows.values())), len(rows))
             else:
-                log.warning("live areas.json has another format or columns: rebuilding from local files only")
+                log.warning("live areas.json has another format: rebuilding from local files only")
         except (requests.RequestException, ValueError) as exc:
             log.warning("no live areas.json (%s): local files only", type(exc).__name__)
     local = sorted(PUBLISH_DIR.glob("[0-9][0-9][0-9][0-9][0-9].json"))
@@ -192,8 +280,13 @@ def build(merge_live: bool) -> dict:
         all_ratios = [x for p in payloads.values() for x in zip_ratios(p, census, zillow).values()]
         national[census] = _median(all_ratios) or 1.0
         log.info("%s: national Zillow/Census ratio %.2f over %d ZIPs", census, national[census], len(all_ratios))
-    for fips, p in payloads.items():
-        rows[fips] = _rows_from_county(p, national)
+    local_rows, local_aux = [], []
+    for fips, p in sorted(payloads.items()):
+        rows[fips], aux = _rows_from_county(p, national)
+        local_rows += rows[fips]
+        local_aux += aux
+    # Priors are by state and county, over the areas rebuilt here (all of them, monthly).
+    add_estimates(local_rows, local_aux)
     all_rows = [r for fips in sorted(rows) for r in rows[fips]]
     log.info("areas.json: %d areas in %d counties (%d from local files)", len(all_rows), len(rows), len(local))
     return {"format": AREAS_FORMAT, "generated": date.today().isoformat(), "n": len(all_rows),

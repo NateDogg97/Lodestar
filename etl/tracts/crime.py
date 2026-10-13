@@ -546,6 +546,39 @@ def rate_note(population: float, months: float, year: object, violent_rate: floa
     return None
 
 
+# A county-level agency's one rate over this many areas, from places this many times
+# denser than others, mixes farmland and suburbs (Phase 10 follow-up, 2026-10-13: the
+# Washtenaw sheriff's 305/100k stands for 40 areas from 21 to 8,905 people per sq mi).
+WIDE_MIN_AREAS = 8
+WIDE_DENSITY_SPREAD = 10.0
+
+
+def is_county_agency(name: object) -> bool:
+    """A sheriff or county police department (the names `_agency_name` gives them)."""
+    return isinstance(name, str) and bool(re.search(r"County \((sheriff|county police)", name))
+
+
+def shared_rates(agency: pd.Series, density: pd.Series, population: pd.Series,
+                 has_rate: pd.Series) -> tuple[pd.Series, pd.Series]:
+    """Per tract of one county: how many residential areas share its agency's rate
+    (`crime_shared`, for the page's note), and whether that rate is a county agency's spread
+    over rural and suburban places alike (`wide`, the "crime_wide" caution).
+
+    Every agency's rate is one number for all it polices — a city's too; only county
+    agencies mixing farmland and suburbs are flagged, or most US areas would carry it."""
+    residential = population.fillna(0) > 50
+    key = agency.where(has_rate & residential)
+    shared = key.map(key.value_counts()).where(has_rate, np.nan)
+    wide = pd.Series(False, index=agency.index)
+    for name, idx in key.dropna().groupby(key.dropna()).groups.items():
+        if not is_county_agency(name) or len(idx) < WIDE_MIN_AREAS:
+            continue
+        d = density.loc[idx].dropna()
+        if len(d) and d.quantile(0.9) >= WIDE_DENSITY_SPREAD * max(d.quantile(0.1), 1.0):
+            wide.loc[agency.eq(name) & has_rate] = True
+    return shared, wide
+
+
 def _plausible(a: pd.Series | None) -> bool:
     """Numbers that can be a rate: enough exposure, and not a big jurisdiction reporting
     almost nothing (see `rate_note`). Very low violent crime alone can be real (Sarpy

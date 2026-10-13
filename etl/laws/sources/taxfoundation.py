@@ -4,7 +4,7 @@ Tax Foundation — income tax, sales tax, and grocery treatment.
 Tax Foundation publishes each table as an .xlsx linked from a data page. We
 parse the spreadsheet (exact numbers, no scraping of prose) and cite the page.
 
-    income_tax_top_rate, income_tax_structure
+    income_tax_top_rate, income_tax_structure, income_tax_brackets
         "State Individual Income Tax Rates and Brackets" (as of Jan 1) and
         Facts & Figures Table 11 (as of late April). Both are read; for each
         state the LATER-dated table is used, so a spring rate change wins.
@@ -74,13 +74,27 @@ def _fmt_pct(x: float) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _amount(cell: object) -> tuple[float, float]:
+    """A deduction or exemption cell -> (deduction, credit): 3000 -> (3000, 0),
+    "$153 credit" -> (0, 153), "n.a." or blank -> (0, 0)."""
+    if isinstance(cell, (int, float)):
+        return float(cell), 0.0
+    m = re.match(r"\$?([\d,]+(?:\.\d+)?)\s*credit", str(cell or "").strip(), re.I)
+    return (0.0, float(m.group(1).replace(",", ""))) if m else (0.0, 0.0)
+
+
 def parse_income_blocks(rows: list[tuple]) -> dict[str, dict]:
-    """State -> {"rates": [single-filer marginal rates], "label", "none", "capital_gains_only"}.
+    """State -> {"rates": [single-filer marginal rates], "label", "none", "capital_gains_only",
+    "single": [(rate, over)], "married": [(rate, over)], "deduction": (single, couple),
+    "exemption": (single, couple), "credit": (single, couple)}.
 
     Layout (both the standalone table and F&F Table 11): a state's label in
-    column A starts a block; each bracket row has `rate, '>', threshold` with
-    the single-filer rate first. 'none' means no wage income tax. Footnote rows
-    at the bottom have text in column A only and are ignored.
+    column A starts a block; each bracket row has `rate, '>', threshold` for the
+    single filer, then the same for a married couple filing jointly. The state's
+    first row then has the standard deduction (single, couple) and the personal
+    exemption (single, couple), each a dollar amount, "$N credit" or "n.a.".
+    'none' means no wage income tax. Footnote rows at the bottom have text in
+    column A only and are ignored.
     """
     # Footnotes: "(k) In Wash., tax rates apply only to high earners' capital
     # gains income." A state whose label cites such a footnote has no wage
@@ -100,10 +114,13 @@ def parse_income_blocks(rows: list[tuple]) -> dict[str, dict]:
         code = state_code(label) if isinstance(label, str) and len(label) < 40 else None
         if code:
             cur = blocks.setdefault(code, {"rates": [], "label": label.strip(),
-                                           "none": False, "capital_gains_only": False})
+                                           "none": False, "capital_gains_only": False,
+                                           "single": [], "married": [], "deduction": (0.0, 0.0),
+                                           "exemption": (0.0, 0.0), "credit": (0.0, 0.0)})
             cited = set(re.findall(r"\b([a-z]{1,3})\b", " ".join(re.findall(r"\((.*?)\)", label))))
             if cited & cap_gains_notes:
                 cur["capital_gains_only"] = True
+        starts_block = bool(code)
         if cur is None:
             continue
         if isinstance(label, str) and label.strip().startswith("(") and len(label) > 40:
@@ -115,15 +132,41 @@ def parse_income_blocks(rows: list[tuple]) -> dict[str, dict]:
             cur["capital_gains_only"] = True
         if re.search(r"\bnone\b", texts) and not any(isinstance(c, (int, float)) for c in cells[:1]):
             cur["none"] = True
-        for i in range(len(cells) - 1):
-            if isinstance(cells[i], (int, float)) and cells[i + 1] == ">":
-                cur["rates"].append(float(cells[i]))
-                break  # first rate in the row is the single filer's
+        triples = [i for i in range(len(cells) - 2)
+                   if isinstance(cells[i], (int, float)) and cells[i + 1] == ">"
+                   and isinstance(cells[i + 2], (int, float))]
+        if triples:
+            # The first rate in the row is the single filer's; the second, if any, the couple's.
+            cur["rates"].append(float(cells[triples[0]]))
+            cur["single"].append((float(cells[triples[0]]), float(cells[triples[0] + 2])))
+            if len(triples) > 1:
+                cur["married"].append((float(cells[triples[1]]), float(cells[triples[1] + 2])))
+        if starts_block:
+            # Deduction and exemption columns follow the couple's bracket (or "none") columns.
+            after = (triples[1] + 3) if len(triples) > 1 else 6
+            sd = [_amount(c) for c in cells[after:after + 2]] + [(0.0, 0.0)] * 2
+            ex = [_amount(c) for c in cells[after + 2:after + 4]] + [(0.0, 0.0)] * 2
+            cur["deduction"] = (sd[0][0], sd[1][0])
+            cur["exemption"] = (ex[0][0], ex[1][0])
+            cur["credit"] = (ex[0][1], ex[1][1])
     return blocks
 
 
+def encode_schedule(b: dict) -> str:
+    """The brackets as one compact value: "s:0.02@0,0.04@500;m:0.02@0,0.04@1000;sd:3000,8500;
+    ex:1500,3000;cr:0,0" (rate@over per bracket, single then married filing jointly;
+    standard deduction, personal exemption and exemption credit, single then couple), or
+    "none". Read by `incomeTax` in src/lib/scoring/taxes.ts."""
+    if b["none"] or b["capital_gains_only"] or not b["single"]:
+        return "none"
+    pairs = lambda xs: ",".join(f"{r:.12g}@{o:.12g}" for r, o in xs)  # noqa: E731
+    two = lambda t: f"{t[0]:.12g},{t[1]:.12g}"  # noqa: E731
+    return (f"s:{pairs(b['single'])};m:{pairs(b['married'] or b['single'])};"
+            f"sd:{two(b['deduction'])};ex:{two(b['exemption'])};cr:{two(b['credit'])}")
+
+
 def _income_facts(blocks: dict[str, dict], *, page: str, data_url: str, as_of: date,
-                  table: str) -> dict[str, tuple[Fact, Fact]]:
+                  table: str) -> dict[str, tuple[Fact, Fact, Fact]]:
     out = {}
     for code, b in blocks.items():
         if b["none"] or b["capital_gains_only"] or not b["rates"]:
@@ -141,11 +184,13 @@ def _income_facts(blocks: dict[str, dict], *, page: str, data_url: str, as_of: d
                          quote=quote, notes=note)
         struct_fact = Fact(value=structure, source_name=NAME, source_url=page,
                            data_url=data_url, source_date=as_of, quote=quote, notes=note)
-        out[code] = (rate_fact, struct_fact)
+        sched_fact = Fact(value=encode_schedule(b), source_name=NAME, source_url=page,
+                          data_url=data_url, source_date=as_of, quote=quote, notes=note)
+        out[code] = (rate_fact, struct_fact, sched_fact)
     return out
 
 
-def income_tax(today: date) -> tuple[SourceResult, SourceResult]:
+def income_tax(today: date) -> tuple[SourceResult, SourceResult, SourceResult]:
     candidates = []
     # Standalone table (as of Jan 1).
     for year in (today.year, today.year - 1):
@@ -191,7 +236,7 @@ def income_tax(today: date) -> tuple[SourceResult, SourceResult]:
             raise SourceError(f"{label}: expected 51 jurisdictions, got {len(blocks)} "
                               f"(missing {sorted(STATES - set(blocks))})")
         tables.append((as_of, _income_facts(blocks, page=url, data_url=links[0],
-                                            as_of=as_of, table=label)))
+                                            as_of=as_of, table=label), kind))
         seen_kinds.add(kind)
 
     if not tables:
@@ -200,18 +245,34 @@ def income_tax(today: date) -> tuple[SourceResult, SourceResult]:
     tables.sort(key=lambda t: t[0], reverse=True)   # newest first
     rate = SourceResult("income_tax_top_rate", notes=notes)
     struct = SourceResult("income_tax_structure", notes=list(notes))
-    newest_date, newest = tables[0]
+    brackets = SourceResult("income_tax_brackets", notes=list(notes))
+    newest_date, newest, _ = tables[0]
+    # Only the standalone table has married brackets, deductions and exemptions (F&F Table
+    # 11 is single-filer rates only), so the schedule is always its, as of its own date.
+    full = next(((d, t) for d, t, kind in tables if kind == "standalone"), None)
     for code in STATES:
-        r, s = newest[code]
+        r, s, _ = newest[code]
         # Where the older table disagrees, say so — it usually means a mid-year change.
-        for older_date, older in tables[1:]:
+        for older_date, older, _ in tables[1:]:
             o = older[code][0]
             if o.value != r.value:
                 r.notes = (r.notes + " " if r.notes else "") + (
                     f"Tax Foundation's {older_date:%B %-d, %Y} table listed {o.value}%.")
         rate.facts[code] = r
         struct.facts[code] = s
-    return rate, struct
+        if full is None:
+            continue  # no full schedule this run: the law keeps its previous rows
+        full_date, full_facts = full
+        sched = full_facts[code][2]
+        if full_date != newest_date and full_facts[code][0].value != r.value:
+            sched.confidence = "low"
+            sched.notes = (sched.notes + " " if sched.notes else "") + (
+                f"Tax Foundation's {newest_date:%B %-d, %Y} table lists a {r.value}% top rate; "
+                f"these brackets are as of {full_date:%B %-d, %Y}.")
+        brackets.facts[code] = sched
+    if full is None:
+        brackets.notes.append("no standalone bracket table found: income_tax_brackets not refreshed")
+    return rate, struct, brackets
 
 
 # ---------------------------------------------------------------------------

@@ -629,3 +629,45 @@ The tract data never goes in git: `public/data/tracts/` is ignored, and producti
 reads it from R2 (`NEXT_PUBLIC_DATA_URL`). Large downloads land in `data/raw/`
 (git-ignored) and are reused. Thresholds and
 URLs are in the "Census tracts" section of `config.py`.
+
+Each area's property tax rate (`property_tax_rate`, taxes paid ÷ home values of owner-occupied
+homes, tract ACS) comes with the build; into existing area files with
+`python -m etl.tracts.backfill --taxes`. `etl.tracts.national` adds `property_tax_rate_eb`,
+shrunk toward the area's city's typical area (plan §9 Phase 10g).
+
+## Phase 11: pollution (`etl/pollution/`)
+
+Measured **where people live**: every 2020 census block with residents is sampled, and
+areas and counties are population-weighted means of their own blocks — never a county
+source, never a neighbour's value, never smoothed (plan §9 Phase 11, rules 1–11).
+
+```bash
+python -m etl.pollution all            # every state -> data/interim/{pm25,smoke,radon}_{tracts,counties}.csv
+python -m etl.pollution published      # the states with area files in public/data/tracts/ (what CI runs)
+python -m etl.pollution MI PA          # some states
+python -m etl.tracts.backfill --pollution   # into the area files; fails if a source's coverage collapses
+python -m etl.tracts.national          # areas.json picks up the ranked columns
+python -m etl.pollution.lead           # county older-housing shares (county ACS)
+python -m etl.patch pollution          # nine county columns into counties.json (needs an `all` run)
+python -m etl.pollution.gate           # the PM2.5 acceptance gate on the pilot states -> data/out/pm25_gate.md
+```
+
+| Module | Source | Produces |
+|---|---|---|
+| `blocks.py` | Census 2020 PL 94-171 geo headers, per state (~2–3 GB, once) | Populated blocks: population and internal point, cached in `data/interim/blocks/` |
+| `grid.py`, `exposure.py` | — | The cell containing a point (no interpolation); block → area / county weighting, coverage, worst area |
+| `monitors.py` | EPA AirData annual PM2.5, 2022–2024 | 908 monitor sites (smoke events kept) |
+| `pm25.py` | WashU ACAG SatPM2.5 V6.GL.03, 2022–2024 mean, CC BY 4.0 | `pm25` (µg/m³), share over EPA's 9, worst block |
+| `doubt.py` | EPA monitors vs the model | `pm25_doubt`: % of residents within 5 mi of a monitor reading > 2 µg/m³ above the model; ≥ 50 → the "pm25" low-confidence flag; each area's nearest monitor |
+| `smoke.py` | NOAA HMS smoke polygons, 2015–2024 (3,653 daily files) | `smoke_days` (any plume overhead), `smoke_days_thick` (medium/heavy — the ranked one) |
+| `radon.py` | Li et al. PNAS 2025 ZIP exceedance (OSF, CC0) + Census ZCTA–block file (1 GB, streamed) | `radon_above4`, `radon_above2`: the chance a home test reads above 4 / 2 pCi/L; `radon_ci` |
+| `lead.py` | Census ACS B25034 (county); areas get it from `tracts/acs.py` | `pre1960_share`, `pre1980_share` with margins |
+| `county.py` | The tables above | The nine county columns `etl.patch pollution` publishes |
+| `carry.py` | The tables last published to R2 (`tracts/pollution/*.csv`) | A source that fails, or whose known areas drop below 95% of the live table's, keeps the live tables so the refresh still ships; `public/data/tracts/pollution.json` dates each source (the area page says when one is stale) |
+
+**National run, 2026-10-13:** 5.77M populated blocks → 83,848 areas in 3,144 counties.
+PM2.5, smoke and older housing known for 100% of residential areas; radon 94.5% (no
+Alaska or Hawaii; the model leaves out dense, basement-poor ZIPs). 3.5 minutes with the
+inputs cached. Scoring (anchored points, the PM2.5 cap) is in the app,
+`src/lib/tracts/pollution.ts`. Inputs are not mirrored to the private bucket yet, so CI
+downloads them each run.

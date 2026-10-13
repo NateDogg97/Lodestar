@@ -34,8 +34,12 @@ export interface MetricDef {
    * `state`: not a column of counties.json — every county takes its state's
    * value from the law table (public/data/laws.json, same key). See
    * `applyStateLaws` in src/lib/laws.
+   * `computed`: not a column either — computed per search from other columns and
+   * what the person told us (Taxes: `withTaxes` in ./taxes).
    */
-  scope?: "state";
+  scope?: "state" | "computed";
+  /** Only one "better" makes sense (no one wants higher taxes): no direction control. */
+  fixedDirection?: true;
 }
 
 export const METRICS = [
@@ -102,7 +106,9 @@ export const METRICS = [
   { key: "dist_coast_mi", label: "Distance to the coast", unit: "mi", group: "location", defaultDirection: "lower" },
   { key: "dist_metro_mi", label: "Distance to a 500k+ metro", unit: "mi", group: "location", defaultDirection: "lower" },
 
-  // state taxes (LAWS.md; Tax Foundation) — shown in the Laws & taxes tab
+  // Taxes in dollars a year for a household (Phase 10b, ./taxes.ts): the one tax priority.
+  { key: "taxes", label: "Taxes", unit: "$/yr", group: "taxes", defaultDirection: "lower", scope: "computed", fixedDirection: true },
+  // state taxes (LAWS.md; Tax Foundation) — shown in the Laws & taxes tab; must-have limits only
   { key: "income_tax_top_rate", label: "Income tax (top rate)", unit: "%", group: "taxes", defaultDirection: "lower", scope: "state" },
   { key: "sales_tax_combined", label: "Sales tax (state + avg local)", unit: "%", group: "taxes", defaultDirection: "lower", scope: "state" },
 ] as const satisfies readonly MetricDef[];
@@ -133,6 +139,15 @@ export const NOT_IN_FILTERS: ReadonlySet<MetricKey> = new Set<MetricKey>([
   "home_value_to_income", "rent_to_income", "price_to_rent", "real_income", "racial_equality",
 ]);
 
+/**
+ * Rates that are must-have limits only (Phase 10b, 2026-10-12): as priorities they were one
+ * wish ("low taxes") counted three times, and a rate isn't what a household pays. "Taxes"
+ * (dollars a year) is the priority; a saved search that weighted these gets Taxes instead.
+ */
+export const LIMIT_ONLY: ReadonlySet<MetricKey> = new Set<MetricKey>([
+  "income_tax_top_rate", "sales_tax_combined", "property_tax_effective_rate",
+]);
+
 /** Cost-of-living parts that fold into "Cost of living" when an old search weighted one. */
 export const COST_PARTS: readonly MetricKey[] = ["rpp_rents", "rpp_utilities", "rpp_goods", "rpp_services", "electricity_price_cents_kwh"];
 
@@ -145,6 +160,11 @@ export function getMetric(key: MetricKey): MetricDef {
 export function isMetricKey(key: string): key is MetricKey {
   return BY_KEY.has(key);
 }
+
+/** Metrics computed per search rather than read from counties.json. */
+export const COMPUTED_METRIC_KEYS: readonly MetricKey[] = METRICS.filter(
+  (m) => (m as MetricDef).scope === "computed",
+).map((m) => m.key);
 
 /** Metrics whose value is the county's state's, from the law table. */
 export const STATE_METRIC_KEYS: readonly MetricKey[] = METRICS.filter(

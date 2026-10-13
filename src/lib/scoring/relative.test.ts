@@ -8,14 +8,23 @@ const county = (fips: string, score: number | null): CountyScore => ({
 
 describe("topRelativeScores", () => {
   it("stretches the top n across 0–100 relative to each other", () => {
-    const ranked = [county("a", 90), county("b", 85), county("c", 80), county("d", 10)];
+    const ranked = [county("a", 90), county("b", 70), county("c", 60), county("d", 10)];
     const rel = topRelativeScores(ranked, 3);
-    expect([...rel.entries()]).toEqual([["a", 100], ["b", 50], ["c", 0]]);
+    expect([...rel.keys()]).toEqual(["a", "b", "c"]);
+    expect(rel.get("a")).toBe(100);
+    expect(rel.get("b")).toBeCloseTo(100 / 3);
+    expect(rel.get("c")).toBe(0);
     expect(rel.has("d")).toBe(false); // outside the top n: not drawn
   });
 
+  it("doesn't paint a narrow spread red to green (Phase 10f)", () => {
+    // Eight points apart: the weakest fades to 60, not to red.
+    const rel = topRelativeScores([county("a", 96), county("b", 92), county("c", 88)], 3);
+    expect([...rel.values()]).toEqual([100, 80, 60]);
+  });
+
   it("keeps an unscored county in the top n but uncolored (null → grey)", () => {
-    const rel = topRelativeScores([county("a", 70), county("b", 60), county("c", null)], 3);
+    const rel = topRelativeScores([county("a", 70), county("b", 50), county("c", null)], 3);
     expect(rel.get("c")).toBeNull();
     expect(rel.get("a")).toBe(100);
     expect(rel.get("b")).toBe(0);

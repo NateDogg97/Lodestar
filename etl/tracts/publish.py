@@ -45,6 +45,8 @@ def _digits(col: str) -> int:
     """Rounding per column: money and counts whole; rates, shares, miles 1–2 decimals."""
     if col in ("pop_lat", "pop_lon", "lat", "lon"):
         return 5
+    if col.startswith("property_tax_rate"):  # a % near 1–2: hundredths, margin too
+        return 2
     if col.endswith(("_value", "_income", "_rent", "zhvi", "zori", "sale_price", "_moe")) or col in (
             "population", "homes_sold", "crime_population", "violent_rate", "property_rate"):
         return 0

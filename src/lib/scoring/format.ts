@@ -22,6 +22,8 @@ export function formatValue(metric: MetricKey, value: number | null): string {
       return dollars.format(value);
     case "$/mo":
       return `${dollars.format(value)}/mo`;
+    case "$/yr":
+      return `${dollars.format(value)}/yr`;
     case "°F":
       return `${whole.format(value)}°F`;
     case "in":
