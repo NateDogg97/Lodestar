@@ -78,6 +78,42 @@ const COUNTY_SOURCES: { name: string; url: string; vintage: string; covers: stri
     covers:
       "Census tract estimates (ACS 2019–2023), EPA National Walkability Index, FEMA National Risk Index tracts, SEDA district and school scores, Civil Rights Data Collection 2023–24 (high schools), NCES school locations, FBI Crime Data Explorer (2025), Zillow and Redfin market data, Zillow neighborhood boundaries, Census LEHD job counts (downtowns)",
   },
+  // Pollution (Phase 11): measured at every 2020 census block where people live, weighted by
+  // who lives there, so a county or area isn't diluted by its empty land.
+  {
+    name: "WashU ACAG SatPM2.5 (V6.GL.03)",
+    url: "https://sites.wustl.edu/acag/datasets/surface-pm2-5/",
+    vintage: "2022–2024, CC BY 4.0",
+    covers:
+      "Fine particles (PM2.5): a ~1 km satellite and chemistry model calibrated to ground monitors, ±1.7 µg/m³. It smooths over local sources (industry, ports, wood smoke in valleys); a hot spot no monitor measures can still read clean",
+  },
+  {
+    name: "EPA AirData monitors",
+    url: "https://aqs.epa.gov/aqsweb/airdata/download_files.html",
+    vintage: "2022–2024",
+    covers:
+      "The nearest PM2.5 monitor's reading, shown beside an area's estimate; where a monitor reads well above the model, nearby areas' PM2.5 is marked uncertain and scores no better than typical",
+  },
+  {
+    name: "NOAA Hazard Mapping System smoke",
+    url: "https://www.ospo.noaa.gov/products/land/hms.html",
+    vintage: "2015–2024",
+    covers: "Wildfire smoke days: days a year with medium or heavy smoke outlined overhead — not always at the ground",
+  },
+  {
+    name: "Radon by ZIP area (Li et al., PNAS 2025)",
+    url: "https://doi.org/10.17605/OSF.IO/3SHC4",
+    vintage: "2001–2021, CC0",
+    covers:
+      "Share of homes expected above EPA's 4 pCi/L radon action level, from 6M+ home tests. Shown, not ranked: its error is wide and radon varies house to house. Census 2020 ZIP-area–block relationship file to place it",
+  },
+  {
+    name: "Census 2020 redistricting blocks (PL 94-171)",
+    url: "https://www.census.gov/programs-surveys/decennial-census/about/rdo/summary-files.html",
+    vintage: "2020",
+    covers:
+      "Where people live inside each area: every block's population and center, for weighting pollution. Not covered anywhere: soil contamination, private wells, indoor air, and drinking water (for now)",
+  },
   {
     name: "GeoNames",
     url: "https://www.geonames.org/",

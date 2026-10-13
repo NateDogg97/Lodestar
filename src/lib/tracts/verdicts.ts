@@ -29,6 +29,11 @@ export const US_TYPICAL = {
   // Who lives here (2026-10-04): area medians.
   diversity_index: 43.2,
   gini_index: 0.42,
+  // Pollution (Phase 11): area medians, national run 2026-10-13.
+  pm25: 7.8,
+  smoke_days_thick: 13.5,
+  pre1960_share: 20,
+  radon_above4: 15,
 } as const;
 
 /** The typical US county on the same measures (county medians, 2026-10-04). */

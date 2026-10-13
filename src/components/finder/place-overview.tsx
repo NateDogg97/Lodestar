@@ -1,9 +1,9 @@
 "use client";
 
 import { formatValue, getMetric, type CountyDataset, type CountyScore, type MetricContribution } from "@/lib/scoring";
-import { buyOrRentVerdict, locationVerdict, tradeOff, US_TYPICAL_COUNTY, type AreaPart } from "@/lib/tracts";
+import { buyOrRentVerdict, DOUBTED_SHARE, locationVerdict, tradeOff, US_TYPICAL_COUNTY, type AreaPart } from "@/lib/tracts";
 
-import { AreaSection, HazardsSection, Note, PeopleSection, PlaceRow, PriorityBar } from "./area-detail";
+import { AreaSection, HazardsSection, Note, PeopleSection, PlaceRow, PollutionSection, PriorityBar } from "./area-detail";
 import { scoreColor } from "./score-colors";
 
 interface Props {
@@ -141,6 +141,16 @@ export function PlaceOverview({ score: s, data }: Props) {
           return col ? num(col[i]) : null;
         }}
         rating={(k) => data.text[k as keyof typeof data.text]?.[i] ?? null}
+      />
+      <PollutionSection
+        id="county.pollution"
+        level="county"
+        get={(k) => {
+          const col = data.info[k as keyof typeof data.info];
+          return col ? num(col[i]) : null;
+        }}
+        // A county is doubted like an area: most of its residents near a monitor reading above the model.
+        flagged={(k) => k === "pm25" && (num(data.info.pm25_doubt[i]) ?? 0) >= DOUBTED_SHARE}
       />
     </div>
   );

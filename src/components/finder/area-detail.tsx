@@ -25,6 +25,10 @@ import {
   standing,
   tradeOff,
   notResidential,
+  pollutionVerdict,
+  EPA_PM25,
+  WHO_PM25,
+  RADON_WATCH,
   US_TYPICAL,
   type Area,
   type AreaLimit,
@@ -109,6 +113,7 @@ const ICONS = {
   chart: "M4 19h16M6 15l4-4 3 3 5-6",
   alert: "M12 4l9 16H3zM12 10v4M12 17h.01",
   people: "M16 20v-1a4 4 0 00-4-4H8a4 4 0 00-4 4v1M10 11a3 3 0 100-6 3 3 0 000 6M20 20v-1a3.5 3.5 0 00-2.5-3.4M15.5 5.3a3 3 0 010 5.4",
+  air: "M3 8h11a3 3 0 10-3-3M3 12h15a3 3 0 11-3 3M3 16h7",
 } as const;
 
 function Chevron({ up, className = "h-4 w-4" }: { up: boolean; className?: string }) {
@@ -902,6 +907,17 @@ export function AreaDetail({
       </AreaSection>
 
       <HazardsSection id="hazards" get={v} rating={(k) => (typeof r[k] === "string" ? String(r[k]) : null)} />
+      <PollutionSection
+        id="pollution"
+        level="area"
+        get={v}
+        flagged={(k) => flagged.has(k)}
+        monitor={
+          typeof r.pm25_monitor_name === "string" && v("pm25_monitor") !== null
+            ? { name: String(r.pm25_monitor_name), km: v("pm25_monitor_km"), value: v("pm25_monitor")! }
+            : null
+        }
+      />
     </div>
   );
 }
@@ -1072,6 +1088,126 @@ export function HazardsSection({
         </span>
       )}
       {risky[0] && <RiskRow label={risky[0].label} p={risky[0].p} rating={risky[0].rating} />}
+    </AreaSection>
+  );
+}
+
+/**
+ * Pollution (Phase 11), for an area or a county: the air (PM2.5) against the typical US
+ * area, with the monitor caution; smoke, older homes and radon. County pages add the
+ * share of residents over EPA's standard and the worst area; area pages the nearest EPA
+ * monitor's reading — shown beside the value, never as it.
+ */
+export function PollutionSection({
+  id,
+  level,
+  get,
+  flagged = () => false,
+  monitor = null,
+}: {
+  id: string;
+  level: "area" | "county";
+  get: (key: string) => number | null;
+  flagged?: (key: string) => boolean;
+  monitor?: { name: string; km: number | null; value: number } | null;
+}) {
+  const pm25 = get("pm25");
+  const doubt = get("pm25_doubt");
+  const smoke = get("smoke_days_thick");
+  const lead = get("pre1960_share");
+  const radon = get("radon_above4");
+  if (pm25 === null && smoke === null && lead === null && radon === null) return null;
+  const doubted = flagged("pm25");
+  const place = level === "area" ? "this area" : "this county";
+  const one = (x: number) => x.toFixed(1);
+  return (
+    <AreaSection
+      id={id}
+      icon="air"
+      title="Pollution"
+      lead={pollutionVerdict({ pm25, doubted, smoke, radon })}
+      details={
+        <>
+          {get("smoke_days") !== null && (
+            <Row label="Any smoke overhead, light haze included">{Math.round(get("smoke_days")!)} days a year</Row>
+          )}
+          {get("pre1980_share") !== null && <Row label="Homes built before 1980">{pct(get("pre1980_share"))}</Row>}
+          {get("radon_above2") !== null && (
+            <Row label="Homes above 2 pCi/L (EPA: consider fixing)">{pct(get("radon_above2"))}</Row>
+          )}
+          {level === "county" && get("radon_above4_worst") !== null && (
+            <Row label="Radon: worst area in the county">{pct(get("radon_above4_worst"))} of homes above 4 pCi/L</Row>
+          )}
+          <Note>
+            PM2.5: WashU ACAG V6.GL.03, 2022–2024 average, a ~1 km satellite and chemistry model calibrated to EPA
+            monitors (±1.7 µg/m³), taken at every census block where people live and weighted by who lives there. It
+            smooths over local sources — industry, ports, wood smoke in valleys. WHO&rsquo;s guideline is 5 µg/m³; the
+            federal standard of 9 is under review. Smoke: NOAA Hazard Mapping System, days with smoke outlined overhead,
+            2015–2024 — overhead isn&rsquo;t always at the ground. Older homes: Census 2019–2023; lead paint was banned
+            in 1978, and an old home is a risk, not a measure of lead exposure. Radon: share of homes expected above
+            EPA&rsquo;s 4 pCi/L action level by ZIP area (Harvard model of 6M+ tests, 2001–2021){
+              get("radon_ci") !== null ? `, give or take about ${Math.round(get("radon_ci")! / 2)} points here` : ""
+            }. Estimates for screening, not your address.
+          </Note>
+        </>
+      }
+    >
+      {pm25 !== null && (
+        <CompareBar
+          label="Fine particles (PM2.5)"
+          value={pm25}
+          text={`${one(pm25)} µg/m³`}
+          typical={US_TYPICAL.pm25}
+          typicalText={`${US_TYPICAL.pm25}`}
+          max={15}
+          maxText="15+"
+          flagged={doubted}
+        />
+      )}
+      {pm25 !== null && (
+        <Note>
+          WHO guideline {WHO_PM25}, federal standard {EPA_PM25} µg/m³ (under review).
+          {level === "county" && get("pm25_above") !== null && ` ${pct(get("pm25_above"))} of residents live above ${EPA_PM25}.`}
+          {level === "county" && get("pm25_worst") !== null && ` Worst area: ${one(get("pm25_worst")!)}.`}
+        </Note>
+      )}
+      {doubt !== null && doubt > 0 && (
+        <Note>
+          {doubted ? "Uncertain: " : ""}
+          {Math.round(doubt)}% of residents live within 5 miles of an EPA monitor that measured more than the model
+          there — local sources the model misses.{doubted ? " Scored no better than typical." : ""}
+        </Note>
+      )}
+      {monitor && (
+        <Row label={`Nearest EPA monitor: ${monitor.name}${monitor.km !== null ? `, ${Math.round(monitor.km)} km` : ""}`}>
+          measured {one(monitor.value)} µg/m³
+        </Row>
+      )}
+      {smoke !== null && (
+        <CompareBar
+          label="Wildfire smoke days"
+          value={smoke}
+          text={`${Math.round(smoke)} a year`}
+          typical={US_TYPICAL.smoke_days_thick}
+          typicalText={`${US_TYPICAL.smoke_days_thick}`}
+          max={35}
+          maxText="35+"
+        />
+      )}
+      {lead !== null && (
+        <Row label="Homes built before 1960 (lead-paint risk)">
+          {pct(lead)}
+          <FlagMark on={flagged("pre1960_share")} />
+        </Row>
+      )}
+      {radon !== null && (
+        <Row label="Homes above EPA’s radon action level">
+          <span className={radon >= RADON_WATCH ? "font-semibold text-amber-800 dark:text-amber-300" : undefined}>
+            {pct(radon)}
+          </span>
+        </Row>
+      )}
+      {radon !== null && <Note>Radon varies house to house — test any home before you buy, whatever {place} shows.</Note>}
     </AreaSection>
   );
 }

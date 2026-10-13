@@ -27,6 +27,8 @@ export const PM25_BANDS = [5, 7, 9, 12] as const;
 export const PM25_BAND_POINTS = [100, 75, 50, 25, 0] as const;
 /** ACAG V6.GL.03's out-of-sample RMSE for annual North American PM2.5, µg/m³. */
 export const PM25_SIGMA = 1.7;
+/** % of residents near a monitor reading above the model that makes a place's PM2.5 doubted (etl/pollution/doubt.py DOUBTED_SHARE). */
+export const DOUBTED_SHARE = 50;
 /** The "typical" band's points: a doubted value can't score above it. */
 export const PM25_DOUBT_CAP = 50;
 export const WHO_PM25 = 5;
@@ -83,6 +85,23 @@ export function pm25Word(v: number): string {
   if (v <= WHO_PM25) return "Very clean";
   if (v <= 7) return "Clean";
   if (v <= EPA_PM25) return "Typical";
-  if (v <= 12) return "Above the federal standard";
-  return "High";
+  if (v <= 12) return "Somewhat polluted";
+  return "Polluted";
+}
+
+/**
+ * The Pollution section's one line: the air, then what stands out. "Typical air (PM2.5
+ * 8.1) · 22 smoke days a year · radon: test any home".
+ */
+export function pollutionVerdict(v: {
+  pm25: number | null;
+  doubted?: boolean;
+  smoke: number | null;
+  radon: number | null;
+}): string {
+  const parts: string[] = [];
+  if (v.pm25 !== null) parts.push(`${pm25Word(v.pm25)} air (PM2.5 ${v.pm25.toFixed(1)}${v.doubted ? ", uncertain" : ""})`);
+  if (v.smoke !== null) parts.push(`${Math.round(v.smoke)} smoke days a year`);
+  if (v.radon !== null && v.radon >= RADON_WATCH) parts.push("radon: test any home");
+  return parts.length ? parts.join(" · ") : "No pollution data";
 }
