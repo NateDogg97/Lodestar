@@ -2283,7 +2283,8 @@ re-check when the UI wording is written (2026-10-13: not yet verified).
 
 #### Build order
 
-- [ ] **11a — Source and method check (no app code).** For each Tier 1 source: license, download
+- [x] **11a — Source and method check (no app code).** *Done 2026-10-13 — see "11a findings";
+      six owner decisions listed there.* For each Tier 1 source: license, download
       path (does CI get a 403, like FEMA?), resolution, latest year, file size. Ask ACAG about
       the V5.NA license. Find a radon tract source or confirm there is none. Get 2020 block
       populations and internal points. Write the acceptance numbers' starting bars here.
@@ -2349,6 +2350,89 @@ change); mirror to R2 as a single block table (GEOID, pop, lat, lon) of ~8M rows
 **Monitors and smoke — public, small.** EPA AirData `annual_conc_by_monitor_YYYY.zip`
 (2023: 4.3 MB, 2024: 4.0 MB) for the monitor check; NOAA HMS daily smoke shapefiles
 `…/Smoke_Polygons/Shapefile/YYYY/MM/hms_smokeYYYYMMDD.zip` (~30 KB a day).
+
+**Monitor check, first pass (2023, AQS `annual_conc_by_monitor_2023`, 842 complete PM2.5
+monitors in the lower 48, each against the V6.GL.03 cell holding it):** bias **+0.38**, RMSE
+**1.46**, MAE 1.15 µg/m³, r 0.74 — but **in-sample**: ACAG calibrated on these monitors, and we
+can't retrain their model, so the plan's "hold out each monitor in turn" can't be run by us.
+ACAG's own out-of-sample numbers for annual North American PM2.5 (Shen et al., ACS ES&T Air,
+DOI 10.1021/acsestair.5c00251, CV table): 10-fold spatial CV **RMSE 1.7** (R² 0.71); 200 km
+leave-region-out **RMSE 2.3** (R² 0.52).
+- **Where it fails is where the plan worries.** Allegheny: Liberty (by the Clairton coke
+  works) 13.19 measured vs 10.08 modelled; the county's monitors span 8.3–13.2, the model
+  9.6–11.6 — the contrast is squeezed by more than half. Wood-smoke mountain valleys read
+  4–7 µg/m³ clean: Portola CA 12.0 vs 5.5, Willits CA 12.0 vs 5.2, Yreka CA 11.0 vs 7.2,
+  Grants Pass OR 11.4 vs 7.9. A clean-air search would surface exactly these.
+- **Most areas are within the error of each other.** Sampling the 2023 grid at every area's
+  population center: percentiles 5/25/50/75/95 = 5.9 / 7.9 / 8.8 / 9.9 / 11.5 µg/m³ — the
+  middle half spans **2.0**, less than the out-of-sample RMSE, and 73% of areas are within
+  1.7 of the median. Percentile points would mostly rank model noise; only the tails are
+  distinguishable. (98% of areas are above WHO's 5; 45% above EPA's 9 in 2023, a smoke year.)
+- **Dilution check, Washtenaw:** block-weighted vs one population-center cell differ by a
+  median 0.05, max 0.38 µg/m³ (blocks within one area span up to 1.7). At 1 km, blocks add
+  little *here*; 11c repeats it on big rural and mountain tracts before deciding.
+
+**A tract-level ozone source exists after all (Tier 2 "held" → candidate).** EPA's Fused Air
+Quality Surfaces using Downscaling (FAQSD: CMAQ fused with monitors by a Bayesian downscaler —
+a modelled surface, so rule 5 is satisfied) gives **daily ozone (8-hr max) and PM2.5 at 2010
+census-tract centroids, 2002–2022**: `https://ofmpub.epa.gov/rsig/rsigserver?data/FAQSD/
+outputs/{YEAR}_ozone_daily_8hour_maximum_2010_census.txt.gz` (2022: 467 MB; PM2.5 458 MB). A US
+federal work (public domain; the page states no terms). Needs a 2010→2020 tract crosswalk. Its
+PM2.5 is also a cross-check on ACAG at the Liberty monitor (its downscaler leans on monitors).
+SatPM's **SatNO2 V4.GL.01** (surface NO2, 0.01°, monthly, 2005–2024, S3 `SATNO2V4GL01/`,
+~780 MB a month globally) is the NO2 candidate — no license on its page; its Zenodo record
+(10.5281/zenodo.19740022) needs checking.
+
+**Radon — a ZIP-level source, open.** The PNAS 2025 model (Li, Coull, Zilli Vieira,
+Koutrakis) is published on OSF (DOI 10.17605/OSF.IO/3SHC4), **CC0**:
+`ZIPCODE_Average_Radon_2001_2021.csv` (29,231 ZCTAs, lower 48; basement, above-ground and
+"screening" values, each with an SD; 2.4 MB) and `ZIPCODE_Monthly_Exceedency_Estimation_
+2001_2021.xlsx` (30 MB). Units aren't stated in the file or the code repo; the values behave
+like **geometric means in pCi/L** (median 1.6; Columbus 43215 3.2, Des Moines 50309 2.7,
+San Francisco 94110 0.7) — *confirm before use*. The paper's headline: ~84M people (26.8%)
+live in homes above 4 pCi/L, **mostly in "low-radon" zones** — so the per-ZIP *exceedance*
+file, not the average, is the honest number. ZCTA → blocks via Census's ZCTA–block
+relationship file keeps rule 1. **No "Vanderbilt national tract radon map" was found**;
+only state tract data (Wisconsin, Vermont). Radon moves from "info only (county zone)" to a
+candidate ZIP-level measure — still "test your house", never a verdict.
+
+**Lead paint — correction to the table.** B25034 bins by decade ("Built 1970 to 1979"), so
+"before 1978" can't be computed. Usable: before 1980, before 1960, before 1950 (tested on
+Washtenaw's 107 tracts). EPA's retired EJScreen lead-paint indicator used **pre-1960**.
+
+**Smoke.** V6.NA.01 (CC BY 4.0) has composition but **no biomass-burning field**; only
+V5.NA.05.02 has it, and states no license. NOAA HMS plumes (public domain) give "days with
+smoke overhead". Ask ACAG (draft below) before using V5.NA.05.02; otherwise smoke is HMS
+days only, and the smoke a person breathes stays inside total PM2.5.
+
+> *Draft to ACAG (s.siyuan@wustl.edu per the file metadata; or the lab contact):* "We'd like to
+> use V5.NA.05.02's biomass-burning PM2.5 contribution (annual, 0.01°) in a free, non-commercial
+> relocation tool, sampled at census blocks and credited to van Donkelaar et al. (2024). The
+> V6 products state CC BY 4.0; the V5.NA.05.02 page states no license. May we use it under the
+> same terms?"
+
+**Proposed acceptance bars (owner to confirm — set before 11c looks further):**
+- *Monitor check:* in-sample against the latest AQS year — |bias| ≤ 0.5 and RMSE ≤ 2.0
+  µg/m³ (2023 passes: +0.38, 1.46); and cite ACAG's out-of-sample 1.7–2.3 as the error
+  people are shown. The 1.5 bar can't be tested out-of-sample by us.
+- *Contrast check:* for each pair, the model gap has the monitors' sign and at least half
+  their size. Allegheny (Liberty vs South Fayette: measured 4.9, modelled 0.4) **fails** —
+  so 11c needs a remedy before PM2.5 ranks (decision 2).
+- *Resolution:* scoring must not separate values closer than the out-of-sample error.
+
+**Decisions this raises (owner):**
+1. Source: V6.GL.03 (CC BY 4.0, 2022–2024 mean) instead of the archived V6.GL.02.04. *Recommended.*
+2. The hot-spot misses. Options: (a) show PM2.5 but don't rank on it; (b) rank in coarse
+   anchored bands (e.g. ≤5, 5–8, 8–10, 10–12, >12 µg/m³), so only differences larger than
+   the error move a score — *recommended*; (c) also show, beside the area's value, the
+   nearest EPA monitor's reading and distance as information — never assigned to the area
+   (rule 5) — which is what would have warned about Liberty and Portola; (d) blend in FAQSD's
+   monitor-fused tract PM2.5 (2022) where monitors exist. (b) + (c) together is the honest
+   pairing.
+3. Blocks vs block groups for sampling (11c decides on more counties).
+4. Radon from the ZIP-level OSF data (exceedance share), not EPA's county zones.
+5. Lead paint as "built before 1960" (EJScreen's definition), with before-1980 shown.
+6. Send the ACAG note for V5.NA.05.02 (biomass), or keep smoke as HMS days.
 
 #### Review notes (2026-10-13, after the Washtenaw fixes — not decisions)
 
