@@ -877,6 +877,23 @@ def test_pollution_smoke() -> None:
     check(t.sample(*out)[0] == 0 and a.sample(*out)[0] == 182.5, "a Light plume isn't a thick day")
 
 
+def test_pollution_lead() -> None:
+    """Older housing: pre-1960 and pre-1980 shares of B25034, margins by the proportion rule."""
+    print("\npollution.lead (older housing, lead-paint risk)")
+    from .pollution.lead import shares
+
+    cols = ["year_built_total", "built_1970s", "built_1960s", "built_1950s", "built_1940s", "built_before_1940"]
+    est = pd.DataFrame([[1000, 200, 100, 100, 50, 50], [40, 0, 0, 10, 5, 5]], columns=cols, dtype=float)
+    moe = pd.DataFrame([[0, 30, 20, 20, 10, 10], [10, 0, 0, 12, 8, 8]], columns=cols, dtype=float)
+    out = shares(est, moe)
+    check(out.at[0, "pre1960_share"] == 20.0 and out.at[0, "pre1980_share"] == 50.0,
+          "before 1960 = 1950s + 1940s + earlier; before 1980 adds the 60s and 70s")
+    check(abs(out.at[0, "pre1960_share_moe"] - 100 * np.sqrt(20**2 + 10**2 + 10**2) / 1000) < 0.06,
+          "a fixed total's share MOE is the numerator's (summed in quadrature) over it")
+    check(out.at[1, "lead_low_confidence"] == "1" and out.at[0, "lead_low_confidence"] == "",
+          "a tiny place's wide margin is flagged low confidence")
+
+
 def test_noaa_per_variable_station_selection() -> None:
     print("\nNOAA: stations are selected per variable group, not per county")
     from .sources import noaa
@@ -1425,6 +1442,7 @@ def main() -> int:
         test_pollution_monitors()
         test_pollution_doubt()
         test_pollution_smoke()
+        test_pollution_lead()
 
         fixtures = _make_synthetic()
         try:

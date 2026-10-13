@@ -393,6 +393,15 @@ ACS_TRACT_VARIABLES = {
     "B03002_009": "race_two_plus_nh",
     "B03002_012": "race_hispanic",
     "B19083_001": "gini_index",
+    # Older housing — lead-paint risk (Phase 11d, 2026-10-13). B25034 bins by decade, so
+    # "before 1978" (the lead-paint ban) can't be computed; before 1960 (EJScreen's
+    # definition) and before 1980 can.
+    "B25034_001": "year_built_total",
+    "B25034_007": "built_1970s",
+    "B25034_008": "built_1960s",
+    "B25034_009": "built_1950s",
+    "B25034_010": "built_1940s",
+    "B25034_011": "built_before_1940",
 }
 # ACS top-codes: a median at these values means "this much or more". (Household income
 # was missing until the full audit, 2026-10-04: 483 areas at the cap were flagged "low
