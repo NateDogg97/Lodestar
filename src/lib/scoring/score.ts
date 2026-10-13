@@ -151,11 +151,18 @@ export function prepareDataset(data: CountyDataset): PreparedDataset {
   const percentiles = {} as Record<MetricKey, Float64Array>;
   const bounds = {} as Record<MetricKey, PercentileBounds>;
   for (const key of METRIC_KEYS) {
-    percentiles[key] = percentileRanks(data.values[key]);
-    bounds[key] = percentileBounds(data.values[key]);
+    const column = data.values[key];
+    let ranks = rankCache.get(column);
+    if (!ranks) rankCache.set(column, (ranks = { percentiles: percentileRanks(column), bounds: percentileBounds(column) }));
+    percentiles[key] = ranks.percentiles;
+    bounds[key] = ranks.bounds;
   }
   return { data, percentiles, bounds };
 }
+
+// Ranks per column array: a household change (`withTaxes`, each keystroke in a budget) makes
+// a new dataset with only the taxes column new, so the rest aren't ranked again.
+const rankCache = new WeakMap<Float64Array, { percentiles: Float64Array; bounds: PercentileBounds }>();
 
 function clampWeight(w: number | undefined): number {
   if (w === undefined || !Number.isFinite(w)) return 0;

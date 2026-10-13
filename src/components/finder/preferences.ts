@@ -111,13 +111,19 @@ export function budgetColumn(household: Household): string | null {
 /**
  * The household change, and what it implies (Phase 10c): a new budget turns its measure
  * (home value or rent) on at 3 if it was off, so setting one always does something visible.
+ * Switching between buying and renting moves the priority with the budget: left on the old
+ * measure, it would score "cheaper is better" there with no budget.
  */
 export function withHousehold(prefs: Preferences, household: Household): Preferences {
   const before = budgetColumn(prefs.household);
   const col = budgetColumn(household);
   const next = { ...prefs, household };
-  if (col && col !== before && !(prefs.area.weights[col] ?? 0)) {
-    next.area = { ...prefs.area, weights: { ...prefs.area.weights, [col]: 3 } };
+  if (col && col !== before) {
+    const weights = { ...prefs.area.weights };
+    const moved = before ? (weights[before] ?? 0) : 0;
+    if (before) delete weights[before];
+    if (!(weights[col] ?? 0)) weights[col] = moved || 3;
+    next.area = { ...prefs.area, weights };
   }
   return next;
 }

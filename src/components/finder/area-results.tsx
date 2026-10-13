@@ -302,14 +302,17 @@ function PartNotes({ parts }: { parts: AreaPart[] }) {
   const scored = parts.filter((p) => p.scored !== undefined);
   if (!budget && scored.length === 0) return null;
   const money = (key: string, v: number) => formatArea(key, v);
+  // The budget is scored on the estimate when there is one, so it's compared on it too.
+  const fit = budget ? (budget.scored ?? budget.value) : null;
   return (
     <div className="space-y-1 text-caption text-neutral-600 dark:text-neutral-400">
-      {budget && budget.value !== null && (
+      {budget && fit !== null && (
         <p>
-          {budget.label}: {money(budget.key, budget.value)},{" "}
-          {budget.value <= budget.budget!
+          {budget.label}: {budget.scored !== undefined && "≈ "}
+          {money(budget.key, fit)},{" "}
+          {fit <= budget.budget!
             ? `within your ${money(budget.key, budget.budget!)} budget`
-            : `${(budget.value / budget.budget!).toFixed(1)}× your ${money(budget.key, budget.budget!)} budget`}
+            : `${(fit / budget.budget!).toFixed(1)}× your ${money(budget.key, budget.budget!)} budget`}
           . Full marks at or under it, none at 1.5× it.
         </p>
       )}

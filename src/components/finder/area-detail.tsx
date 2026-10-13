@@ -437,10 +437,11 @@ export function PriorityBar({ c, full, showLevel = true }: { c: AreaPart; full: 
           )}
           {full && (
             <Note>
+              {/* The budget is scored on the estimate when there is one, so it's compared here too. */}
               {c.budget !== undefined && c.value !== null
-                ? c.value <= c.budget
+                ? (c.scored ?? c.value) <= c.budget
                   ? `within your ${formatArea(c.key, c.budget)} budget`
-                  : `${(c.value / c.budget).toFixed(1)}× your ${formatArea(c.key, c.budget)} budget`
+                  : `${((c.scored ?? c.value) / c.budget).toFixed(1)}× your ${formatArea(c.key, c.budget)} budget`
                 : standing(c)}{" "}
               · weight {c.weight} ·{" "}
               <span className={(c.impact ?? 0) >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}>
@@ -955,9 +956,10 @@ function TaxesSection({
   const published = areaValue(area, "property_tax_rate");
   const flagged = area.lowConfidence.includes("property_tax_rate");
   const i = ranking?.indexByGeoid.get(area.geoid);
-  const eb = ranking && i !== undefined ? (ranking.areas.values.get("property_tax_rate_eb")?.[i] ?? NaN) : NaN;
-  // The rate the estimate uses: the area's estimate (toward its city's typical area), else as published.
-  const own = published === null ? NaN : Number.isFinite(eb) ? eb : published;
+  // The rate the estimate uses — the one Taxes ranks on: the area's estimate (toward its
+  // city's typical area), else as published.
+  const est = context?.rate ?? NaN;
+  const own = published === null ? NaN : Number.isFinite(est) ? est : published;
   const countyRate = context ? context.data.values.property_tax_effective_rate[context.index] : NaN;
   const t = context ? taxesAtRate(context.data, context.index, own, context.schedule, context.household) : null;
   const h = context?.household ?? {};

@@ -176,9 +176,12 @@ export const notResidential = (areas: NationalAreas, i: number) =>
 /** Most owned homes are mobile homes: the home value is real but isn't a house price. */
 export const mostlyMobileHomes = (areas: NationalAreas, i: number) => areas.lowConfidence[i].includes("mobile_homes");
 
-const pctCache = new WeakMap<NationalAreas, Map<string, Float64Array>>();
-const boundsCache = new WeakMap<NationalAreas, Map<string, PercentileBounds>>();
-const rankedCache = new WeakMap<NationalAreas, Map<string, Float64Array>>();
+// Keyed by column arrays, not by the areas object: a household change (each keystroke in a
+// budget) makes a new object with one new column (`withAreaTaxes`), and every other column
+// keeps its ranks. Percentiles and bounds key on the ranked column; it keys on its source.
+const pctCache = new WeakMap<Float64Array, Float64Array>();
+const boundsCache = new WeakMap<Float64Array, PercentileBounds>();
+const rankedCache = new WeakMap<Float64Array, { lowConfidence: string[][]; est?: Float64Array; ranked: Float64Array }>();
 
 /** Measures ranked by their empirical-Bayes estimate where the file has one (Phase 10e). */
 export const SCORED_AS: Partial<Record<string, string>> = {
@@ -196,22 +199,27 @@ export const SCORED_AS: Partial<Record<string, string>> = {
  * in `SCORED_AS` uses its estimate wherever the published value is known and the estimate
  * is too (an older file, or an area merged from one, has none: its value as published).
  */
+// A column the file doesn't have (an older file): all unknown, one shared array per length
+// so its percentiles and bounds are computed once too. Never written to.
+const nanColumns = new Map<number, Float64Array>();
+function nanColumn(n: number): Float64Array {
+  let v = nanColumns.get(n);
+  if (!v) nanColumns.set(n, (v = new Float64Array(n).fill(NaN)));
+  return v;
+}
+
 function rankedColumn(areas: NationalAreas, column: string): Float64Array {
-  let cache = rankedCache.get(areas);
-  if (!cache) rankedCache.set(areas, (cache = new Map()));
-  let v = cache.get(column);
-  if (!v) {
-    const src = areas.values.get(column);
-    const est = SCORED_AS[column] ? areas.values.get(SCORED_AS[column]!) : undefined;
-    v = new Float64Array(areas.n).fill(NaN);
-    if (src) {
-      for (let i = 0; i < areas.n; i++) {
-        if (notResidential(areas, i)) continue;
-        v[i] = est && Number.isFinite(src[i]) && Number.isFinite(est[i]) ? est[i] : src[i];
-      }
-    }
-    cache.set(column, v);
+  const src = areas.values.get(column);
+  if (!src) return nanColumn(areas.n);
+  const est = SCORED_AS[column] ? areas.values.get(SCORED_AS[column]!) : undefined;
+  const hit = rankedCache.get(src);
+  if (hit && hit.lowConfidence === areas.lowConfidence && hit.est === est) return hit.ranked;
+  const v = new Float64Array(areas.n).fill(NaN);
+  for (let i = 0; i < areas.n; i++) {
+    if (notResidential(areas, i)) continue;
+    v[i] = est && Number.isFinite(src[i]) && Number.isFinite(est[i]) ? est[i] : src[i];
   }
+  rankedCache.set(src, { lowConfidence: areas.lowConfidence, est, ranked: v });
   return v;
 }
 
@@ -237,13 +245,9 @@ export function budgetPoints(value: number, budget: number): number {
 
 /** An area-level column's tie groups, for points (see `percentileBounds`), computed once. */
 export function areaBounds(areas: NationalAreas, column: string): PercentileBounds {
-  let cache = boundsCache.get(areas);
-  if (!cache) boundsCache.set(areas, (cache = new Map()));
-  let b = cache.get(column);
-  if (!b) {
-    b = percentileBounds(rankedColumn(areas, column));
-    cache.set(column, b);
-  }
+  const ranked = rankedColumn(areas, column);
+  let b = boundsCache.get(ranked);
+  if (!b) boundsCache.set(ranked, (b = percentileBounds(ranked)));
   return b;
 }
 
@@ -260,13 +264,9 @@ export function areaPoints(areas: NationalAreas, column: string, i: number, dire
 
 /** An area-level column's national percentile per area (0–100, NaN unknown), computed once. */
 export function areaPercentiles(areas: NationalAreas, column: string): Float64Array {
-  let cache = pctCache.get(areas);
-  if (!cache) pctCache.set(areas, (cache = new Map()));
-  let p = cache.get(column);
-  if (!p) {
-    p = percentileRanks(rankedColumn(areas, column));
-    cache.set(column, p);
-  }
+  const ranked = rankedColumn(areas, column);
+  let p = pctCache.get(ranked);
+  if (!p) pctCache.set(ranked, (p = percentileRanks(ranked)));
   return p;
 }
 
@@ -471,7 +471,7 @@ export function explainArea(
       flagged: !Number.isNaN(v) && flagged.has(c.column),
     };
     if (c.budget) part.budget = c.budget;
-    if (Number.isFinite(sv) && Number.isFinite(v) && Math.abs(sv - v) >= 0.05 * Math.abs(v)) part.scored = sv;
+    if (Number.isFinite(sv) && Number.isFinite(v) && sv !== v && Math.abs(sv - v) >= 0.05 * Math.abs(v)) part.scored = sv;
     return part;
   });
   for (const c of county?.contributions ?? []) {

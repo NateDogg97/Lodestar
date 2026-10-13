@@ -91,6 +91,11 @@ export interface AreaTaxContext {
   index: number;
   schedule: Schedule | "none" | null;
   household: Household;
+  /**
+   * The area's own rate (`areaTaxRate`): its estimate is in the national file only, so this
+   * is unset until that file loads and the page uses the published rate meanwhile.
+   */
+  rate?: number;
 }
 
 /**

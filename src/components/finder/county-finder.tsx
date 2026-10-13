@@ -68,6 +68,7 @@ import {
   topAreas,
   US_TYPICAL_COUNTY,
   withAreaTaxes,
+  areaTaxRate,
   type ResultBadges,
 } from "@/lib/tracts";
 import { AreaResultsList, CountyBestAreas, CountyResultsList, ResultsHeader, type ResultCap } from "./area-results";
@@ -463,6 +464,15 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   const showPlace = view === "place" && selected !== null;
   const insideOpen = showPlace && insideFips !== null && insideFips === selectedFips;
   const areasState = useCountyAreas(insideOpen ? insideFips : null);
+  // An area page's Taxes uses the area's rate estimate, which only the national file has:
+  // load it for an open area page too, so the page matches what Taxes ranks on.
+  const pageNationalState = useNationalAreas(insideOpen && selectedArea !== null);
+  const selectedAreaRate = useMemo(() => {
+    const nat =
+      nationalState.status === "ready" ? nationalState.data : pageNationalState.status === "ready" ? pageNationalState.data : null;
+    const i = nat && selectedArea ? nat.geoid.indexOf(selectedArea) : -1;
+    return nat && i >= 0 ? areaTaxRate(nat, i) : undefined;
+  }, [nationalState, pageNationalState, selectedArea]);
   const placeInUrl = insideOpen && selectedArea ? selectedArea : showPlace ? selectedFips : null;
 
   const [hoverAreas, setHoverAreas] = useState<string[]>([]);
@@ -861,6 +871,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
           index: placeProps.score.index,
           schedule: parseSchedule(schedules[scoped.state[placeProps.score.index]]),
           household: deferred.household,
+          rate: selectedAreaRate,
         },
       }
     : null;

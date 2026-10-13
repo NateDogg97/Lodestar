@@ -98,6 +98,13 @@ describe("sanitizePreferences", () => {
     expect(withHousehold(EMPTY_PREFERENCES, { tenure: "rent", budget: 1800 }).area.weights.median_gross_rent).toBe(3);
   });
 
+  it("switching buy → rent moves the budget's priority, weight and all", () => {
+    const buy = withHousehold(EMPTY_PREFERENCES, { tenure: "buy", budget: 400_000 });
+    const heavier = { ...buy, area: { ...buy.area, weights: { median_home_value: 5 } } };
+    const rent = withHousehold(heavier, { tenure: "rent", budget: 1800 });
+    expect(rent.area.weights).toEqual({ median_gross_rent: 5 });
+  });
+
   it("rejects non-objects", () => {
     expect(sanitizePreferences(null)).toBeNull();
     expect(sanitizePreferences([1, 2])).toBeNull();
