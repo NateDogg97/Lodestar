@@ -3,7 +3,7 @@
  * each with what a knowledgeable person would expect of the results. An expectation
  * returns the results that break it; any means the audit fails.
  */
-import { AREA_PRIORITIES, areaWatchOuts, COUNTY_METRICS_NOW_AREA } from "@/lib/tracts";
+import { AREA_PRIORITIES, areaPoints, areaWatchOuts, COUNTY_METRICS_NOW_AREA, isAnchored, parseNationalAreas, scoreNational } from "@/lib/tracts";
 import { METRICS, NOT_IN_FILTERS, type Direction, type MetricKey } from "@/lib/scoring";
 import { DEFAULT_PREFERENCES, EMPTY_PREFERENCES, type Preferences } from "@/components/finder/preferences";
 
@@ -325,13 +325,36 @@ const composite: Scenario[] = [
   },
 ];
 
-/** One priority at a time, at its default direction: the top 20 must sit in the best 2%. */
+/** The best points any residential area earns on an anchored measure (Phase 11). */
+const bestPoints = (r: RunResult, column: string) => {
+  let best = -Infinity;
+  for (let i = 0; i < r.areas.n; i++) {
+    const p = areaPoints(r.areas, column, i, "lower");
+    if (p > best) best = p;
+  }
+  return best;
+};
+
+/**
+ * One priority at a time, at its default direction: the top 20 must sit in the best 2%.
+ * Anchored measures (pollution) tie every area past the best anchor at full points, so
+ * there the top 20 must earn the best points any area does (within a point).
+ */
 const singles: Scenario[] = AREA_PRIORITIES.map((d) => ({
   name: `Single priority: ${d.label} (${d.defaultDirection})`,
   intent: `Only ${d.label.toLowerCase()} weighted, ${d.defaultDirection} is better.`,
-  expect: "The top 20 are in the best 2% of US areas on this measure; ties broken by population.",
+  expect: isAnchored(d.key)
+    ? "The top 20 earn the best points any US area does on this measure (anchored, not ranked); ties broken by population."
+    : "The top 20 are in the best 2% of US areas on this measure; ties broken by population.",
   prefs: P({ area: { weights: { [d.key]: 3 } } }),
-  checks: [allTop(20, `not in the best 2% of ${d.label}`, extreme(d.key, d.defaultDirection))],
+  checks: [
+    isAnchored(d.key)
+      ? (r) => {
+          const best = bestPoints(r, d.key);
+          return allTop(20, `under the best points on ${d.label}`, (rr, i) => areaPoints(rr.areas, d.key, i, "lower") >= best - 1)(r);
+        }
+      : allTop(20, `not in the best 2% of ${d.label}`, extreme(d.key, d.defaultDirection)),
+  ],
 }));
 
 const flipped: Scenario[] = (
@@ -442,4 +465,67 @@ const outliers: Scenario[] = [
   },
 ];
 
-export const SCENARIOS: Scenario[] = [...composite, ...singles, ...flipped, ...countySingles, ...outliers];
+/**
+ * Pollution (Phase 11e): a clean-air search must not surface a place a monitor says is
+ * dirtier than the model (Portola's wood-smoke valley read cleaner than Reno), and pollution
+ * must change nothing unless it's weighted.
+ */
+const POLLUTION_COLUMNS = ["pm25", "pm25_doubt", "smoke_days_thick", "pre1960_share", "radon_above4"];
+const pollution: Scenario[] = [
+  {
+    name: "Clean air (PM2.5) and few smoke days",
+    intent: "PM2.5 5, wildfire smoke days 3.",
+    expect: "Clean-air areas (mostly under WHO's 5 µg/m³ or close) with few smoke days; none whose PM2.5 a nearby monitor doubts; several states.",
+    prefs: P({ area: { weights: { pm25: 5, smoke_days_thick: 3 } } }),
+    checks: [
+      allTop(100, "a PM2.5 value a monitor doubts", (r, i) => !r.areas.lowConfidence[i].includes("pm25")),
+      allTop(50, "PM2.5 over 7 µg/m³", (r, i) => r.value(i, "pm25") <= 7),
+      allTop(50, "more than 15 smoke days a year", (r, i) => r.value(i, "smoke_days_thick") <= 15),
+      spread(4),
+    ],
+  },
+  {
+    name: "Young family who cares about the air and old paint",
+    intent: "Nearby schools 4, PM2.5 3, older homes 3, homes under $500k.",
+    expect: "Strong schools in newer suburbs with typical-or-better air; no doubted PM2.5 in the top 20.",
+    prefs: P({ area: { weights: { nearby_school_pctl: 4, pm25: 3, pre1960_share: 3 }, limits: { median_home_value: { max: 500_000 } } } }),
+    checks: [
+      allTop(20, "schools below the 65th percentile", (r, i) => r.value(i, "nearby_school_pctl") >= 65),
+      allTop(20, "a PM2.5 value a monitor doubts", (r, i) => !r.areas.lowConfidence[i].includes("pm25")),
+      allTop(20, "more than 30% of homes built before 1960", (r, i) => r.value(i, "pre1960_share") <= 30),
+    ],
+  },
+  {
+    name: "Pollution unweighted changes nothing",
+    intent: "The default search, scored again on areas with every pollution column removed.",
+    expect: "Identical scores: a measure nobody weights moves no one (Watch out may still speak).",
+    prefs: DEFAULT_PREFERENCES,
+    checks: [
+      (r) => {
+        if (!r.ns) return [];
+        const stripped = parseNationalAreas({
+          format: "areas-v1",
+          n: r.areas.n,
+          columns: {
+            geoid: r.areas.geoid,
+            label: r.areas.label,
+            low_confidence: r.areas.lowConfidence.map((f) => f.filter((x) => x !== "pm25" && x !== "pre1960_share").join(";")),
+            ...Object.fromEntries(
+              [...r.areas.values].filter(([k]) => !POLLUTION_COLUMNS.includes(k)).map(([k, v]) => [k, Array.from(v, (x) => (Number.isNaN(x) ? null : x))]),
+            ),
+          },
+        });
+        const again = scoreNational(stripped, r.search);
+        const diff: string[] = [];
+        for (let i = 0; i < r.areas.n && diff.length < 5; i++) {
+          const a = r.ns.score[i];
+          const b = again.score[i];
+          if (!(Number.isNaN(a) && Number.isNaN(b)) && Math.abs(a - b) > 1e-9) diff.push(`score changed: ${r.areas.name[i]}`);
+        }
+        return diff;
+      },
+    ],
+  },
+];
+
+export const SCENARIOS: Scenario[] = [...composite, ...singles, ...flipped, ...countySingles, ...outliers, ...pollution];
