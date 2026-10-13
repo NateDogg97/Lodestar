@@ -72,6 +72,7 @@ SOURCES = [
     ("equality", "Racial equality (income parity, integration)", False),
     ("zillow_county", "Zillow county home values (today's prices)", False),
     ("newbuyer", "New buyers' property tax vs all owners (ACS PUMS)", False),
+    ("pollution", "Pollution: PM2.5, smoke, older housing, radon (Phase 11)", False),
 ]
 
 

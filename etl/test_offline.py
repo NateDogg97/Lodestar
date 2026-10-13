@@ -922,6 +922,27 @@ def test_pollution_radon() -> None:
         check(True, "an unknown threshold raises, not mislabels")
 
 
+def test_pollution_backfill() -> None:
+    """Area files gain the pollution columns; PM2.5 is flagged where most residents are doubted."""
+    print("\ntracts.backfill --pollution (area files)")
+    from .tracts.backfill import POLLUTION, patch_pollution
+
+    payload = {"columns": ["geoid", "low_confidence"],
+               "rows": [["99001000100", "crime;pm25"], ["99001000200", ""], ["99001000300", ""]]}
+    by = {"99001000100": {"pm25": 11.04, "pm25_doubt": 80.0, "pm25_monitor_site": "42-003-0064",
+                          "pre1960_share": 40.4, "flags": {"pre1960_share"}},
+          "99001000200": {"pm25": 7.96, "pm25_doubt": 20.0, "radon_above4": float("nan"), "flags": set()}}
+    counts = patch_pollution(payload, by)
+    at = {c: payload["columns"].index(c) for c in payload["columns"]}
+    a, b, c = payload["rows"]
+    check(all(k in at for k in POLLUTION), "every pollution column is added")
+    check(a[at["pm25"]] == 11.0 and a[at["pm25_monitor_site"]] == "42-003-0064", "values rounded, monitor id kept as text")
+    check(a[at["low_confidence"]].split(";") == ["crime", "pm25", "pre1960_share"],
+          "doubted by most residents -> pm25 flag; ACS margin -> pre1960 flag; others kept, none doubled")
+    check(b[at["low_confidence"]] == "" and b[at["radon_above4"]] is None, "a minority doubted isn't flagged; NaN is null")
+    check(c[at["pm25"]] is None and counts == {"pollution": 2, "doubted": 1}, "an area with no row stays unknown")
+
+
 def test_noaa_per_variable_station_selection() -> None:
     print("\nNOAA: stations are selected per variable group, not per county")
     from .sources import noaa
@@ -1472,6 +1493,7 @@ def main() -> int:
         test_pollution_smoke()
         test_pollution_lead()
         test_pollution_radon()
+        test_pollution_backfill()
 
         fixtures = _make_synthetic()
         try:

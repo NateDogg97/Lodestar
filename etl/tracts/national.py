@@ -69,6 +69,9 @@ NUMBERS = {  # column -> decimals kept
     # nearby (etl/tracts/shrink.py). Shown values and must-have limits use the columns above.
     "median_home_value_eb": 0, "median_gross_rent_eb": 0, "median_household_income_eb": 0,
     "violent_rate_eb": 0, "property_rate_eb": 0,
+    # Phase 11 (etl/pollution/): what areas are ranked on (PM2.5, thick-smoke days, older
+    # housing) or cautioned about (PM2.5 doubt, radon). Detail stays in the county files.
+    "pm25": 1, "pm25_doubt": 0, "smoke_days_thick": 1, "pre1960_share": 0, "radon_above4": 0,
 }
 COLUMNS = TEXT + list(NUMBERS)
 EB = {"median_home_value_eb": "median_home_value", "median_gross_rent_eb": "median_gross_rent",

@@ -75,6 +75,8 @@ PIPELINE = [
     ("zillow_county", "etl.sources.zillow_county", False),
     # What a new buyer pays in property tax vs all owners (Census microdata), for Taxes.
     ("newbuyer", "etl.sources.newbuyer", False),
+    # Pollution (Phase 11): reads the national block runs' county tables (etl/pollution/).
+    ("pollution", "etl.pollution.county", False),
     # Map shapes. Not joined — written as its own file and published beside
     # the data after validation confirms both cover the same counties.
     ("boundaries", "etl.sources.boundaries", False),

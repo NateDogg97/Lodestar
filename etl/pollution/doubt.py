@@ -31,6 +31,9 @@ from .grid import Grid
 
 DOUBT_GAP = 2.0  # µg/m³; ACAG's out-of-sample RMSE is 1.7–2.3
 DOUBT_MILES = 5.0
+# A place is *doubted* — its PM2.5 flagged low confidence, and its points capped at the
+# "typical" band's in the app — when at least this % of its residents are (owner, 11e).
+DOUBTED_SHARE = 50.0
 
 
 def disagreeing(monitors: pd.DataFrame, grid: Grid, gap: float = DOUBT_GAP) -> pd.DataFrame:

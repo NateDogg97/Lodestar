@@ -4,6 +4,7 @@ Refresh some sources' columns in the published county file, without a full rebui
     python -m etl.patch zillow_county            # one source
     python -m etl.patch zillow_county newbuyer nri
     python -m etl.patch --dry-run nri            # validate and report; write nothing
+    python -m etl.patch pollution                # after etl.pollution.{pm25,smoke,radon} all
 
 A full build (`python -m etl.build`) needs every source's interim file — NOAA's
 thousands of station files, the hand-downloaded SEDA tables — and a fresh clone has
@@ -36,6 +37,8 @@ SOURCES = {
     "newbuyer": "etl.sources.newbuyer",
     "nri": "etl.sources.nri",
     "edges": "etl.edges",
+    # Phase 11: from the national block runs and the county ACS (etl/pollution/county.py).
+    "pollution": "etl.pollution.county",
 }
 
 

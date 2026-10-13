@@ -17,6 +17,11 @@ thing; this patches public/data/tracts/{fips}.json in place:
 - a household income at the Census cap ($250,001) is top-coded, not low confidence
   (full audit, 2026-10-04; config.ACS_TOPCODE gained the cap).
   `--offline` does only these last two, with no network.
+- pollution (Phase 11, 2026-10-13): `--pollution` adds the columns of the national tables
+  `etl.pollution.pm25`, `.smoke` and `.radon` wrote to data/interim/, and the older-housing
+  shares from the tract ACS (one Census call per state). PM2.5 gains the "pm25" flag where
+  most residents live near a monitor reading well above it (etl/pollution/doubt.py), and
+  the older-housing share its ACS margin flag.
 
 One Census API call per state (all tracts at once), then `python -m etl.tracts.national`
 to rebuild areas.json, then `python -m etl.tracts.upload`.
@@ -25,6 +30,7 @@ to rebuild areas.json, then `python -m etl.tracts.upload`.
     python -m etl.tracts.backfill --state TX # one state
     python -m etl.tracts.backfill --offline  # only the crime and top-code rules (no network)
     python -m etl.tracts.backfill --demographics  # only who lives here
+    python -m etl.tracts.backfill --pollution     # only pollution (after the national runs)
 """
 
 from __future__ import annotations
@@ -264,6 +270,64 @@ def patch_topcodes(payload: dict) -> dict[str, int]:
     return counts
 
 
+# Pollution columns in the area files: name -> decimals (etl/pollution/*, Phase 11).
+POLLUTION = {
+    "pm25": 1, "pm25_max": 1, "pm25_above": 0, "pm25_doubt": 0,
+    "pm25_monitor_site": None, "pm25_monitor_name": None, "pm25_monitor_km": 0, "pm25_monitor": 1,
+    "smoke_days": 0, "smoke_days_thick": 1,
+    "pre1960_share": 0, "pre1960_share_moe": 0, "pre1980_share": 0, "pre1980_share_moe": 0,
+    "radon_above4": 0, "radon_above2": 0, "radon_ci": 0,
+}
+POLLUTION_FLAGS = ("pm25", "pre1960_share")
+
+
+def pollution_table() -> "pd.DataFrame":
+    """The national per-tract pollution tables, joined (each must have been run for `all`)."""
+    import pandas as pd
+
+    from .. import config
+
+    out = None
+    for name in ("pm25", "smoke", "radon"):
+        path = config.INTERIM_DIR / f"{name}_tracts.csv"
+        t = pd.read_csv(path, dtype={"tract": str, "pm25_monitor_site": str})
+        out = t if out is None else out.merge(t, on="tract", how="outer")
+    assert out is not None
+    return out.rename(columns={"tract": "geoid"})
+
+
+def patch_pollution(payload: dict, by_geoid: dict[str, dict]) -> dict[str, int]:
+    """Pollution columns and their flags for one county payload, in place (idempotent)."""
+    from ..pollution.doubt import DOUBTED_SHARE
+
+    cols: list[str] = payload["columns"]
+    for c in POLLUTION:
+        if c not in cols:
+            cols.append(c)
+            for r in payload["rows"]:
+                r.append(None)
+    at = {c: cols.index(c) for c in cols}
+    counts = {"pollution": 0, "doubted": 0}
+    for r in payload["rows"]:
+        src = by_geoid.get(r[at["geoid"]])
+        flags = [f for f in (r[at["low_confidence"]] or "").split(";") if f and f not in POLLUTION_FLAGS]
+        if src:
+            for c, digits in POLLUTION.items():
+                v = src.get(c)
+                if digits is None:
+                    r[at[c]] = None if v is None or (isinstance(v, float) and math.isnan(v)) else str(v)
+                else:
+                    r[at[c]] = _num(v, digits)
+            if r[at["pm25"]] is not None and (src.get("pm25_doubt") or 0) >= DOUBTED_SHARE:
+                flags.append("pm25")
+                counts["doubted"] += 1
+            if "pre1960_share" in src.get("flags", set()) and r[at["pre1960_share"]] is not None:
+                flags.append("pre1960_share")
+            counts["pollution"] += 1
+        r[at["low_confidence"]] = ";".join(flags)
+    return counts
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--state", help="two-digit state FIPS, comma-separated (default: all published)")
@@ -271,6 +335,7 @@ def main() -> None:
     ap.add_argument("--demographics", action="store_true", help="only who lives here (one Census call per state)")
     ap.add_argument("--nri", action="store_true", help="only FEMA's ratings and the display-only hazards (NRI tract table)")
     ap.add_argument("--edges", action="store_true", help="only the metro-edge, Great Lake and town-center distances")
+    ap.add_argument("--pollution", action="store_true", help="only pollution (national interim tables + ACS older housing)")
     args = ap.parse_args()
     wanted = set(args.state.split(",")) if args.state else None
     files = sorted(PUBLISH_DIR.glob("[0-9][0-9][0-9][0-9][0-9].json"))
@@ -287,6 +352,29 @@ def main() -> None:
                 path.write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False))
             log.info("state %s: %d counties", state, len(paths))
         log.info("done: %d areas with edge distances", total["edges"])
+        return
+    if args.pollution:
+        table = pollution_table()
+        for state, paths in sorted(by_state.items()):
+            parsed = acs.parse(acs._state_raw(state))
+            lead = parsed.set_index("geoid")[["pre1960_share", "pre1960_share_moe", "pre1980_share",
+                                              "pre1980_share_moe", "low_confidence"]]
+            t = table[table["geoid"].str[:2] == state].set_index("geoid")
+            by_geoid: dict[str, dict] = {}
+            for g in set(t.index) | set(lead.index):
+                row = t.loc[g].to_dict() if g in t.index else {}
+                if g in lead.index:
+                    lr = lead.loc[g]
+                    row.update({c: lr[c] for c in lead.columns if c != "low_confidence"},
+                               flags=set((lr["low_confidence"] or "").split(";")))
+                by_geoid[g] = row
+            for path in paths:
+                payload = json.loads(path.read_text())
+                for k, v in patch_pollution(payload, by_geoid).items():
+                    total[k] += v
+                path.write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False))
+            log.info("state %s: %d counties", state, len(paths))
+        log.info("done: %d areas with pollution, %d with PM2.5 doubted", total["pollution"], total["doubted"])
         return
     if args.nri:
         from . import nri
