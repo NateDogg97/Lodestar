@@ -2426,7 +2426,14 @@ days only, and the smoke a person breathes stays inside total PM2.5.
   so 11c needs a remedy before PM2.5 ranks (decision 2).
 - *Resolution:* scoring must not separate values closer than the out-of-sample error.
 
-**Decisions this raises (owner):**
+**Decided (owner, 2026-10-13: "continue with your recommendation"):** 1 → V6.GL.03, 2022–2024
+mean; 2 → (b) + (c): coarse anchored bands for scoring, and the nearest EPA monitor's reading
+shown beside an area's value as information (never assigned to it); 3 → decided in 11c
+after the rural dilution test; 4 → radon from the ZIP-level OSF data, as the share of homes
+above 4 pCi/L; 5 → lead paint "built before 1960", before-1980 shown; 6 → smoke as NOAA HMS
+"days with smoke overhead" now; the ACAG note stays drafted for the owner to send.
+
+**Decisions this raised (owner) — answered above:**
 1. Source: V6.GL.03 (CC BY 4.0, 2022–2024 mean) instead of the archived V6.GL.02.04. *Recommended.*
 2. The hot-spot misses. Options: (a) show PM2.5 but don't rank on it; (b) rank in coarse
    anchored bands (e.g. ≤5, 5–8, 8–10, 10–12, >12 µg/m³), so only differences larger than
@@ -2465,10 +2472,10 @@ days only, and the smoke a person breathes stays inside total PM2.5.
 - [ ] Owner: is the reading of "not biased by nearby pollution" in rules 5–8 what was meant
       (a place isn't credited with a neighbour's value) — or should real drift from a nearby
       source *count*? The model surfaces include physical drift; our code adds none.
-- [ ] Owner: anchored points instead of percentiles for pollution (recommended).
-- [ ] Owner: Tier 1 as listed, with radon info-only until a tract source is confirmed.
+- [x] Owner: anchored points instead of percentiles for pollution — yes, in coarse bands (2026-10-13).
+- [x] Owner: Tier 1 as listed — radon from the ZIP-level OSF model (share above 4 pCi/L) (2026-10-13).
 - [ ] Owner: the monitor-check bar (RMSE < 1.5 µg/m³ for PM2.5).
-- [ ] Which year(s) for PM2.5 — a 3-year mean (chosen) vs the latest year alone.
+- [x] Which year(s) for PM2.5 — the 2022–2024 mean of V6.GL.03 (2026-10-13).
 - [ ] Refresh cadence for pollution inputs: annual (chosen) vs monthly with the rest.
 
 ---
