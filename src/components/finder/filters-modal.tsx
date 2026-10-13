@@ -56,6 +56,7 @@ const SECTIONS: { id: SectionId; label: string; mustsOnly?: boolean; prioritiesO
   { id: "safety", label: "Safety" },
   { id: "climate", label: "Climate" },
   { id: "hazards", label: "Natural hazards" },
+  { id: "pollution", label: "Pollution" },
   { id: "location", label: "Location" },
   { id: "people", label: "People & income" },
   { id: "policies", label: "Policies", mustsOnly: true },
@@ -67,6 +68,8 @@ const SECTION_TIPS: Partial<Record<SectionId, string>> = {
   hazards:
     "FEMA National Risk Index (Dec 2025): where an area ranks nationally on the share of its buildings, people and farms expected to be lost to each hazard in a typical year.",
   safety: "FBI crime rates for the police agency covering each area.",
+  pollution:
+    "Measured where people in each area live (2020 census blocks). Scored against fixed health benchmarks, not ranks, so differences smaller than the data's error don't move a score. Radon isn't here: its estimates are too uncertain to rank on — area pages show it.",
   states:
     "Rule out states, or keep only a few: tap a state to turn it off, or “None” and then pick the ones you want. Scores still compare places with the whole country. Alaska and Hawaii are turned on in Settings.",
   policies:
@@ -476,6 +479,7 @@ export function FiltersModal({
                       level="area"
                       note={d.note}
                       weight={prefs.area.weights[d.key] ?? 0}
+                      fixed={d.fixedDirection}
                       direction={prefs.area.directions[d.key] ?? d.defaultDirection}
                       typical="Aiming for the typical US area"
                       budget={budgetColumn(prefs.household) === d.key ? prefs.household.budget : undefined}

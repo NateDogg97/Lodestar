@@ -17,7 +17,7 @@
 
 import { MAX_WEIGHT, type Direction, type MetricGroup, type MetricKey } from "@/lib/scoring";
 
-export type AreaGroup = MetricGroup | "safety";
+export type AreaGroup = MetricGroup | "safety" | "pollution";
 
 export interface AreaPriorityDef {
   key: string;
@@ -35,6 +35,8 @@ export interface AreaPriorityDef {
   /** Trade-off sentence words when this measure helps / hurts (default direction). */
   good?: string;
   bad?: string;
+  /** Only one "better" makes sense (no one wants dirtier air): no direction control. */
+  fixedDirection?: true;
 }
 
 const PCTL_NOTE = "National percentile among US areas (census tracts) of the same measure.";
@@ -99,6 +101,17 @@ export const AREA_PRIORITIES: readonly AreaPriorityDef[] = [
     good: "little earthquake risk", bad: "earthquake risk" },
   { key: "hazard_tornado", label: "Tornadoes", unit: "pctl", defaultDirection: "lower", group: "hazards", note: PCTL_NOTE,
     good: "little tornado risk", bad: "tornado risk" },
+  // Pollution (Phase 11): scored on fixed anchors, not percentiles (./pollution.ts). No
+  // "top 1%" badges: a rank finer than the model's error would be a false claim.
+  { key: "pm25", label: "Fine particles (PM2.5)", unit: "µg/m³", defaultDirection: "lower", group: "pollution", fixedDirection: true,
+    note: "Yearly average of fine-particle air pollution where people in the area live, 2022–2024 (WashU satellite + model, ~1 km). Scored in bands — WHO's 5, 7, EPA's 9 and 12 µg/m³ — allowing for the model's ±1.7 error, so small differences don't move a score. It misses some local sources (industry, wood smoke in valleys): where a nearby EPA monitor reads well above it, the value is marked uncertain and can't score better than typical.",
+    badge: "Cleanest air", good: "clean air", bad: "more fine-particle pollution" },
+  { key: "smoke_days_thick", label: "Wildfire smoke days", unit: "days/yr", defaultDirection: "lower", group: "pollution", fixedDirection: true,
+    note: "Days a year with medium or heavy smoke overhead, 2015–2024 (NOAA satellite analysts' smoke outlines). Smoke overhead isn't always smoke at the ground: the smoke people breathe is already in PM2.5. Full points at 5 days or fewer, none at 30 or more. Fire years swing, so differences under about 10 days are noise.",
+    badge: "Fewest smoke days", good: "few wildfire-smoke days", bad: "wildfire-smoke days" },
+  { key: "pre1960_share", label: "Older homes (lead-paint risk)", unit: "%", defaultDirection: "lower", group: "pollution", fixedDirection: true,
+    note: "Share of homes built before 1960 (Census, 2019–2023): lead paint is most likely in homes this old (banned in 1978). An old home is a risk, not a hazard — paint may be removed or covered — and this isn't a measure of lead in anyone's blood. Full points at 0%, none at 60% or more.",
+    badge: "Newest homes", good: "newer homes", bad: "older homes (lead paint)" },
 ];
 
 const AREA_DEF = new Map(AREA_PRIORITIES.map((d) => [d.key, d]));
@@ -169,7 +182,7 @@ export function areaCriteria(search: AreaSearch): { criteria: AreaCriterion[]; l
     if (weight > 0) {
       const budget = search.budgets?.[def.key];
       criteria.push({ column: def.key, label: def.label, weight,
-        direction: budget ? "lower" : search.areaDirections[def.key] ?? def.defaultDirection,
+        direction: budget || def.fixedDirection ? def.defaultDirection : search.areaDirections[def.key] ?? def.defaultDirection,
         ...(budget ? { budget } : {}) });
     }
     const l = search.areaLimits[def.key];

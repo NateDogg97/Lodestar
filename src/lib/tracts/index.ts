@@ -154,7 +154,7 @@ export function parseCountyAreas(payload: unknown): CountyAreas {
 // ---------------------------------------------------------------------------
 // Measures shown inside a county
 
-export type AreaFormat = "dollars" | "percent" | "pctl" | "miles" | "number" | "minutes" | "rate" | "walk" | "change" | "density";
+export type AreaFormat = "dollars" | "percent" | "pctl" | "miles" | "number" | "minutes" | "rate" | "walk" | "change" | "density" | "pm25" | "days";
 
 export interface AreaMeasure {
   key: string;
@@ -226,6 +226,19 @@ export const AREA_MEASURES: AreaMeasure[] = [
   { key: "hazard_coastal_flood", label: "Coastal flood risk", format: "pctl" },
   { key: "hazard_earthquake", label: "Earthquake risk", format: "pctl" },
   { key: "hazard_tornado", label: "Tornado risk", format: "pctl" },
+  // Pollution (Phase 11, etl/pollution/): from the area's own census blocks, weighted by who lives where.
+  { key: "pm25", label: "Fine particles (PM2.5)", format: "pm25", colorable: true,
+    note: "Yearly average fine-particle pollution where people here live, 2022–2024 (WashU ACAG V6.GL.03, ~1 km satellite + model, ±1.7 µg/m³). WHO's guideline is 5; the current federal standard (under review) is 9." },
+  { key: "smoke_days_thick", label: "Wildfire smoke days", format: "days", colorable: true,
+    note: "Days a year with medium or heavy smoke overhead, 2015–2024 (NOAA Hazard Mapping System). Overhead, not necessarily at the ground." },
+  { key: "smoke_days", label: "Any smoke overhead", format: "days",
+    note: "Days a year with any smoke outline overhead, light haze included (NOAA HMS, 2015–2024)." },
+  { key: "pre1960_share", label: "Homes built before 1960", format: "percent", colorable: true,
+    note: "Census, 2019–2023. Lead paint is most likely in homes this old — a risk, not a measure of lead exposure." },
+  { key: "pre1980_share", label: "Homes built before 1980", format: "percent",
+    note: "Census, 2019–2023. Lead paint was banned for homes in 1978; the Census counts by decade, so 1980 is the nearest cut." },
+  { key: "radon_above4", label: "Homes above radon action level", format: "percent", colorable: true,
+    note: "Expected share of homes testing above EPA's 4 pCi/L action level, by ZIP area (Harvard model of 6M+ home tests, 2001–2021, PNAS 2025). Radon varies house to house: test any home." },
 ];
 
 export const AREA_MEASURE = new Map(AREA_MEASURES.map((m) => [m.key, m]));
@@ -289,6 +302,10 @@ export function formatArea(key: string, v: number | null): string {
       return `${v > 0 ? "+" : ""}${v.toFixed(1)}%`;
     case "density":
       return `${Math.round(v).toLocaleString()} /sq mi`;
+    case "pm25":
+      return `${v.toFixed(1)} µg/m³`;
+    case "days":
+      return `${Math.round(v)} days/yr`;
     default:
       return Math.round(v).toLocaleString();
   }
@@ -305,3 +322,4 @@ export function groupAreas(areas: Area[]): { name: string; areas: Area[]; popula
 export * from "./scoring";
 export * from "./national";
 export * from "./verdicts";
+export * from "./pollution";

@@ -50,6 +50,10 @@ export const INFO_COLUMNS = [
   "hazard_strong_wind", "hazard_hail", "hazard_winter", "hazard_cold", "hazard_heat",
   // The nearest Great Lake shore (etl/edges.py), for the county page.
   "dist_great_lake_mi",
+  // Pollution (Phase 11, etl/pollution/county.py): from the county's own blocks. Ranked by
+  // area, never by county (one level per filter), so the county page only shows them.
+  "pm25", "pm25_above", "pm25_worst", "pm25_doubt", "smoke_days_thick", "smoke_days", "pre1960_share",
+  "radon_above4", "radon_above4_worst",
 ] as const;
 export type InfoColumn = (typeof INFO_COLUMNS)[number];
 

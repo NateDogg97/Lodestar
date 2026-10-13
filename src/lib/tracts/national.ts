@@ -34,6 +34,9 @@
  * - With a budget, home value (or rent) scores fit to it (`budgetPoints`), not "cheaper
  *   is better" — so the cheapest extremes stop winning.
  * - `areaWatchOuts`: what a result is worst at among measures nobody asked about.
+ *
+ * Pollution (Phase 11, 2026-10-13): PM2.5, smoke days and older housing score on fixed
+ * anchors (`ANCHORED`, ./pollution.ts), not percentiles, and make no rarity claims.
  */
 
 import {
@@ -48,6 +51,7 @@ import {
   type MetricKey,
 } from "@/lib/scoring";
 
+import { ANCHORED, isAnchored, RADON_WATCH } from "./pollution";
 import { areaPriority, type AreaCriterion, type AreaLimit } from "./scoring";
 
 export const AREAS_FORMAT = "areas-v1";
@@ -243,6 +247,8 @@ export function areaBounds(areas: NationalAreas, column: string): PercentileBoun
 /** An area's points on one column (0–100, higher is better), or NaN with no value. */
 export function areaPoints(areas: NationalAreas, column: string, i: number, direction: Direction, budget?: number): number {
   if (budget) return budgetPoints(scoredValue(areas, column, i), budget);
+  const anchored = ANCHORED[column];
+  if (anchored) return anchored(scoredValue(areas, column, i), areas.lowConfidence[i].includes(column));
   const p = areaPercentiles(areas, column)[i];
   if (Number.isNaN(p)) return NaN;
   const b = areaBounds(areas, column);
@@ -455,8 +461,8 @@ export function explainArea(
       key: c.column, label: c.label, level: "area", direction: c.direction, weight: c.weight,
       value: Number.isNaN(v) ? null : v, rawPercentile: Number.isNaN(p) ? null : p, points,
       impact: points === null ? null : c.weight * (points - 50),
-      // Rarity claims ("top 1%") don't apply to fit to a budget.
-      beats: points === null || c.budget ? null : beatsAt(areaBounds(areas, c.column), i, c.direction),
+      // Rarity claims ("top 1%") don't apply to fit to a budget, nor to anchored points.
+      beats: points === null || c.budget || isAnchored(c.column) ? null : beatsAt(areaBounds(areas, c.column), i, c.direction),
       flagged: !Number.isNaN(v) && flagged.has(c.column),
     };
     if (c.budget) part.budget = c.budget;
@@ -613,6 +619,9 @@ const AREA_WATCH: { key: string; text: (pct: number) => string }[] = [
   { key: "median_gross_rent", text: (p) => `Rent is higher than in ${p}% of US areas` },
   { key: "violent_rate", text: (p) => `More violent crime than ${p}% of US areas` },
   { key: "hazard_risk", text: (p) => `Higher natural hazard risk than ${p}% of US areas` },
+  // Pollution (Phase 11): the worst 5% are far past the model's error.
+  { key: "pm25", text: (p) => `More fine-particle pollution (PM2.5) than ${p}% of US areas` },
+  { key: "smoke_days_thick", text: (p) => `More wildfire-smoke days than ${p}% of US areas` },
 ];
 
 /**
@@ -629,6 +638,12 @@ export function areaWatchOuts(areas: NationalAreas, i: number, s: NationalSearch
     // Share of US areas strictly lower (better), on the value it's ranked by.
     const below = areaBounds(areas, w.key).lo[i];
     if (Number.isFinite(below) && below >= 100 - WATCH_SHARE) out.push({ key: w.key, text: w.text(Math.floor(below)) });
+  }
+  // Radon is never ranked (its ZIP model's error is too wide), so nobody can ask about it:
+  // a share of homes over EPA's action level this high is always worth saying (11e).
+  const radon = areas.values.get("radon_above4")?.[i] ?? NaN;
+  if (radon >= RADON_WATCH) {
+    out.push({ key: "radon_above4", text: `About ${Math.round(radon)}% of homes here test above EPA's radon action level — test any home` });
   }
   return out;
 }
