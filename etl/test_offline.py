@@ -894,6 +894,34 @@ def test_pollution_lead() -> None:
           "a tiny place's wide margin is flagged low confidence")
 
 
+def test_pollution_radon() -> None:
+    """ZIP radon: the year is the mean of 12 months; a blank month makes the ZIP unknown."""
+    print("\npollution.radon (share of homes above 4 pCi/L, by ZIP area)")
+    from .pollution.radon import annual
+
+    rows = []
+    for zcta, p4 in ((1001, 0.10), (2002, 0.30)):
+        for month in range(1, 13):
+            winter = 0.06 if month in (1, 2, 12) else -0.02     # tests read higher in winter
+            rows.append({"ZCTA": zcta, "month": month, "threshold_label": ">148 Bq/m3",
+                         "exceedance_probability": p4 + winter, "bootstrap_95ci_width": 0.2})
+            rows.append({"ZCTA": zcta, "month": month, "threshold_label": ">74 Bq/m3",
+                         "exceedance_probability": 2 * p4, "bootstrap_95ci_width": 0.3})
+    rows[-1]["exceedance_probability"] = float("nan")  # ZIP 02002: one blank month
+    out = annual(pd.DataFrame(rows)).set_index("zcta")
+    check(abs(out.at["01001", "above4"] - 100 * (0.10 + (3 * 0.06 - 9 * 0.02) / 12)) < 1e-9,
+          "the year is the mean of the 12 months, as a % (ZCTA keeps its leading zero)")
+    check(abs(out.at["01001", "radon_ci"] - 20.0) < 1e-9 and abs(out.at["01001", "above2"] - 20.0) < 1e-9,
+          "the 2 pCi/L share and the 4 pCi/L CI width come along")
+    check(pd.isna(out.at["02002", "above2"]) and out.at["02002", "above4"] > 0,
+          "a ZIP with a blank month is unknown for that threshold, not an 11-month year")
+    try:
+        annual(pd.DataFrame([{**rows[0], "threshold_label": ">200 Bq/m3"}]))
+        check(False, "an unknown threshold should raise")
+    except ValueError:
+        check(True, "an unknown threshold raises, not mislabels")
+
+
 def test_noaa_per_variable_station_selection() -> None:
     print("\nNOAA: stations are selected per variable group, not per county")
     from .sources import noaa
@@ -1443,6 +1471,7 @@ def main() -> int:
         test_pollution_doubt()
         test_pollution_smoke()
         test_pollution_lead()
+        test_pollution_radon()
 
         fixtures = _make_synthetic()
         try:
