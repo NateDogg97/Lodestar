@@ -17,7 +17,7 @@
     "@serwist/next": "^9.5.12",
     "d3-scale-chromatic": "^3.1.0",
     "maplibre-gl": "^6.11.2",
-    "next": "16.3.5",
+    "next": "16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "serwist": "^9.5.12",
@@ -35,7 +35,7 @@
     "concurrently": "^10.0.5",
     "esbuild": "^0.28.2",
     "eslint": "^9",
-    "eslint-config-next": "16.3.5",
+    "eslint-config-next": "16.3.8",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^5.0.1"
