@@ -25,3 +25,5 @@ shapely>=2.0,<3
 pyogrio>=0.10
 # Phase 8c: uploads tract files to Cloudflare R2 (S3-compatible API; tracts/upload.py).
 boto3>=1.34
+# Phase 11 (etl/pollution/): reads NetCDF-4 (HDF5) grids such as ACAG's PM2.5 surface.
+h5py>=3.10

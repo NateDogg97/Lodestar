@@ -713,6 +713,40 @@ def test_edges_and_hazard_ratings() -> None:
     check(h["hazard_strong_wind"].iloc[0] == 10.0, "display-only hazards come along")
 
 
+def test_pollution_grid() -> None:
+    """The cell containing a point, never interpolated; no-data and off-grid are unknown."""
+    print("\npollution.grid (sampling a regular lat/lon surface)")
+    import tempfile
+
+    import h5py
+
+    from .pollution.grid import Grid, mean_of
+
+    # 4 x 5 cells of 0.01 degrees, centres at 42.005.. and -84.005..; one no-data cell.
+    vals = np.arange(20, dtype=np.float32).reshape(4, 5)
+    vals[1, 1] = -999.9
+    with tempfile.TemporaryDirectory() as tmp:
+        path = f"{tmp}/g.nc"
+        with h5py.File(path, "w") as f:
+            f["lat"] = np.float32(42.005 + 0.01 * np.arange(4))
+            f["lon"] = np.float32(-84.005 + 0.01 * np.arange(5))
+            f["PM25"] = vals
+            f["PM25"].attrs["units"] = "ug/m3"
+        g = Grid.from_netcdf(path, "PM25")
+    lat = np.array([42.0051, 42.0149, 42.0151, 42.0150, 41.99, 42.02, np.nan])
+    lon = np.array([-84.0049, -84.0049, -84.0049, -83.9951, -84.0, -84.0, -84.0])
+    v = g.sample(lat, lon)
+    check(v[0] == 0.0 and v[1] == 5.0, "a point takes its own cell's value")
+    check(v[2] == 5.0 or v[2] == 10.0, "on a boundary it takes one cell, never a blend")
+    check(np.isnan(v[3]), "a no-data cell (-999.9) is unknown, not a number")
+    check(np.isnan(v[4]) and np.isnan(v[6]), "off the grid, or no point: unknown")
+    check(g.units == "ug/m3", "units come with the grid")
+    m = mean_of([g, Grid(g.values + 3, g.lat0, g.lon0, g.dlat, g.dlon)])
+    check(abs(m.sample(np.array([42.005]), np.array([-84.005]))[0] - 1.5) < 1e-6
+          and np.isnan(m.sample(np.array([42.015]), np.array([-83.995]))[0]),
+          "a multi-year mean is cell by cell, and unknown in any year stays unknown")
+
+
 def test_noaa_per_variable_station_selection() -> None:
     print("\nNOAA: stations are selected per variable group, not per county")
     from .sources import noaa
@@ -1255,6 +1289,7 @@ def main() -> int:
         test_koppen_borderline()
         test_crime_shared_rates()
         test_edges_and_hazard_ratings()
+        test_pollution_grid()
 
         fixtures = _make_synthetic()
         try:
