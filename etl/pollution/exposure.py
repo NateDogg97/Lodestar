@@ -46,6 +46,14 @@ def aggregate(blocks: pd.DataFrame, by: str, name: str, benchmark: float | None 
     return out.drop(columns=["pop", "pop_known", "weighted"]).reset_index()
 
 
+def share(blocks: pd.DataFrame, flag: np.ndarray, by: str, column: str) -> pd.DataFrame:
+    """% of each place's residents whose block is flagged (a yes/no known for every block)."""
+    b = pd.DataFrame({by: blocks[by].to_numpy(), "pop": blocks["pop"].to_numpy(),
+                      "hit": np.where(np.asarray(flag, dtype=bool), blocks["pop"].to_numpy(), 0)})
+    g = b.groupby(by)[["pop", "hit"]].sum()
+    return (100 * g["hit"] / g["pop"]).round(1).rename(column).reset_index()
+
+
 def exposure(blocks: pd.DataFrame, values: np.ndarray, name: str, benchmark: float | None = None,
              digits: int = 2) -> tuple[pd.DataFrame, pd.DataFrame]:
     """(tracts, counties) for one measure: `values` is one value per block row (NaN unknown)."""

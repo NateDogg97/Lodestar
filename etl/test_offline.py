@@ -826,6 +826,34 @@ def test_pollution_monitors() -> None:
           "instruments averaged per year; smoke events kept (12 and 14 -> 13)")
 
 
+def test_pollution_doubt() -> None:
+    """A monitor well above the surface doubts it nearby; it never gives anyone a value."""
+    print("\npollution.doubt (monitors that read above the surface)")
+    from .pollution.doubt import centers, disagreeing, nearest_monitor, within
+    from .pollution.exposure import share
+    from .pollution.grid import Grid
+
+    grid = Grid(np.full((100, 100), 8.0, dtype=np.float32), 40.005, -80.995, 0.01, 0.01)
+    monitors = pd.DataFrame({"site": ["hot", "low", "fine"], "name": ["Hot", "Low", "Fine"],
+                             "lat": [40.30, 40.80, 40.50], "lon": [-80.70, -80.20, -80.50],
+                             "pm25": [12.0, 5.0, 9.5]})
+    d = disagreeing(monitors, grid)
+    check(list(d["site"]) == ["hot"], "only a monitor over the surface by > 2 doubts it (not one below it)")
+    # Blocks: two next to the hot monitor (~1 and ~4 mi), one 10 mi away.
+    blocks = pd.DataFrame({"block": ["a", "b", "c"], "tract": ["99001000100", "99001000100", "99001000200"],
+                           "county": ["99001"] * 3, "pop": [300, 100, 600],
+                           "lat": [40.31, 40.35, 40.44], "lon": [-80.70, -80.65, -80.70]})
+    near = within(blocks["lat"].to_numpy(), blocks["lon"].to_numpy(), d)
+    check(list(near) == [True, True, False], "within 5 miles of the monitor, by great-circle distance")
+    s = share(blocks, near, "county", "pm25_doubt").set_index("county")
+    check(s.at["99001", "pm25_doubt"] == 40.0, "the county's doubt is the share of its residents (400 of 1,000)")
+    c = centers(pd.DataFrame({"t": ["x", "x"], "pop": [1, 1], "lat": [52.0, 52.0], "lon": [179.0, -179.0]}), "t")
+    check(abs(abs(c.at[0, "lon"]) - 180.0) < 1e-6, "a population center across the antimeridian stays there")
+    n = nearest_monitor(blocks, monitors, "pm25").set_index("tract")
+    check(n.at["99001000200", "pm25_monitor_site"] == "hot" and n.at["99001000200", "pm25_monitor"] == 12.0,
+          "the nearest monitor is shown with its own reading, beside (not as) the area's value")
+
+
 def test_noaa_per_variable_station_selection() -> None:
     print("\nNOAA: stations are selected per variable group, not per county")
     from .sources import noaa
@@ -1372,6 +1400,7 @@ def main() -> int:
         test_pollution_blocks()
         test_pollution_exposure()
         test_pollution_monitors()
+        test_pollution_doubt()
 
         fixtures = _make_synthetic()
         try:

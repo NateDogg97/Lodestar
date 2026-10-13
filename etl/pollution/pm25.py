@@ -19,6 +19,8 @@ KNOWN LIMITS (11a)
     Out-of-sample error 1.7–2.3 µg/m³ (ACAG's spatial cross-validation); local hot spots —
     industrial valleys, wood-smoke mountain towns — read several µg/m³ low. Scoring uses
     coarse bands, and pages show the nearest EPA monitor beside the value (decision 2).
+    Where a monitor measured well above the surface, `pm25_doubt` marks the residents
+    within 5 miles of it (etl.pollution.doubt; the 11c gate's remedy).
 """
 
 from __future__ import annotations
@@ -32,7 +34,8 @@ import pandas as pd
 from .. import config
 from ..util import get_logger, http_get
 from .blocks import BY_POSTAL, STATES, state_blocks
-from .exposure import exposure
+from .doubt import disagreeing, nearest_monitor, within
+from .exposure import exposure, share
 from .grid import NO_DATA_BELOW, Grid
 
 log = get_logger("pollution.pm25")
@@ -77,12 +80,20 @@ def surface(years: tuple[int, ...] = YEARS) -> Grid:
                 source=f"ACAG V6.GL.03 {years[0]}–{years[-1]} mean")
 
 
-def compute(states: list[str], grid: Grid | None = None) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """(blocks with their value, tracts, counties) for the given states, in one pass."""
+def compute(states: list[str], grid: Grid | None = None,
+            monitors: pd.DataFrame | None = None) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """(blocks with their value, tracts, counties) for the given states, in one pass.
+    With `monitors` (etl.pollution.monitors), also the doubt share and each area's nearest
+    monitor."""
     grid = grid or surface()
     blocks = pd.concat([state_blocks(s) for s in states], ignore_index=True)
     values = grid.sample(blocks["lat"].to_numpy(), blocks["lon"].to_numpy())
     tracts, counties = exposure(blocks, values, "pm25", benchmark=EPA_ANNUAL)
+    if monitors is not None:
+        doubted = within(blocks["lat"].to_numpy(), blocks["lon"].to_numpy(), disagreeing(monitors, grid))
+        tracts = tracts.merge(share(blocks, doubted, "tract", "pm25_doubt"), on="tract", how="left")
+        counties = counties.merge(share(blocks, doubted, "county", "pm25_doubt"), on="county", how="left")
+        tracts = tracts.merge(nearest_monitor(blocks, monitors, "pm25"), on="tract", how="left")
     log.info("PM2.5: %d blocks, %d tracts, %d counties; %.2f%% of residents with a value",
              len(blocks), len(tracts), len(counties),
              100 * blocks["pop"][~np.isnan(values)].sum() / blocks["pop"].sum())
@@ -92,7 +103,11 @@ def compute(states: list[str], grid: Grid | None = None) -> tuple[pd.DataFrame, 
 def main() -> None:
     want = sys.argv[1:] or ["all"]
     states = list(STATES) if want == ["all"] else [BY_POSTAL.get(s.upper(), s) for s in want]
-    _, tracts, counties = compute(states)
+    from .monitors import OUT as MONITORS
+    from .monitors import fetch as fetch_monitors
+
+    monitors = pd.read_csv(MONITORS, dtype={"site": str, "county": str}) if MONITORS.exists() else fetch_monitors()
+    _, tracts, counties = compute(states, monitors=monitors)
     tracts.to_csv(config.INTERIM_DIR / "pm25_tracts.csv", index=False)
     counties.to_csv(config.INTERIM_DIR / "pm25_counties.csv", index=False)
     print(counties.describe().round(2).to_string())

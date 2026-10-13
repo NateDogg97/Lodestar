@@ -13,6 +13,9 @@ Checks, on the 2022–2024 V6.GL.03 surface:
                against one point (its population center's cell) and its polygon's mean.
     edge       a county run alone gives its areas the national run's values (rule 6).
     coverage   share of the pilot states' residents with a value (rule 9).
+    doubt      the contrast failures' remedy (owner, 2026-10-13): monitors over the surface
+               by > 2 µg/m³, and the share of each pilot county's residents within 5 mi of
+               one — each failed pair's hot side must be covered.
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ import pandas as pd
 from .. import config
 from ..util import get_logger
 from .exposure import exposure
+from .doubt import DOUBT_GAP, DOUBT_MILES, disagreeing
 from .grid import Grid
 from .pm25 import compute, surface
 
@@ -117,18 +121,47 @@ def edge_check(blocks: pd.DataFrame, tracts: pd.DataFrame) -> bool:
     return bool(np.allclose(alone["pm25"].to_numpy(), national.to_numpy(), equal_nan=True))
 
 
+def doubt_check(grid: Grid, monitors: pd.DataFrame, blocks: pd.DataFrame, tracts: pd.DataFrame,
+                counties: pd.DataFrame, contrast: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, bool]:
+    """(pilot counties' doubt, the failed pairs' hot monitors and their area's doubt, all covered)."""
+    from .doubt import within
+
+    d = disagreeing(monitors, grid)
+    c = counties[counties["county"].isin(PILOT_COUNTIES)].assign(name=lambda x: x["county"].map(PILOT_COUNTIES))
+    by_county = d.groupby("county").size()
+    c = c.assign(monitors_over=c["county"].map(by_county).fillna(0).astype(int))[
+        ["name", "pm25", "pm25_doubt", "monitors_over"]]
+    rows = []
+    for (hot, _, what), ok in zip(PAIRS, contrast["pass"]):
+        if ok:
+            continue
+        mon = monitors[monitors["site"] == hot].iloc[0]
+        here = within(np.array([mon["lat"]]), np.array([mon["lon"]]), d)[0]
+        b = blocks.iloc[np.argmin((blocks["lat"] - mon["lat"]) ** 2 + (blocks["lon"] - mon["lon"]) ** 2)]
+        t = tracts.set_index("tract").loc[b["tract"]]
+        rows.append({"pair": what, "hot monitor": mon["name"], "its area": b["tract"], "area pm25": t["pm25"],
+                     "area doubt %": t["pm25_doubt"], "flagged": bool(here and t["pm25_doubt"] > 0)})
+    pairs = pd.DataFrame(rows)
+    return c, pairs, bool(pairs.empty or pairs["flagged"].all())
+
+
 def main() -> None:
     from .monitors import OUT as MONITORS
     from .monitors import fetch as fetch_monitors
 
     monitors = pd.read_csv(MONITORS, dtype={"county": str, "site": str}) if MONITORS.exists() else fetch_monitors()
     grid = surface()
-    blocks, tracts, counties = compute(PILOT_STATES, grid)
+    blocks, tracts, counties = compute(PILOT_STATES, grid, monitors)
     stats, m = monitor_check(grid, monitors)
     contrast = contrast_check(m)
     dilution = dilution_check(grid, blocks, tracts)
     edge = edge_check(blocks, tracts)
     coverage = 100 * blocks["pop"][blocks["pm25"].notna()].sum() / blocks["pop"].sum()
+    doubt_counties, doubt_pairs, doubt_ok = doubt_check(grid, monitors, blocks, tracts, counties, contrast)
+    lower48 = monitors[~monitors["site"].str[:2].isin(LOWER_48_EXCLUDE)]
+    n_over = len(disagreeing(lower48, grid))
+    pilot_tracts = tracts[tracts["tract"].str[:2].isin(PILOT_STATES)]
+    flagged = 100 * (pilot_tracts["pm25_doubt"] > 0).mean()
     pilot = m[m["county"].isin(PILOT_COUNTIES)][["county", "name", "pm25", "model", "error"]].round(2)
 
     lines = ["# PM2.5 acceptance gate (V6.GL.03, 2022–2024 mean)", "",
@@ -141,7 +174,11 @@ def main() -> None:
              "**Dilution check** (blocks' population-weighted value vs one point, and vs the polygon mean):", "",
              dilution.to_string(index=False), "",
              f"**Edge check:** {'PASS' if edge else 'FAIL'} — Allegheny alone = national run. ",
-             f"**Coverage:** {coverage:.2f}% of the pilot states' residents have a value."]
+             f"**Coverage:** {coverage:.2f}% of the pilot states' residents have a value.", "",
+             f"**Doubt (the contrast remedy):** {n_over} of {len(lower48)} lower-48 monitors read over the "
+             f"surface by > {DOUBT_GAP:g} µg/m³; {flagged:.1f}% of the pilot states' areas have residents within "
+             f"{DOUBT_MILES:g} mi of one. Failed pairs' hot sides — {'PASS' if doubt_ok else 'FAIL'}:", "",
+             doubt_pairs.to_string(index=False), "", "Pilot counties:", "", doubt_counties.to_string(index=False)]
     text = "\n".join(lines)
     out = config.OUT_DIR / "pm25_gate.md"
     out.write_text(text)
