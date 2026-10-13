@@ -2571,7 +2571,7 @@ ZCTAs) → blocks by Census's 2020 ZCTA–block file (8.04M blocks, 1 GB streame
 - *Uncertainty is large:* the CI width's median is ~34 points for a ZIP at ~20% — a ZIP's
   "20%" means roughly 3–37%. On top of that, radon is per house.
 
-**For 11e (owner to confirm; recommendations):**
+**For 11e — decided (owner, 2026-10-13: "continue with recommended fixes"):**
 - *Radon — show, don't rank* (as the table above first said, for a new reason: the source is
   now fine-grained but its error is wider than most gaps between places). Area and county pages
   show the share above 4 pCi/L with the low-confidence icon and "test your home"; Watch out
