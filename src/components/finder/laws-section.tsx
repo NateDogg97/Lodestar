@@ -95,7 +95,7 @@ export function LawsSection({ laws, data, index, household }: Props) {
                     taxes.newBuyer !== 1 ? ` × ${taxes.newBuyer.toFixed(2)} for a new buyer` : ""
                   } on ${household.tenure === "buy" && household.budget ? "your" : "the typical"} ${usd(taxes.home)} home${
                     household.tenure === "buy" && household.budget ? " budget" : " (Zillow, today)"
-                  }.`,
+                  }, at the county's average rate. Rates differ inside the county by city, township and school district: each area's page has its own rate and estimate.`,
               `State income tax ${usd(taxes.income)} on ${household.income ? "your" : "the US median household's"} ${usd(
                 taxes.householdIncome,
               )} income, filing ${household.filing === "single" ? "single" : "jointly"}.`,
@@ -114,7 +114,7 @@ export function LawsSection({ laws, data, index, household }: Props) {
             name="Property tax rate (this county)"
             value={formatValue("property_tax_effective_rate", Number.isNaN(propertyTax) ? null : propertyTax)}
             source={{ name: propertySource.sourceName, url: propertySource.sourceUrl }}
-            detail={propertySource.method}
+            detail={`${propertySource.method} The county's average: its areas' own rates are on their pages.`}
           />
         )}
         {laws.laws.map((def) => {

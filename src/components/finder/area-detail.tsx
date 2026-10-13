@@ -30,13 +30,15 @@ import {
   WHO_PM25,
   RADON_WATCH,
   US_TYPICAL,
+  taxesAtRate,
   type Area,
+  type AreaTaxContext,
   type AreaLimit,
   type AreaPart,
   type CountyAreas,
   type School,
 } from "@/lib/tracts";
-import { formatValue, type MetricKey } from "@/lib/scoring";
+import { formatValue, TAXABLE_SPENDING_SHARE, type MetricKey } from "@/lib/scoring";
 import { ordinal } from "@/lib/scoring/format";
 
 import { WatchLine } from "./area-results";
@@ -114,6 +116,7 @@ const ICONS = {
   alert: "M12 4l9 16H3zM12 10v4M12 17h.01",
   people: "M16 20v-1a4 4 0 00-4-4H8a4 4 0 00-4 4v1M10 11a3 3 0 100-6 3 3 0 000 6M20 20v-1a3.5 3.5 0 00-2.5-3.4M15.5 5.3a3 3 0 010 5.4",
   air: "M3 8h11a3 3 0 10-3-3M3 12h15a3 3 0 11-3 3M3 16h7",
+  receipt: "M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3",
 } as const;
 
 function Chevron({ up, className = "h-4 w-4" }: { up: boolean; className?: string }) {
@@ -598,6 +601,7 @@ export function AreaDetail({
   countyName,
   ranking,
   countyEquality,
+  taxes,
 }: {
   area: Area;
   county: CountyAreas;
@@ -605,6 +609,8 @@ export function AreaDetail({
   ranking: AreaRankingView | null;
   /** The county's racial equality, shown in "Who lives here" (county-wide). */
   countyEquality?: PeopleEquality;
+  /** For the area's own tax estimate (its county, the state's brackets, the household). */
+  taxes?: AreaTaxContext;
 }) {
   const v = (key: string) => areaValue(area, key);
   const flagged = new Set(area.lowConfidence);
@@ -906,6 +912,8 @@ export function AreaDetail({
         )}
       </AreaSection>
 
+      <TaxesSection area={area} county={county} countyName={countyName} ranking={ranking} context={taxes} />
+
       <HazardsSection id="hazards" get={v} rating={(k) => (typeof r[k] === "string" ? String(r[k]) : null)} />
       <PollutionSection
         id="pollution"
@@ -919,6 +927,129 @@ export function AreaDetail({
         }
       />
     </div>
+  );
+}
+
+const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+const pct2 = (x: number) => `${x.toFixed(2)}%`;
+
+/**
+ * Taxes (2026-10-13): this area's property tax rate beside its county's and the spread
+ * across the county's areas — rates differ by city, township and school district — and
+ * the household's yearly estimate with this area's rate: the sum Taxes ranks areas by
+ * (lib/tracts/taxes.ts).
+ */
+function TaxesSection({
+  area,
+  county,
+  countyName,
+  ranking,
+  context,
+}: {
+  area: Area;
+  county: CountyAreas;
+  countyName: string;
+  ranking: AreaRankingView | null;
+  context?: AreaTaxContext;
+}) {
+  const published = areaValue(area, "property_tax_rate");
+  const flagged = area.lowConfidence.includes("property_tax_rate");
+  const i = ranking?.indexByGeoid.get(area.geoid);
+  const eb = ranking && i !== undefined ? (ranking.areas.values.get("property_tax_rate_eb")?.[i] ?? NaN) : NaN;
+  // The rate the estimate uses: the area's estimate (toward its city's typical area), else as published.
+  const own = published === null ? NaN : Number.isFinite(eb) ? eb : published;
+  const countyRate = context ? context.data.values.property_tax_effective_rate[context.index] : NaN;
+  const t = context ? taxesAtRate(context.data, context.index, own, context.schedule, context.household) : null;
+  const h = context?.household ?? {};
+  const buying = h.tenure === "buy" && !!h.budget;
+  const place = countyName.split(",")[0];
+  // The spread across the county's areas, leaving out rates whose margins are too wide to trust.
+  const rates = county.areas
+    .filter((a) => !a.lowConfidence.includes("property_tax_rate"))
+    .map((a) => areaValue(a, "property_tax_rate"))
+    .filter((x): x is number => x !== null && x > 0)
+    .sort((a, b) => a - b);
+  const range = rates.length >= 3 ? ([rates[0], rates[rates.length - 1]] as const) : null;
+  const ratio = published !== null && countyRate > 0 ? published / countyRate : null;
+  const versus =
+    ratio === null ? "" : ratio >= 1.05 ? ` · higher than ${place}'s ${pct2(countyRate)}` : ratio <= 0.95 ? ` · lower than ${place}'s ${pct2(countyRate)}` : ` · about ${place}'s`;
+  const lead =
+    published === null
+      ? `No rate of its own${Number.isFinite(countyRate) ? `: ${place}'s ${pct2(countyRate)} is used` : ""}`
+      : `Property tax ${pct2(published)}${versus}`;
+  // The bill on this area's own typical home, for context (Taxes ranks on the county's typical
+  // home without a budget: home prices are their own priority).
+  const today = ranking && i !== undefined ? (ranking.areas.values.get("median_home_value")?.[i] ?? NaN) : NaN;
+  const areaHome = Number.isFinite(today) ? today : (areaValue(area, "zhvi") ?? areaValue(area, "median_home_value"));
+  const ownHomeBill = t && t.home !== null && !buying && areaHome ? (t.rate / 100) * t.newBuyer * areaHome : null;
+  return (
+    <AreaSection
+      id="taxes"
+      icon="receipt"
+      title="Taxes"
+      lead={lead}
+      details={
+        <>
+          {t && (
+            <div className="space-y-1.5">
+              <SubHead>The estimate</SubHead>
+              <Note>
+                {t.home === null
+                  ? "Property tax: none counted — renting, it's in the rent."
+                  : `Property tax ${usd(t.property)}: ${pct2(t.rate)} (${
+                      t.rateSource === "county"
+                        ? `${place}'s — the Census has no rate for this area`
+                        : published !== null && Math.abs(t.rate - published) >= 0.01
+                          ? `this area's ${pct2(published)}, estimated at ${pct2(t.rate)} for its sampling margin`
+                          : "this area's"
+                    })${t.newBuyer !== 1 ? ` × ${t.newBuyer.toFixed(2)} for a new buyer` : ""} on ${
+                      buying ? "your" : `${place}'s typical`
+                    } ${usd(t.home)} home.`}
+              </Note>
+              <Note>
+                State income tax {usd(t.income)} on {h.income ? "your" : "the US median household's"} {usd(t.householdIncome)}; sales tax{" "}
+                {usd(t.sales)} on about {Math.round(TAXABLE_SPENDING_SHARE * 100)}% of it. Both are the same across {place}.
+              </Note>
+              {ownHomeBill !== null && (
+                <Note>
+                  On this area&rsquo;s own typical home ({usd(areaHome!)} today), property tax would be about {usd(ownHomeBill)} a year.
+                </Note>
+              )}
+            </div>
+          )}
+          <Note>
+            Property taxes paid ÷ home values of the owner-occupied homes here (Census, 2019–2023): what owners pay on average.
+            Rates differ inside a county by city, township and school district. Where assessments are capped until a sale
+            (Michigan, California, Florida, Texas…), a buyer pays more than the average owner. Without a budget, Taxes uses the
+            county&rsquo;s typical home, so areas differ by their rate, not their prices — home value is its own priority.
+          </Note>
+        </>
+      }
+    >
+      <div className="space-y-1.5">
+        <Row label="Property tax rate · this area">
+          <span className="font-medium tabular-nums">{published === null ? "—" : pct2(published)}</span>
+          <FlagMark on={flagged} />
+        </Row>
+        {Number.isFinite(countyRate) && (
+          <Row label={`${place} (whole county)`}>
+            <span className="font-medium tabular-nums">{pct2(countyRate)}</span>
+          </Row>
+        )}
+        {range && (
+          <Row label={`Across ${place}'s areas`}>
+            <span className="font-medium tabular-nums">
+              {pct2(range[0])} – {pct2(range[1])}
+            </span>
+          </Row>
+        )}
+        {t && (
+          <Row label={h.income || h.budget ? "Your taxes here (estimate)" : "Taxes here (estimate)"}>
+            <span className="font-semibold tabular-nums">{usd(t.total)}/yr</span>
+          </Row>
+        )}
+      </div>
+    </AreaSection>
   );
 }
 

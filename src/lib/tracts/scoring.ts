@@ -161,6 +161,8 @@ export interface AreaCriterion {
   direction: Direction;
   /** Scored as fit to this budget instead of by direction (`budgetPoints`). */
   budget?: number;
+  /** "Best of your results" badge for a measure that isn't an `AREA_PRIORITIES` one (Taxes). */
+  badge?: string;
 }
 
 export interface AreaLimit {

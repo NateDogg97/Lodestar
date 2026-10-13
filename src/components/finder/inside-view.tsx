@@ -15,6 +15,7 @@ import {
   explainArea,
   tradeOff,
   type Area,
+  type AreaTaxContext,
   type CountyAreas,
   type NationalAreas,
   type NationalScores,
@@ -80,6 +81,8 @@ interface Props {
   onBackToResults: () => void;
   /** The county's racial equality, for an area's "Who lives here". */
   countyEquality?: PeopleEquality;
+  /** For an area's own tax estimate (2026-10-13). */
+  taxes?: AreaTaxContext;
 }
 
 /**
@@ -149,7 +152,14 @@ export function InsideView(props: Props & { withIdentity?: boolean }) {
         />
       )}
       {areas && area && (
-        <AreaDetail area={area} county={areas} countyName={countyName} ranking={ranking} countyEquality={props.countyEquality} />
+        <AreaDetail
+          area={area}
+          county={areas}
+          countyName={countyName}
+          ranking={ranking}
+          countyEquality={props.countyEquality}
+          taxes={props.taxes}
+        />
       )}
     </div>
   );

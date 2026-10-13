@@ -35,6 +35,9 @@
  *   is better" — so the cheapest extremes stop winning.
  * - `areaWatchOuts`: what a result is worst at among measures nobody asked about.
  *
+ * Taxes by area (2026-10-13): with areas as the results, Taxes is the area's own (`taxes`
+ * column, ./taxes.ts) — an area criterion, not its county's shared part.
+ *
  * Pollution (Phase 11, 2026-10-13): PM2.5, smoke days and older housing score on fixed
  * anchors (`ANCHORED`, ./pollution.ts), not percentiles, and make no rarity claims.
  */
@@ -277,6 +280,8 @@ export function flaggedColumns(areas: NationalAreas, i: number): Set<string> {
     // "crime_wide": a county agency's one rate over rural and suburban areas alike (Phase 10 follow-up).
     if (f === "crime" || f === "crime_wide") out.add("violent_rate").add("property_rate");
     else if (f === "mobile_homes") out.add("median_home_value");
+    // The area's own property tax rate: Taxes is estimated on it (./taxes.ts).
+    else if (f === "property_tax_rate") out.add(f).add("taxes").add("taxes_rate");
     else out.add(f);
   }
   return out;
@@ -589,7 +594,7 @@ export function resultBadges(areas: NationalAreas, top: number[], s: NationalSea
     }
     if (best >= 0 && !tie) {
       const b = out.get(best)!;
-      const name = def && c.direction === def.defaultDirection && def.badge ? def.badge : `Best for ${c.label.toLowerCase()}`;
+      const name = c.badge ?? (def && c.direction === def.defaultDirection && def.badge ? def.badge : `Best for ${c.label.toLowerCase()}`);
       if (b.best.length < 2) b.best.push(name);
     }
     if (def?.topBadge && c.direction === def.defaultDirection) {
@@ -619,6 +624,8 @@ const AREA_WATCH: { key: string; text: (pct: number) => string }[] = [
   { key: "median_gross_rent", text: (p) => `Rent is higher than in ${p}% of US areas` },
   { key: "violent_rate", text: (p) => `More violent crime than ${p}% of US areas` },
   { key: "hazard_risk", text: (p) => `Higher natural hazard risk than ${p}% of US areas` },
+  // The household's estimate with the area's own rate (./taxes.ts), when the file has it.
+  { key: "taxes", text: (p) => `Taxes higher than in ${p}% of US areas` },
   // Pollution (Phase 11): the worst 5% are far past the model's error.
   { key: "pm25", text: (p) => `More fine-particle pollution (PM2.5) than ${p}% of US areas` },
   { key: "smoke_days_thick", text: (p) => `More wildfire-smoke days than ${p}% of US areas` },

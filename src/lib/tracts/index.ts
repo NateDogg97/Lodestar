@@ -154,7 +154,9 @@ export function parseCountyAreas(payload: unknown): CountyAreas {
 // ---------------------------------------------------------------------------
 // Measures shown inside a county
 
-export type AreaFormat = "dollars" | "percent" | "pctl" | "miles" | "number" | "minutes" | "rate" | "walk" | "change" | "density" | "pm25" | "days";
+export type AreaFormat =
+  | "dollars" | "percent" | "pctl" | "miles" | "number" | "minutes" | "rate" | "walk" | "change" | "density" | "pm25" | "days"
+  | "taxrate" | "peryear";
 
 export interface AreaMeasure {
   key: string;
@@ -169,6 +171,9 @@ export interface AreaMeasure {
 export const AREA_MEASURES: AreaMeasure[] = [
   { key: "median_home_value", label: "Home value (Census)", format: "dollars", colorable: true,
     note: "Census median value of owner-occupied homes in this area, averaged over 2019–2023." },
+  { key: "property_tax_rate", label: "Property tax rate", format: "taxrate", colorable: true,
+    note: "Property taxes paid ÷ home values, owner-occupied homes in this area (Census, 2019–2023). Rates differ by city, township and school district. It's what owners pay on average; where assessments are capped until a sale, a new buyer pays more." },
+  { key: "taxes", label: "Taxes (estimate)", format: "peryear" },
   { key: "zhvi", label: "Home value (Zillow, by ZIP)", format: "dollars", colorable: true,
     note: "Zillow Home Value Index for the area's ZIP: the typical home, all types incl. condos. Recent." },
   { key: "zori", label: "Rent (Zillow, by ZIP)", format: "dollars", note: "Zillow Observed Rent Index for the ZIP: typical asking rent." },
@@ -306,6 +311,10 @@ export function formatArea(key: string, v: number | null): string {
       return `${v.toFixed(1)} µg/m³`;
     case "days":
       return `${Math.round(v)} days/yr`;
+    case "taxrate":
+      return `${v.toFixed(2)}%`;
+    case "peryear":
+      return `$${Math.round(v).toLocaleString()}/yr`;
     default:
       return Math.round(v).toLocaleString();
   }
@@ -323,3 +332,4 @@ export * from "./scoring";
 export * from "./national";
 export * from "./verdicts";
 export * from "./pollution";
+export * from "./taxes";

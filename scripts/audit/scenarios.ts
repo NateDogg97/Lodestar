@@ -442,6 +442,30 @@ const outliers: Scenario[] = [
     checks: [allTop(50, "typical rent over $1,800", (r, i) => scoredAt(r.areas, "median_gross_rent", i) <= 1_800), allTop(50, "walkability under 15", (r, i) => r.value(i, "walkability") >= 15)],
   },
   {
+    name: "Taxes by area (Washtenaw, 2026-10-13)",
+    intent: "Taxes 5, nearby schools 1 — areas are the results.",
+    expect: "Each area's Taxes uses its own property tax rate: inside Washtenaw, a higher rate is a higher estimate (Ypsilanti city over the townships), and Taxes is counted once — as the area's, not also its county's.",
+    prefs: P({ weights: { taxes: 5 }, area: { weights: { nearby_school_pctl: 1 } } }),
+    checks: [
+      (r) => {
+        const out: string[] = [];
+        const idx = [...r.areas.geoid.keys()].filter((i) => r.areas.county[i] === "26161" && Number.isFinite(r.value(i, "property_tax_rate_eb")));
+        idx.sort((a, b) => r.value(a, "property_tax_rate_eb") - r.value(b, "property_tax_rate_eb"));
+        for (let k = 1; k < idx.length; k++) {
+          if (r.value(idx[k], "taxes") + 1e-6 < r.value(idx[k - 1], "taxes")) out.push(`a higher rate with lower taxes: ${r.areas.name[idx[k]]}`);
+        }
+        const low = r.value(idx[0], "taxes");
+        const high = r.value(idx[idx.length - 1], "taxes");
+        if (!(high > 1.2 * low)) out.push(`Washtenaw's areas' taxes barely differ: $${Math.round(low)}–$${Math.round(high)}`);
+        for (const i of r.top.slice(0, 25)) {
+          const n = r.parts(i).filter((p) => p.key === "taxes" || p.key === "taxes_rate").length;
+          if (n !== 1) out.push(`Taxes counted ${n} times for ${r.areas.name[i]}`);
+        }
+        return out;
+      },
+    ],
+  },
+  {
     name: "Lowest taxes on a $400k income",
     intent: "Taxes 5, household income $400k (county results).",
     expect: "At that income the state income tax dominates: states without one (NH, SD, WY, FL, TN, TX, NV…).",

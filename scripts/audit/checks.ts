@@ -239,7 +239,7 @@ export function automaticChecks(r: RunResult): Findings {
     for (const label of b.best) {
       const nameOf = (x: (typeof criteria)[number]) => {
         const def = areaPriority(x.column);
-        return def && x.direction === def.defaultDirection && def.badge ? def.badge : `Best for ${x.label.toLowerCase()}`;
+        return x.badge ?? (def && x.direction === def.defaultDirection && def.badge ? def.badge : `Best for ${x.label.toLowerCase()}`);
       };
       const c = criteria.find((x) => nameOf(x) === label);
       if (!c) {

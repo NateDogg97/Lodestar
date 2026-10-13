@@ -11,6 +11,7 @@ import {
   STATE_CATEGORY_KEYS,
   STATE_METRIC_KEYS,
   METRIC_KEYS,
+  parseSchedule,
   prepareDataset,
   rankCounties,
   scoreCounties,
@@ -52,6 +53,7 @@ import type { InsideLayer, ResultMarks } from "./county-map";
 import {
   AREA_MEASURE,
   areaCriteria,
+  areaTaxSearch,
   areaValue,
   areaWatchOuts,
   countiesOf,
@@ -65,6 +67,7 @@ import {
   scoreNational,
   topAreas,
   US_TYPICAL_COUNTY,
+  withAreaTaxes,
   type ResultBadges,
 } from "@/lib/tracts";
 import { AreaResultsList, CountyBestAreas, CountyResultsList, ResultsHeader, type ResultCap } from "./area-results";
@@ -296,10 +299,23 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   const areaSearch = useMemo(() => areaCriteria(toAreaSearch(deferred)), [deferred]);
   const hasAreaFilters = areaSearch.criteria.length > 0 || areaSearch.limits.length > 0;
   const nationalState = useNationalAreas(hasAreaFilters);
-  const national = nationalState.status === "ready" ? nationalState.data : null;
+  // Taxes by area (2026-10-13): each area's own estimate, with its own property tax rate.
+  const national = useMemo(
+    () => (nationalState.status === "ready" ? withAreaTaxes(nationalState.data, scoped, schedules, JSON.parse(householdKey)) : null),
+    [nationalState, scoped, schedules, householdKey],
+  );
+  // With areas as the results, Taxes and the tax-rate limits are the area's, not its
+  // county's shared part: the county part is scored without them.
+  const areaTax = useMemo(() => areaTaxSearch(scoringInput), [scoringInput]);
+  const areaCountyScores = useMemo(() => scoreCounties(prepared, areaTax.county), [prepared, areaTax]);
+  const areaCountyByFips = useMemo(() => new Map(areaCountyScores.map((s) => [s.fips, s])), [areaCountyScores]);
   const nationalSearch = useMemo(
-    () => ({ criteria: areaSearch.criteria, limits: areaSearch.limits, counties: countyParts(scores) }),
-    [areaSearch, scores],
+    () => ({
+      criteria: [...areaSearch.criteria, ...areaTax.criteria].sort((a, b) => b.weight - a.weight),
+      limits: [...areaSearch.limits, ...areaTax.limits],
+      counties: countyParts(areaCountyScores),
+    }),
+    [areaSearch, areaTax, areaCountyScores],
   );
   const nscores = useMemo(
     () => (national && hasAreaFilters ? scoreNational(national, nationalSearch) : null),
@@ -325,17 +341,10 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     () => (national ? resultBadges(national, topIdx, nationalSearch) : new Map<number, ResultBadges>()),
     [national, topIdx, nationalSearch],
   );
-  // "Watch out" on results (Phase 10d): an area's own measures, and its county's taxes.
+  // "Watch out" on results (Phase 10d): an area's own measures, its taxes included.
   const areaWatch = useCallback(
-    (i: number) => {
-      if (!national) return [];
-      const ci = scoped.indexByFips.get(national.county[i]);
-      return [
-        ...areaWatchOuts(national, i, nationalSearch),
-        ...(ci === undefined ? [] : countyWatchOuts(prepared, ci, scoringInput, ["taxes"])),
-      ];
-    },
-    [national, nationalSearch, scoped, prepared, scoringInput],
+    (i: number) => (national ? areaWatchOuts(national, i, nationalSearch) : []),
+    [national, nationalSearch],
   );
   const countyWatch = useCallback((i: number) => countyWatchOuts(prepared, i, scoringInput), [prepared, scoringInput]);
   const [viewChoice, setViewChoice] = useState<"areas" | "counties" | null>(null);
@@ -486,7 +495,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       areas: national,
       scores: nscores,
       search: nationalSearch,
-      county: scoresByFips.get(fips),
+      county: areaCountyByFips.get(fips),
       matches,
       indexByGeoid,
       listed: insideAll ? matches : topHere,
@@ -499,7 +508,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       hiddenCount: areasState.data.areas.areas.length - matches.length,
       watchOuts: areaWatch,
     };
-  }, [insideOpen, areasState, national, nscores, nationalSearch, scoresByFips, deferred.includeUnknown, topIdx, resultCap, insideAll, areaWatch]);
+  }, [insideOpen, areasState, national, nscores, nationalSearch, areaCountyByFips, deferred.includeUnknown, topIdx, resultCap, insideAll, areaWatch]);
 
   const baseInsideLayer = useMemo<Omit<InsideLayer, "highlight"> | null>(() => {
     if (!insideOpen || areasState.status !== "ready") return null;
@@ -639,7 +648,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
                   areas={national}
                   scores={nscores}
                   search={nationalSearch}
-                  county={selected}
+                  county={areaCountyByFips.get(selected.fips)}
                   matches={selectedMatches}
                   inTop={countyResults.find((c) => c.fips === selected.fips)?.areas.length ?? 0}
                   cap={resultCap}
@@ -737,7 +746,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
               areas={national}
               scores={nscores}
               search={nationalSearch}
-              countyScores={scoresByFips}
+              countyScores={areaCountyByFips}
               countyName={countyName}
               onOpenArea={openArea}
               onPreview={preview}
@@ -751,7 +760,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
               areas={national}
               scores={nscores}
               search={nationalSearch}
-              countyScores={scoresByFips}
+              countyScores={areaCountyByFips}
               countyName={countyName}
               onOpenArea={openArea}
               onPreview={preview}
@@ -847,6 +856,12 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
             county: scoped.countyName[i],
           };
         })(placeProps.score.index),
+        taxes: {
+          data: scoped,
+          index: placeProps.score.index,
+          schedule: parseSchedule(schedules[scoped.state[placeProps.score.index]]),
+          household: deferred.household,
+        },
       }
     : null;
 

@@ -18,6 +18,9 @@
  * - sales tax: the combined state and average local rate on the taxable part of
  *   spending, `TAXABLE_SPENDING_SHARE` of income.
  *
+ * Areas (2026-10-13) use the same sum with their own property tax rate in place of the
+ * county's (`@/lib/tracts/taxes`); the rest is the county's or the state's.
+ *
  * Not in it: local income taxes (New York City, Ohio cities, Maryland counties,
  * Pennsylvania's earned income tax), credits other than the personal exemption,
  * federal taxes (the same everywhere). Pure: no UI imports.
@@ -128,6 +131,54 @@ export interface TaxParts {
   householdIncome: number;
 }
 
+/** What a place's tax bill is made of, before the household is applied. */
+export interface TaxInputs {
+  /** Effective property tax rate, % of value (all owners). */
+  rate: number;
+  /** A new buyer's rate over all owners' (1 where none is known). */
+  newBuyer: number;
+  /** The typical home today, for property tax when no budget is set. */
+  typicalHome: number;
+  /** Combined state and average local sales tax, %. */
+  sales: number;
+}
+
+/**
+ * A household's yearly taxes from a place's inputs. Null when an input it needs is
+ * unknown: the income tax schedule or sales tax always; the rate or home when buying.
+ */
+export function householdTaxes(
+  inputs: TaxInputs,
+  schedule: Schedule | "none" | null,
+  household: Household = {},
+): TaxParts | null {
+  const income = household.income && household.income > 0 ? household.income : US_MEDIAN_HOUSEHOLD_INCOME;
+  const home =
+    household.tenure === "rent"
+      ? null
+      : household.tenure === "buy" && household.budget && household.budget > 0
+        ? household.budget
+        : inputs.typicalHome;
+  const newBuyer = Number.isFinite(inputs.newBuyer) && inputs.newBuyer > 0 ? inputs.newBuyer : 1;
+  if (schedule === null || !Number.isFinite(inputs.sales)) return null;
+  if (home !== null && !(Number.isFinite(home) && Number.isFinite(inputs.rate))) return null;
+  const property = home === null ? 0 : (inputs.rate / 100) * newBuyer * home;
+  const inc = incomeTax(schedule, income, household.filing ?? "joint");
+  const sale = (inputs.sales / 100) * TAXABLE_SPENDING_SHARE * income;
+  return { property, newBuyer, income: inc, sales: sale, total: property + inc + sale, home, householdIncome: income };
+}
+
+/** A county's tax inputs: its own rate, new-buyer ratio, typical home today and sales tax. */
+export function countyTaxInputs(data: CountyDataset, i: number): TaxInputs {
+  const today = data.info.home_value_today?.[i];
+  return {
+    rate: data.values.property_tax_effective_rate[i],
+    newBuyer: data.info.new_buyer_ratio?.[i] ?? NaN,
+    typicalHome: Number.isFinite(today) ? today : data.values.median_home_value[i],
+    sales: data.values.sales_tax_combined[i],
+  };
+}
+
 /**
  * One county's yearly taxes for the household. Null parts are unknown inputs: no
  * property tax rate or home value, no income tax schedule, no sales tax rate.
@@ -138,24 +189,7 @@ export function countyTaxes(
   schedule: Schedule | "none" | null,
   household: Household = {},
 ): TaxParts | null {
-  const income = household.income && household.income > 0 ? household.income : US_MEDIAN_HOUSEHOLD_INCOME;
-  const renting = household.tenure === "rent";
-  const today = data.info.home_value_today?.[i];
-  const home = renting
-    ? null
-    : household.tenure === "buy" && household.budget && household.budget > 0
-      ? household.budget
-      : Number.isFinite(today) ? today : data.values.median_home_value[i];
-  const ratio = data.info.new_buyer_ratio?.[i];
-  const newBuyer = Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
-  const rate = data.values.property_tax_effective_rate[i];
-  const sales = data.values.sales_tax_combined[i];
-  if (schedule === null || !Number.isFinite(sales)) return null;
-  if (home !== null && !(Number.isFinite(home) && Number.isFinite(rate))) return null;
-  const property = home === null ? 0 : (rate / 100) * newBuyer * home;
-  const inc = incomeTax(schedule, income, household.filing ?? "joint");
-  const sale = (sales / 100) * TAXABLE_SPENDING_SHARE * income;
-  return { property, newBuyer, income: inc, sales: sale, total: property + inc + sale, home, householdIncome: income };
+  return householdTaxes(countyTaxInputs(data, i), schedule, household);
 }
 
 /**
