@@ -8,7 +8,29 @@
 > Last updated: 2026-10-13
 >
 > **Changelog**
-> - 2026-10-13 — **Taxes by area** (§9 Phase 10, "10g"; owner: "several areas have different
+> - 2026-10-13 — **PR #1 from a fork (zamays): Phases 10d–10g, 11 and the §12 audit fixes.**
+>   Decisions in those sections credited to "zamays" were made by the PR's author, not
+>   the owner, and are **pending the owner's review**. "Owner:" open questions are still open.
+>   Review fixes on merge: the area page's Taxes always uses the rate Taxes ranks on (loads
+>   the national file for an open area page); budget notes compare the estimate that's scored;
+>   switching buy ↔ rent moves the budget's priority; rank caches keyed by column, so a budget
+>   keystroke re-ranks only Taxes; 7+ digit bracket amounts no longer rounded. Nearest metro and
+>   Great Lake are now chosen in miles, not raw degrees (`etl/edges.py`: 231 lower-48 counties
+>   get a nearer metro, median 10 mi; Alaska's is Seattle, not Honolulu), and a city with too
+>   few rated areas centers its tax rate on the whole county, not the state (`shrink_log_medians`
+>   `parent`). Both need the ETL rerun to reach the data. Checked, no change: the 2019–2023
+>   5-year PUMS codes every year's records to 2020 PUMAs (API `PUMA` is "2020 definitions";
+>   Michigan: all 68 codes valid in all five years, no PUMA's share shifts >10% between
+>   2019–21 and 2022–23), so `newbuyer.py`'s join on the 2020 crosswalk is sound.
+> - 2026-10-13 — **Pollution survives a source outage** (owner). The inputs aren't mirrored, so a
+>   source being down failed the monthly area refresh and held back every other source. Now each
+>   run publishes its result tables to R2 (`tracts/pollution/*.csv`, merged with the live ones);
+>   a source that fails, or whose known areas fall below 95% of the live table's, keeps the live
+>   tables and the run goes on (`etl/pollution/carry.py`). `tracts/pollution.json` dates each
+>   source; the area page's Pollution section says when it was updated, and in amber when a
+>   source was unavailable at the last refresh or is over 62 days old. Only the first run, with
+>   nothing live yet, still fails. County pages show no date: counties.json is rebuilt by hand.
+> - 2026-10-13 — **Taxes by area** (§9 Phase 10, "10g"; zamays: "several areas have different
 >   effective tax burdens within the same county"). Each area has its own property tax rate
 >   (tract ACS); with areas as the results, Taxes uses it and is scored per area. Area pages
 >   get a Taxes section; the county page says its rate is an average.
@@ -16,7 +38,7 @@
 >   caution), wildfire smoke days, older housing (lead paint) as anchored area priorities;
 >   radon shown and cautioned, never ranked; Pollution sections on area and county pages; the
 >   monthly refresh computes pollution with a coverage gate. Inputs not yet mirrored.
-> - 2026-10-13 — **Phase 11 planned: pollution, and it is NEXT** (§9; owner). Eleven rules against averaging and
+> - 2026-10-13 — **Phase 11 planned: pollution, and it is NEXT** (§9; zamays). Eleven rules against averaging and
 >   nearby-pollution bias, an acceptance gate per pollutant, the health risk and the risk to
 >   this plan of each type, and a tiered build order. Tier 1: PM2.5, wildfire smoke, older-housing
 >   lead paint, radon (info only). Nothing built.
@@ -2034,7 +2056,7 @@ equality metric… or even racial stats on the area or county page."
 
 ### Phase 10 — Results that don't mislead (2026-10-12) ✅ **BUILT, tested locally — production data not yet uploaded**
 
-Owner: "the results can highlight outliers and ignore good valid results" — good schools +
+zamays: "the results can highlight outliers and ignore good valid results" — good schools +
 low taxes put Jackson Hole (homes $1.5–3.5M) at #1–#6 and Wyoming filled the top 100.
 Diagnosis in the Tuning track (2026-10-12). The averaging is sound (tested: a log-scale
 transform and geometric/power means change nothing at the top), so percentiles and the
@@ -2119,7 +2141,7 @@ becomes "Tied for #1"; the county map's colour span is at least 20 points (`MIN_
       or run by hand) then publishes `areas.json` with the `*_eb` columns — or the owner runs
       `etl.tracts.upload` with the R2 keys. Until then areas rank on published values (the
       app falls back per value).
-**10g. Taxes by area (2026-10-13).** Owner: "The estimated tax for the whole Washtenaw county
+**10g. Taxes by area (2026-10-13).** zamays: "The estimated tax for the whole Washtenaw county
 is the same… several areas have different effective tax burdens within the same county." Rates
 are set by city, township and school district: Washtenaw's areas run 0.95–2.09% (townships
 ~1.1–1.5%, Ann Arbor ~1.6–1.8%, Ypsilanti city ~2.0%) on a county figure of 1.49%.
@@ -2195,12 +2217,12 @@ hazards, and its public data is better than most people assume — and worse in 
 knowable ways. This phase is mostly about not misleading: a number that looks precise and
 isn't is worse than "unknown".
 
-**Order.** Owner decision, 2026-10-13: **this is the next phase to build**, ahead of
+**Order.** zamays's decision, 2026-10-13 (owner to confirm): **this is the next phase to build**, ahead of
 Phase 10's "Reach production", which stays open. (The Washtenaw audit fixes in §12 were built
-the same day, at the owner's request, before this phase started.) 11a is research with no app
+the same day, at zamays's request, before this phase started.) 11a is research with no app
 code. Start there.
 
-#### Rules (owner, 2026-10-13: "accurate for the areas, not biased by averaging or nearby pollution")
+#### Rules (zamays, 2026-10-13: "accurate for the areas, not biased by averaging or nearby pollution")
 
 Read as two separate biases, each with a rule the ETL must obey and a test that proves it:
 
@@ -2375,7 +2397,7 @@ re-check when the UI wording is written (2026-10-13: not yet verified).
       test reads above 4 pCi/L". Watch out moved to ≥ 40% (worst 5.6%; 30% flagged 16.9%).
 - [x] **11f — National run:** coverage per source, size check, mirror inputs, add to
       `tracts-refresh.yml` as an annual step, update `AGENTS.md` and `etl/README.md`.
-      *Done 2026-10-13, except mirroring (owner: "without the inputs to the private bucket").*
+      *Done 2026-10-13, except mirroring (zamays: "without the inputs to the private bucket").*
       Coverage and sizes are under 11e. `python -m etl.pollution all | published | STATES`
       computes every table in one run (3.5 min with inputs cached; a per-state run gives
       the national run's values, checked byte-identical). **CI:** a "Pollution" step in
@@ -2506,14 +2528,14 @@ days only, and the smoke a person breathes stays inside total PM2.5.
   so 11c needs a remedy before PM2.5 ranks (decision 2).
 - *Resolution:* scoring must not separate values closer than the out-of-sample error.
 
-**Decided (owner, 2026-10-13: "continue with your recommendation"):** 1 → V6.GL.03, 2022–2024
+**Decided (zamays, 2026-10-13: "continue with your recommendation"):** 1 → V6.GL.03, 2022–2024
 mean; 2 → (b) + (c): coarse anchored bands for scoring, and the nearest EPA monitor's reading
 shown beside an area's value as information (never assigned to it); 3 → decided in 11c
 after the rural dilution test; 4 → radon from the ZIP-level OSF data, as the share of homes
 above 4 pCi/L; 5 → lead paint "built before 1960", before-1980 shown; 6 → smoke as NOAA HMS
 "days with smoke overhead" now; the ACAG note stays drafted for the owner to send.
 
-**Decisions this raised (owner) — answered above:**
+**Decisions this raised (zamays) — answered above:**
 1. Source: V6.GL.03 (CC BY 4.0, 2022–2024 mean) instead of the archived V6.GL.02.04. *Recommended.*
 2. The hot-spot misses. Options: (a) show PM2.5 but don't rank on it; (b) rank in coarse
    anchored bands (e.g. ≤5, 5–8, 8–10, 10–12, >12 µg/m³), so only differences larger than
@@ -2566,7 +2588,7 @@ its estimate ± the model's out-of-sample RMSE (σ = 1.7, normal): 5 → 84, 7 �
 would span 80): PM2.5 gets about half the ranking leverage a percentile gives it — about what
 its accuracy supports.
 
-**Decided (owner, 2026-10-13: "continue with the recommended solution") — monitor
+**Decided (zamays, 2026-10-13: "continue with the recommended solution") — monitor
 disagreement caution.** Where an EPA monitor measured more than the surface at its own cell
 by over 2 µg/m³ (> 1 out-of-sample RMSE), residents within 5 mi of it are *doubted*:
 `pm25_doubt` = % of an area's (or county's) residents in that radius (`etl/pollution/doubt.py`).
@@ -2648,7 +2670,7 @@ ZCTAs) → blocks by Census's 2020 ZCTA–block file (8.04M blocks, 1 GB streame
 - *Uncertainty is large:* the CI width's median is ~34 points for a ZIP at ~20% — a ZIP's
   "20%" means roughly 3–37%. On top of that, radon is per house.
 
-**For 11e — decided (owner, 2026-10-13: "continue with recommended fixes"):**
+**For 11e — decided (zamays, 2026-10-13: "continue with recommended fixes"):**
 - *Radon — show, don't rank* (as the table above first said, for a new reason: the source is
   now fine-grained but its error is wider than most gaps between places). Area and county pages
   show the share above 4 pCi/L with the low-confidence icon and "test your home"; Watch out
@@ -2684,8 +2706,8 @@ ZCTAs) → blocks by Census's 2020 ZCTA–block file (8.04M blocks, 1 GB streame
 - [ ] Owner: is the reading of "not biased by nearby pollution" in rules 5–8 what was meant
       (a place isn't credited with a neighbour's value) — or should real drift from a nearby
       source *count*? The model surfaces include physical drift; our code adds none.
-- [x] Owner: anchored points instead of percentiles for pollution — yes, in coarse bands (2026-10-13).
-- [x] Owner: Tier 1 as listed — radon from the ZIP-level OSF model (share above 4 pCi/L) (2026-10-13).
+- [x] zamays (owner to confirm): anchored points instead of percentiles for pollution — yes, in coarse bands (2026-10-13).
+- [x] zamays (owner to confirm): Tier 1 as listed — radon from the ZIP-level OSF model (share above 4 pCi/L) (2026-10-13).
 - [ ] Owner: the monitor-check bar (RMSE < 1.5 µg/m³ for PM2.5).
 - [x] Which year(s) for PM2.5 — the 2022–2024 mean of V6.GL.03 (2026-10-13).
 - [ ] Refresh cadence for pollution inputs: annual (chosen) vs monthly with the rest.
@@ -2857,7 +2879,7 @@ Not a phase — a habit. Run real searches, note where a ranking feels wrong, an
         and use it. (b) ACS rates are long-time owners' — Michigan uncaps taxable value on
         sale: Ann Arbor's 52.67 homestead mills on 50% of price ≈ 2.6% vs 1.49% shown
         (≈$11.7k vs $5.2k on the typical home). Same pattern under CA Prop 13 and FL Save Our
-        Homes. Fix (owner's call): a cited law `assessment_resets_on_sale` + a caution, then
+        Homes. Fix (zamays's call): a cited law `assessment_resets_on_sale` + a caution, then
         new-buyer rates from state millage tables (MI Treasury, FL DOR) where machine-readable.
         Measured 2026-10-13 from ACS PUMS 2019–2023 (taxes ÷ value, owners who moved in 1–4
         years ago vs all owners): CA 1.18×, TX 1.07×, FL 1.07×, MI 1.04×, OR 1.02×; OH, IL,
@@ -2865,7 +2887,7 @@ Not a phase — a habit. Run real searches, note where a ranking feels wrong, an
         13–23 months. The survey under-reads the reset (first bill lags the sale, self-reported
         values, small samples) vs ≈1.5×+ from Michigan's statute. Options were A (caution
         only), B (measured from PUMS), C (statutory, per state), D (B + C). **Decided: B**,
-        with A's caution driven by the measurement (owner, 2026-10-13).
+        with A's caution driven by the measurement (zamays, 2026-10-13).
   - [x] **Hazard words aren't FEMA's ratings.** *(fixed 2026-10-13)* The app ranks loss *rate* (ALR_NPCTL): overall
         4th pctl → "Very low", where FEMA rates Washtenaw "Relatively Moderate"; inland flood
         13th → "Very low" vs FEMA "Relatively Moderate" (2021 disaster declaration). Fix: show
@@ -2881,7 +2903,7 @@ Not a phase — a habit. Run real searches, note where a ranking feels wrong, an
         Detroit's) though Washtenaw borders Wayne — rename or measure to the urban area's edge;
         "downtown" is only metro principal cities (Ypsilanti measures to Ann Arbor); "coast"
         excludes the Great Lakes (419 mi) — offer a Great Lakes shoreline option.
-  **Built 2026-10-13 (owner: "move forward with your recommended fixes"; fix 2 = option B):**
+  **Built 2026-10-13 (zamays: "move forward with your recommended fixes"; fix 2 = option B):**
   - *Today's home value* (`etl/sources/zillow_county.py`): Zillow's county ZHVI (3,063
     counties; else the Census median × the state's Zillow/Census ratio). Taxes charge
     property tax on it: Washtenaw $353k → $417k.
