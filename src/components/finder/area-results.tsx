@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 
 import {
   areaLimitResults,
@@ -18,7 +18,7 @@ import {
 import { formatValue, rankLabels, type CountyScore, type MetricKey } from "@/lib/scoring";
 
 import { Icon } from "@/components/ui/icons";
-import { InfoTip } from "@/components/ui/info-tip";
+import { InfoTip, place } from "@/components/ui/info-tip";
 
 import { isGold, scoreColor, trackOverflow } from "./score-colors";
 
@@ -139,37 +139,104 @@ function Fill({ points, beats }: { points: number; beats: number | null }) {
   );
 }
 
+/** A bar's hover label: "Commute: 82". */
+const barTip = (p: AreaPart) => `${p.label}: ${p.points === null ? "no data" : Math.round(p.points)}`;
+
+/**
+ * Hovering a fingerprint names the bar under the pointer. The bar under it is picked
+ * by x, so the gaps between bars don't flicker. The label is a popover (top layer),
+ * so a scrolling panel never clips it; it hides on scroll rather than drifting.
+ * Mouse and pen only: a tap opens the result, which explains every bar.
+ */
+function useBarTip() {
+  const pop = useRef<HTMLSpanElement>(null);
+  const shown = useRef<Element | null>(null);
+
+  const hide = useCallback(() => {
+    if (pop.current?.matches(":popover-open")) pop.current.hidePopover();
+  }, []);
+
+  useEffect(() => {
+    const el = pop.current;
+    if (!el) return;
+    const onToggle = (e: Event) => {
+      if ((e as ToggleEvent).newState === "open") return window.addEventListener("scroll", hide, true);
+      shown.current = null;
+      window.removeEventListener("scroll", hide, true);
+    };
+    el.addEventListener("toggle", onToggle);
+    return () => {
+      el.removeEventListener("toggle", onToggle);
+      window.removeEventListener("scroll", hide, true);
+    };
+  }, [hide]);
+
+  const onPointerMove = (e: PointerEvent<HTMLElement>) => {
+    if (e.pointerType === "touch") return;
+    const bar = [...e.currentTarget.children].find((b) => {
+      const r = b.getBoundingClientRect();
+      return e.clientX >= r.left - 2 && e.clientX <= r.right + 2;
+    });
+    const el = pop.current;
+    if (!el || !bar || bar === shown.current) return;
+    el.textContent = bar.getAttribute("data-tip");
+    if (!el.matches(":popover-open")) el.showPopover();
+    place(bar as HTMLElement, el);
+    shown.current = bar;
+  };
+
+  const tip = (
+    <span
+      ref={pop}
+      popover="manual"
+      aria-hidden
+      // Popovers default to centered (inset: 0; margin: auto); place() sets top/left.
+      className="pointer-events-none fixed inset-auto m-0 w-max rounded-md bg-neutral-900 px-2 py-1 text-caption font-medium text-white shadow-md dark:bg-neutral-100 dark:text-neutral-900"
+    />
+  );
+  return { handlers: { onPointerMove, onPointerLeave: hide }, tip };
+}
+
 /**
  * The fingerprint (owner's favorite): one bar per priority, most important first,
- * no words. Up to 4 priorities as short bars; more as tiny columns, so 11 still fit.
+ * no words — hover a bar for its name and points. Up to 4 priorities as short bars;
+ * more as tiny columns, so 11 still fit.
  */
 export function Fingerprint({ parts }: { parts: AreaPart[] }) {
+  const { handlers, tip } = useBarTip();
   const known = parts.filter((p) => p.points !== null);
   const label = known.map((p) => `${p.label} ${Math.round(p.points!)}`).join(", ");
   if (parts.length <= 4) {
     return (
-      <span role="img" aria-label={label} className="mt-1 flex items-center gap-1">
-        {parts.map((p) => (
-          <span key={p.key} className={`block h-1.5 w-9 rounded-full bg-neutral-200 dark:bg-neutral-800 ${trackOverflow(isGold(p.beats))}`}>
-            {p.points !== null && <Fill points={p.points} beats={p.beats} />}
-          </span>
-        ))}
-      </span>
+      <>
+        <span role="img" aria-label={label} {...handlers} className="mt-1 flex items-center gap-1">
+          {parts.map((p) => (
+            <span key={p.key} data-tip={barTip(p)} className={`block h-1.5 w-9 rounded-full bg-neutral-200 dark:bg-neutral-800 ${trackOverflow(isGold(p.beats))}`}>
+              {p.points !== null && <Fill points={p.points} beats={p.beats} />}
+            </span>
+          ))}
+        </span>
+        {tip}
+      </>
     );
   }
   return (
-    <span role="img" aria-label={label} className="mt-1 flex h-5 items-end gap-[3px]">
-      {parts.map((p) => (
-        <span
-          key={p.key}
-          className={`block w-2 rounded-t-sm ${isGold(p.beats) ? "gold-col" : ""}`}
-          style={{
-            height: `${Math.max(3, Math.round(((p.points ?? 0) / 100) * 20))}px`,
-            backgroundColor: p.points === null ? "#d4d4d4" : isGold(p.beats) ? undefined : scoreColor(p.points),
-          }}
-        />
-      ))}
-    </span>
+    <>
+      <span role="img" aria-label={label} {...handlers} className="mt-1 flex h-5 items-end gap-[3px]">
+        {parts.map((p) => (
+          <span
+            key={p.key}
+            data-tip={barTip(p)}
+            className={`block w-2 rounded-t-sm ${isGold(p.beats) ? "gold-col" : ""}`}
+            style={{
+              height: `${Math.max(3, Math.round(((p.points ?? 0) / 100) * 20))}px`,
+              backgroundColor: p.points === null ? "#d4d4d4" : isGold(p.beats) ? undefined : scoreColor(p.points),
+            }}
+          />
+        ))}
+      </span>
+      {tip}
+    </>
   );
 }
 
