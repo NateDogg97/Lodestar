@@ -100,12 +100,25 @@ jobs:
           cat check.md >> "$GITHUB_STEP_SUMMARY"
           exit $code
 
+      - name: Publish
+        run: python -m etl.tracts.publish
+
+      # Pollution (plan §9 Phase 11): PM2.5, smoke, radon and older housing for the states
+      # just published, from their census blocks. The inputs change yearly (ACAG, EPA
+      # monitors, NOAA smoke years are fixed in etl/pollution/*.py YEARS), but every run
+      # starts from scratch and they aren't mirrored yet, so they're downloaded each run
+      # (~3–4 GB; a few minutes to compute). A source whose coverage collapses fails here.
+      - name: Pollution
+        env:
+          CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}
+        run: |
+          python -m etl.pollution published
+          python -m etl.tracts.backfill --pollution
+
       # areas.json: every area's scoring columns, for ranking areas nationwide (Phase 8f).
       # Started from the live file, so a run that rebuilt some states keeps the rest.
-      - name: Publish
-        run: |
-          python -m etl.tracts.publish
-          python -m etl.tracts.national --merge-live
+      - name: National file
+        run: python -m etl.tracts.national --merge-live
 
       - name: Upload to R2
         run: python -m etl.tracts.upload
