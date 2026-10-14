@@ -1574,6 +1574,18 @@ def test_area_property_tax() -> None:
     check(counts == {"taxes": 2, "taxes_flagged": 1}, "counts", counts)
 
 
+def test_tract_publish_text_columns() -> None:
+    """Names the area build writes publish as text, not rounded as numbers."""
+    print("\ntracts.publish: name columns stay text")
+    from etl.tracts.backfill import EDGE_COLUMNS
+    from etl.tracts.publish import TEXT, _columnar
+
+    names = [c for c in EDGE_COLUMNS if c.startswith("nearest_")]
+    check(set(names) <= TEXT, f"edge name columns are text ({names})")
+    out = _columnar(pd.DataFrame({"nearest_town": ["Prattville"], "dist_town_mi": [4.26]}))
+    check(out["rows"] == [["Prattville", 4.3]], "a town name publishes beside its distance")
+
+
 def main() -> int:
     print("=" * 70)
     print("OFFLINE TEST SUITE — no network required")
@@ -1607,6 +1619,7 @@ def main() -> int:
         test_pollution_carry_over()
         test_tract_today_prices()
         test_tract_backfill_audit_columns()
+        test_tract_publish_text_columns()
         test_tract_crime_rates()
         test_demographics()
         test_racial_equality()
