@@ -1584,6 +1584,11 @@ def test_tract_publish_text_columns() -> None:
     check(set(names) <= TEXT, f"edge name columns are text ({names})")
     out = _columnar(pd.DataFrame({"nearest_town": ["Prattville"], "dist_town_mi": [4.26]}))
     check(out["rows"] == [["Prattville", 4.3]], "a town name publishes beside its distance")
+    out = _columnar(pd.DataFrame({"hazard_rating": ["Relatively Low"], "hazard_wildfire_rating": [None],
+                                  "hazard_wildfire": [12.34]}))
+    check(out["rows"] == [["Relatively Low", None, 12.3]], "FEMA rating words publish as text")
+    out = _columnar(pd.DataFrame({"some_new_label": ["Very High", "3.14"]}))
+    check(out["rows"] == [["Very High"], [3.1]], "an unlisted word column keeps its words; numbers stay numbers")
 
 
 def main() -> int:

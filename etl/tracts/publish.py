@@ -41,6 +41,12 @@ TEXT = {"geoid", "district_id", "zip", "nearby_schools", "nearby_high_schools", 
 DROP = {"county_fips", "downtown_metro"}
 
 
+def _is_text(col: str) -> bool:
+    """Published as strings: IDs and names, and FEMA's rating words (`hazard_rating`,
+    `hazard_<hazard>_rating`, etl/sources/nri.py)."""
+    return col in TEXT or col.endswith("_rating")
+
+
 def _digits(col: str) -> int:
     """Rounding per column: money and counts whole; rates, shares, miles 1–2 decimals."""
     if col in ("pop_lat", "pop_lon", "lat", "lon"):
@@ -58,21 +64,32 @@ def _digits(col: str) -> int:
 
 
 def _columnar(df: pd.DataFrame) -> dict:
+    """Rows of one county as lists. A column outside `_is_text` holding words (a new text
+    column the build writes) keeps them as strings, with a warning to list it here, rather
+    than failing the whole refresh."""
     cols = list(df.columns)
+    unlisted: set[str] = set()
     out_rows = []
     for rec in df.itertuples(index=False):
         row = []
         for c, v in zip(cols, rec):
             if v is None or (isinstance(v, float) and np.isnan(v)):
                 row.append(None)
-            elif c in TEXT:
+            elif _is_text(c):
                 row.append(str(v))
             elif isinstance(v, (bool, np.bool_)):
                 row.append(bool(v))
             else:
-                x = round(float(v), _digits(c))
+                try:
+                    x = round(float(v), _digits(c))
+                except ValueError:
+                    unlisted.add(c)
+                    row.append(str(v))
+                    continue
                 row.append(int(x) if x == int(x) and _digits(c) == 0 else x)
         out_rows.append(row)
+    for c in sorted(unlisted):
+        log.warning("column %s holds text but isn't in publish.TEXT: published as strings", c)
     return {"columns": cols, "rows": out_rows}
 
 
