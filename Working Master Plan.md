@@ -8,6 +8,12 @@
 > Last updated: 2026-11-03
 >
 > **Changelog**
+> - 2026-11-03 — **Data checks at session start** (owner: "tell me if it's time to check for
+>   new data sets" and about better sources). `etl/data_checks.json` lists every source a
+>   person refreshes or re-checks, with a cadence and the last check; a Claude Code SessionStart
+>   hook (`scripts/data-checks.mjs --hook`) reports what's due, and a source review recurs every
+>   90 days. Open from the first list: `ACS_YEAR` is still 2023 (2019–2023) and the code only
+>   walks backwards from it, so a newer 5-year release is never picked up by itself.
 > - 2026-11-03 — **Monthly area refresh failed: Redfin and FDLE refuse us** (owner). Every
 >   county failed (3,077 on Redfin, Florida's 67 on FDLE) and the quality gate then crashed
 >   reading a report with no counts. Redfin retired `redfin_market_tracker/` (AccessDenied for
