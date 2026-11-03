@@ -1220,6 +1220,13 @@ def test_tract_crime_and_gate() -> None:
     check(not gate.check(cov(crime=50))[0], "a measure under its national floor fails")
     failed = pd.concat([cov()] + [cov(fips=f"4400{i}", error="boom") for i in range(4)], ignore_index=True)
     check(not gate.check(failed)[0], "more failed counties than allowed fails")
+    # A source down for every county (Redfin, 2026-11-03): the report has no counts at all.
+    none = pd.DataFrame([{"fips": f"4400{i}", "error": "HTTPError: 403", "state": "RI"} for i in range(2)])
+    ok, lines = gate.check(none)
+    check(not ok and any("no county built" in x for x in lines), "every county failed: fails, doesn't crash")
+    ok, lines = gate.check(cov(redfin=0))
+    check(ok and any("No Redfin data" in x for x in lines), "no Redfin anywhere: passes, and says so")
+    check(not any("No Redfin data" in x for x in gate.check(cov(redfin=90))[1]), "Redfin present: no warning")
 
     # The FBI's yearly tables: title rows above the header, state names in either
     # case (2025 "Alabama", 2024 "ALABAMA"), footnote digits on names.
@@ -1591,6 +1598,71 @@ def test_tract_publish_text_columns() -> None:
     check(out["rows"] == [["Very High"], [3.1]], "an unlisted word column keeps its words; numbers stay numbers")
 
 
+def test_sources_that_refuse_us() -> None:
+    """Redfin's bucket and FDLE's page refuse us (2026-11-03): areas still build."""
+    print("\nsources that refuse us")
+    import requests
+
+    from .tracts import crime_states, market
+
+    def refused() -> None:
+        raise requests.HTTPError("403 Client Error: Forbidden for url: https://example.test/f.gz?X-Sig=SECRET")
+
+    saved = (market.REDFIN_CACHE, market._download_redfin)
+    market.REDFIN_CACHE = config.INTERIM_DIR / "redfin_zip_latest.csv"  # set at import: the real data/
+    market._download_redfin = refused
+    market.redfin_latest.cache_clear()
+    try:
+        red = market.redfin_latest()
+        check(red.empty and list(red.columns) == market.REDFIN_COLUMNS, "Redfin refused: an empty table, no exception")
+        names = pd.DataFrame({"geoid": ["01001020100"], "zip": ["36067"]})
+        joined = names.merge(red, on="zip", how="left")
+        check(len(joined) == 1 and joined["sale_price"].isna().all(), "every tract kept, its Redfin columns empty")
+        check(not market.REDFIN_CACHE.exists(), "nothing cached: next run asks Redfin again")
+    finally:
+        market.REDFIN_CACHE, market._download_redfin = saved
+        market.redfin_latest.cache_clear()
+
+    # Redfin's Data Center file (2026-11): every period since 2012; only the newest is used.
+    head = ('"FREQUENCY","PERIOD END","REGION TYPE","REGION NAME","HOMES SOLD","MEDIAN SALE PRICE NSA ($)",'
+            '"MEDIAN DAYS ON MARKET (DAYS)","AVERAGE SALE TO LIST RATIO (%)"\n')
+    body = ('"Rolling 3 Months","2026-09-30","Zip","07002",92,661806,28,101.66\n'
+            '"Rolling 3 Months","2026-08-31","Zip","07002",90,650000,30,101.0\n'
+            '"Rolling 3 Months","2019-06-30","Zip","99999",5,90000,40,95.0\n'  # no sales since: no figures
+            '"Rolling 3 Months","2026-09-30","Zip","07010",NA,NA,NA,NA\n')
+    path = config.RAW_DIR / "redfin_test.csv"
+    path.write_text(head + body)
+    saved_cache = market.REDFIN_CACHE
+    market.REDFIN_CACHE = config.INTERIM_DIR / "redfin_test_newest.csv"
+    try:
+        new = market._redfin_newest(path).set_index("zip")
+    finally:
+        market.REDFIN_CACHE = saved_cache
+    check(sorted(new.index) == ["07002", "07010"], "Redfin: the newest period only, ZIPs keep leading zeros")
+    check(new.at["07002", "sale_price"] == 661806 and new.at["07002", "sale_to_list"] == 101.66,
+          "Redfin: the newest figures; sale-to-list already a %")
+    check(pd.isna(new.at["07010", "sale_price"]), "Redfin: a ZIP without sales in the period has no price")
+
+    saved_live = crime_states._fdle_live
+    crime_states._fdle_live = lambda: refused()
+    crime_states._fdle_workbook.cache_clear()
+    try:
+        try:
+            crime_states._fdle_workbook()
+            check(False, "FDLE refused, no copy: fails")
+        except RuntimeError as exc:
+            check("inputs push" in str(exc), "FDLE refused, no copy: fails and says how to fix it")
+        crime_states._fdle_workbook.cache_clear()
+        with pd.ExcelWriter(config.RAW_DIR / crime_states.FDLE_RAW_NAME) as xw:
+            pd.DataFrame([["x"]]).to_excel(xw, sheet_name="FIBRS Offense 2025", header=False, index=False)
+        wb = crime_states._fdle_workbook()
+        check(wb is not None and wb.sheet_names == ["FIBRS Offense 2025"], "FDLE refused: the hand-downloaded copy")
+        check(crime_states.fdle(2026).empty, "a year the copy doesn't have: no agencies (and a warning)")
+    finally:
+        crime_states._fdle_live = saved_live
+        crime_states._fdle_workbook.cache_clear()
+
+
 def main() -> int:
     print("=" * 70)
     print("OFFLINE TEST SUITE — no network required")
@@ -1629,6 +1701,7 @@ def main() -> int:
         test_demographics()
         test_racial_equality()
         test_tract_crime_and_gate()
+        test_sources_that_refuse_us()
         test_rpp_local()
         test_tract_estimates()
         test_koppen_borderline()

@@ -127,8 +127,9 @@ def build_county(fips: str, with_crime: bool = True) -> pd.DataFrame:
                                                       df["violent_rate"].notna())
     else:
         wide = pd.Series(False, index=df.index)
-    # A median sale price from a handful of sales is noise.
-    thin = df["homes_sold"].fillna(0) < MIN_HOMES_SOLD
+    # A median sale price from a handful of sales is noise. Without Redfin this run
+    # (market.redfin_latest), nothing is thin: there are no sale figures at all.
+    thin = (df["homes_sold"].fillna(0) < MIN_HOMES_SOLD) & (not market.redfin_latest().empty)
     # Mostly mobile homes: the home value is real but isn't a house price.
     mobile = mobile_homes(df)
     df["low_confidence"] = [
