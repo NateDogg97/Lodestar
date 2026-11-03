@@ -7,20 +7,26 @@ WHAT THIS PRODUCES (one row per tract, for the tract's ZIP from names.py)
                               change over 12 months, %
     zori, zori_yoy            Zillow Observed Rent Index (typical asking rent)
     zillow_month              the month those are for
-    sale_price                Redfin median sale price, all residential
+    sale_price                Redfin median sale price
     days_on_market            Redfin median days on market
     sale_to_list              Redfin average sale-to-list ratio, %
     homes_sold                Redfin homes sold in the period
-    redfin_period             the 90-day period's end date
+    redfin_period             the 3-month period's end date (the same for every ZIP)
 
     These are ZIP-level: every tract in a ZIP shows its ZIP's market. They're
     fresher than Census figures (which lag 2–5 years), which is their point.
 
 SOURCES (free; credit both in the app)
     Zillow Research: https://www.zillow.com/research/data/  (monthly, by ZIP)
-    Redfin Data Center: zip_code_market_tracker.tsv000.gz (~1.5 GB). Streamed
-      to data/raw/ once; the latest "All Residential" period per ZIP is cached
-      in data/interim/redfin_zip_latest.csv.
+    Redfin Data Center: housing_market/monthly/all_zips.csv (~1.3 GB, rolling 3
+      months, every month since 2012; the file names are in
+      redfin_data_center/index.json). Streamed to data/raw/ once; the newest
+      period is cached in data/interim/redfin_zips_newest.csv. Only that period:
+      a ZIP without sales in it has no figures, not its last ones from years
+      ago. Redfin retired the old redfin_market_tracker/ files (AccessDenied
+      since 2026-11), which had a property type; this file is all homes.
+      OPTIONAL: a run that can't download it builds without the Redfin columns
+      (empty, never last month's copy) and the quality gate says so.
 
 RUN STANDALONE
     python -m etl.tracts.market 48453
@@ -31,21 +37,22 @@ from __future__ import annotations
 import functools
 import io
 import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import requests
 
 from .. import config
-from ..util import get_logger, http_get
+from ..util import get_logger, http_get, redact_query
 
 log = get_logger("tracts.market")
 
 ZHVI_URL = "https://files.zillowstatic.com/research/public_csvs/zhvi/Zip_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv"
 ZORI_URL = "https://files.zillowstatic.com/research/public_csvs/zori/Zip_zori_uc_sfrcondomfr_sm_month.csv"
-REDFIN_URL = "https://redfin-public-data.s3.us-west-2.amazonaws.com/redfin_market_tracker/zip_code_market_tracker.tsv000.gz"
-REDFIN_RAW = config.RAW_DIR / "redfin_zip_code_market_tracker.tsv000.gz"
-REDFIN_CACHE = config.INTERIM_DIR / "redfin_zip_latest.csv"
+REDFIN_URL = "https://redfin-public-data.s3.us-west-2.amazonaws.com/redfin_data_center/housing_market/monthly/all_zips.csv"
+REDFIN_RAW = config.RAW_DIR / "redfin_all_zips.csv"
+REDFIN_CACHE = config.INTERIM_DIR / "redfin_zips_newest.csv"
 
 
 @functools.lru_cache(maxsize=4)
@@ -68,7 +75,7 @@ def _zillow(url: str, hint: str, name: str) -> pd.DataFrame:
 def _download_redfin() -> None:
     if REDFIN_RAW.exists():
         return
-    log.info("downloading Redfin ZIP tracker (~1.5 GB, once)…")
+    log.info("downloading Redfin ZIP market data (~1.3 GB, once)…")
     tmp = REDFIN_RAW.with_suffix(".part")
     with requests.get(REDFIN_URL, stream=True, timeout=config.HTTP_TIMEOUT,
                       headers={"User-Agent": config.HTTP_USER_AGENT}) as r:
@@ -79,31 +86,47 @@ def _download_redfin() -> None:
     tmp.rename(REDFIN_RAW)
 
 
+REDFIN_COLUMNS = ["zip", "sale_price", "days_on_market", "sale_to_list", "homes_sold", "redfin_period"]
+
+
 @functools.lru_cache(maxsize=1)
 def redfin_latest() -> pd.DataFrame:
-    """zip, sale_price, days_on_market, sale_to_list, homes_sold, redfin_period (latest per ZIP)."""
+    """zip, sale_price, days_on_market, sale_to_list, homes_sold, redfin_period (the newest period).
+    Empty when Redfin can't be downloaded or read: asked once per run, not once per county."""
     if REDFIN_CACHE.exists():
         return pd.read_csv(REDFIN_CACHE, dtype={"zip": str})
-    _download_redfin()
-    cols = ["PERIOD_END", "REGION", "PROPERTY_TYPE", "MEDIAN_SALE_PRICE", "MEDIAN_DOM", "AVG_SALE_TO_LIST",
-            "HOMES_SOLD"]
-    best: pd.DataFrame | None = None
-    for chunk in pd.read_csv(REDFIN_RAW, sep="\t", compression="gzip", usecols=cols, chunksize=500_000,
-                             dtype={"REGION": str, "PROPERTY_TYPE": str, "PERIOD_END": str}):
-        c = chunk[chunk["PROPERTY_TYPE"] == "All Residential"]
-        c = c.sort_values("PERIOD_END").drop_duplicates("REGION", keep="last")
-        best = c if best is None else pd.concat([best, c]).sort_values("PERIOD_END").drop_duplicates("REGION", keep="last")
-    assert best is not None
+    try:
+        _download_redfin()
+        return _redfin_newest(REDFIN_RAW)
+    except (requests.RequestException, ValueError) as exc:  # refused, or a new format (missing columns)
+        log.error("Redfin unavailable (%s): building without sale price, days on market, sale-to-list",
+                  redact_query(str(exc)))
+        return pd.DataFrame(columns=REDFIN_COLUMNS)
+
+
+def _redfin_newest(path: Path) -> pd.DataFrame:
+    cols = ["FREQUENCY", "PERIOD END", "REGION TYPE", "REGION NAME", "MEDIAN SALE PRICE NSA ($)",
+            "MEDIAN DAYS ON MARKET (DAYS)", "AVERAGE SALE TO LIST RATIO (%)", "HOMES SOLD"]
+    # Each chunk's newest rows; the newest of those is the file's (rows are in no set order).
+    parts = []
+    for chunk in pd.read_csv(path, usecols=cols, chunksize=500_000, dtype=str):
+        c = chunk[(chunk["REGION TYPE"] == "Zip") & (chunk["FREQUENCY"] == "Rolling 3 Months")]
+        parts.append(c[c["PERIOD END"] == c["PERIOD END"].max()])
+    rows = pd.concat(parts)
+    rows = rows[rows["PERIOD END"] == rows["PERIOD END"].max()]
     out = pd.DataFrame({
-        "zip": best["REGION"].str.extract(r"(\d{5})")[0],
-        "sale_price": pd.to_numeric(best["MEDIAN_SALE_PRICE"], errors="coerce"),
-        "days_on_market": pd.to_numeric(best["MEDIAN_DOM"], errors="coerce"),
-        "sale_to_list": 100 * pd.to_numeric(best["AVG_SALE_TO_LIST"], errors="coerce"),
-        "homes_sold": pd.to_numeric(best["HOMES_SOLD"], errors="coerce"),
-        "redfin_period": best["PERIOD_END"],
-    }).dropna(subset=["zip"])
+        "zip": rows["REGION NAME"].str.extract(r"^(\d{5})$")[0],
+        "sale_price": pd.to_numeric(rows["MEDIAN SALE PRICE NSA ($)"], errors="coerce"),
+        "days_on_market": pd.to_numeric(rows["MEDIAN DAYS ON MARKET (DAYS)"], errors="coerce"),
+        "sale_to_list": pd.to_numeric(rows["AVERAGE SALE TO LIST RATIO (%)"], errors="coerce"),  # already a %
+        "homes_sold": pd.to_numeric(rows["HOMES SOLD"], errors="coerce"),
+        "redfin_period": rows["PERIOD END"],
+    }).dropna(subset=["zip"]).drop_duplicates("zip")
+    if out.empty:
+        raise ValueError(f"Redfin: no rolling 3-month ZIP rows in {path.name}: has the file changed format?")
     out.to_csv(REDFIN_CACHE, index=False)
-    log.info("Redfin: latest period for %d ZIPs (cached); newest %s", len(out), out["redfin_period"].max())
+    log.info("Redfin: %d ZIPs for the period to %s, %d with a sale price (cached)", len(out),
+             out["redfin_period"].iloc[0], out["sale_price"].notna().sum())
     return out
 
 

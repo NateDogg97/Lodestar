@@ -13,7 +13,7 @@ Each source returns one row per agency, in crime.py's shape:
     county_key    crime._key of the county it's in
     population, months, violent, property
 
-FLORIDA — FDLE FIBRS Offense Detail (https://www.fdle.state.fl.us/CJAB/FIBRS)
+FLORIDA — FDLE FIBRS Offense Detail (FDLE_PAGE; was /CJAB/FIBRS until 2026-11)
     One workbook, a sheet per year: county, agency, population, and monthly
     counts per offense type. Violent = murder, forcible sex offenses, robbery,
     aggravated assault; property = burglary, larceny (all kinds), motor vehicle
@@ -23,6 +23,13 @@ FLORIDA — FDLE FIBRS Offense Detail (https://www.fdle.state.fl.us/CJAB/FIBRS)
     months with any offense reported. The file's address changes as FDLE
     updates it, so it's found on the page. Not in it: the Broward Sheriff's
     Office (not on FIBRS yet), so Broward's sheriff-patrolled cities stay a gap.
+
+    FDLE refuses scripts since 2026-11 (403 from GitHub and from a laptop), so
+    a copy downloaded by hand is a manual input (etl/inputs.py MANUAL): save
+    the workbook from the page in a browser as
+    data/raw/fdle_fibrs_offense_detail.xlsx and run
+    `python -m etl.inputs push`. The live page wins when it answers; refresh
+    the copy when FDLE adds a year's sheet (the build warns when it's missing).
 """
 
 from __future__ import annotations
@@ -34,17 +41,18 @@ import re
 import pandas as pd
 
 from .. import config
-from ..util import get_logger, http_get
+from ..util import get_logger, http_get, redact_query
 
 log = get_logger("tracts.crime_states")
 
-FDLE_PAGE = "https://www.fdle.state.fl.us/CJAB/FIBRS"
+FDLE_PAGE = ("https://www.fdle.state.fl.us/crime-public-safety/crime-data/"
+             "florida-incident-based-report-reporting-system-fibrs")
 FDLE_VIOLENT = ("Murder and Non-Negligent Manslaughter", "Forcible Sex Offenses", "Robbery", "Aggravated Assault")
 FDLE_PROPERTY = ("Burglary", "Larceny", "Motor Vehicle Theft")  # "Larceny - …": every kind
+FDLE_RAW_NAME = "fdle_fibrs_offense_detail.xlsx"  # the hand-downloaded copy (inputs.MANUAL)
 
 
-@functools.lru_cache(maxsize=1)
-def _fdle_workbook() -> pd.ExcelFile | None:
+def _fdle_live() -> bytes | None:
     page = http_get(FDLE_PAGE, use_cache=False, user_agent=config.BROWSER_USER_AGENT)
     m = re.search(r'href="([^"]*FIBRS_Offense_Detail[^"]*\.xlsx[^"]*)"', str(page))
     if not m:
@@ -54,7 +62,22 @@ def _fdle_workbook() -> pd.ExcelFile | None:
     url = url if url.startswith("http") else "https://www.fdle.state.fl.us" + url
     body = http_get(url, binary=True, cache_hint="fdle_fibrs_offense", user_agent=config.BROWSER_USER_AGENT)
     assert isinstance(body, bytes)
-    return pd.ExcelFile(io.BytesIO(body))
+    return body
+
+
+@functools.lru_cache(maxsize=1)
+def _fdle_workbook() -> pd.ExcelFile | None:
+    try:
+        body = _fdle_live()
+    except Exception as exc:  # noqa: BLE001 — refused or moved: the hand-downloaded copy, if there is one
+        why = redact_query(str(exc))
+        copy = config.RAW_DIR / FDLE_RAW_NAME
+        if not copy.exists():
+            raise RuntimeError(f"FDLE refused us ({why}) and there is no data/raw/{FDLE_RAW_NAME}: "
+                               "download it by hand and `python -m etl.inputs push`") from exc
+        log.warning("FDLE refused us (%s): using the hand-downloaded data/raw/%s", why, FDLE_RAW_NAME)
+        body = copy.read_bytes()
+    return None if body is None else pd.ExcelFile(io.BytesIO(body))
 
 
 def _jurisdiction(agency: str) -> tuple[str, str] | None:
@@ -76,6 +99,8 @@ def fdle(year: int) -> pd.DataFrame:
     wb = _fdle_workbook()
     sheet = f"FIBRS Offense {year}"
     if wb is None or sheet not in wb.sheet_names:
+        if wb is not None:
+            log.warning("FDLE: no %r sheet in the workbook (has %s)", sheet, ", ".join(wb.sheet_names))
         return pd.DataFrame(columns=cols)
     raw = pd.read_excel(wb, sheet, header=None)
     cats = raw.iloc[1].ffill().astype(str).str.strip()

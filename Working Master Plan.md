@@ -5,9 +5,22 @@
 > If something here conflicts with what you actually built, the code is right and this file is
 > stale — fix the file.
 >
-> Last updated: 2026-10-13
+> Last updated: 2026-11-03
 >
 > **Changelog**
+> - 2026-11-03 — **Monthly area refresh failed: Redfin and FDLE refuse us** (owner). Every
+>   county failed (3,077 on Redfin, Florida's 67 on FDLE) and the quality gate then crashed
+>   reading a report with no counts. Redfin retired `redfin_market_tracker/` (AccessDenied for
+>   every file; the live figures had already stopped at May 2026) for its Data Center files,
+>   listed in `redfin_data_center/index.json`: `tracts/market.py` now reads
+>   `housing_market/monthly/all_zips.csv` (same four measures, rolling 3 months, all homes —
+>   no property type). **Newest period only** (owner: no stale data): a ZIP without sales in it
+>   has no figures, where the old code kept each ZIP's last row, some years old. If Redfin
+>   can't be downloaded or read, the run builds without those columns (empty, never a stale
+>   copy) and the gate summary says so. FDLE's page refuses scripts (403 from GitHub and a
+>   laptop): a copy downloaded by hand is a manual input (`inputs.MANUAL`,
+>   `fdle_fibrs_offense_detail.xlsx`), used when the live page refuses
+>   (`tracts/crime_states.py`). The gate fails cleanly when no county built.
 > - 2026-10-13 — **PR #1 from a fork (zamays): Phases 10d–10g, 11 and the §12 audit fixes.**
 >   Decisions in those sections credited to "zamays" were made by the PR's author; the owner
 >   has reviewed and confirmed them.

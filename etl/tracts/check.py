@@ -42,6 +42,8 @@ def load() -> pd.DataFrame:
 
 
 def check(df: pd.DataFrame) -> tuple[bool, list[str]]:
+    # A run where every county failed has only fips and error: no counts to read.
+    df = df.assign(**{c: float("nan") for c in ("tracts", "populated") if c not in df})
     failed = df[df["error"].notna()] if "error" in df else df.iloc[0:0]
     ok_rows = df.drop(failed.index)
     w = ok_rows["populated"].fillna(0)
@@ -49,7 +51,10 @@ def check(df: pd.DataFrame) -> tuple[bool, list[str]]:
              f"{int(ok_rows['tracts'].sum()):,} tracts, {df['state'].nunique()} states", ""]
     ok = True
     limit = max(MAX_FAILED_MIN, int(MAX_FAILED_SHARE * len(df)))
-    if len(failed) > limit:
+    if ok_rows.empty:
+        ok = False
+        lines.append("❌ no county built")
+    elif len(failed) > limit:
         ok = False
         lines.append(f"❌ {len(failed)} counties failed (limit {limit})")
     for r in failed.head(20).itertuples():
@@ -64,6 +69,9 @@ def check(df: pd.DataFrame) -> tuple[bool, list[str]]:
         bad = floor is not None and pct < floor
         ok &= not bad
         lines.append(f"| {col} | {pct:.1f}% | {floor if floor is not None else '—'} | {'❌' if bad else ''} |")
+    # Optional (no floor), so it doesn't fail the run, but an empty source is news.
+    if "redfin" in ok_rows and len(ok_rows) and not ok_rows["redfin"].fillna(0).any():
+        lines += ["", "⚠️ No Redfin data this run (sale price, days on market, sale-to-list): see tracts/market.py"]
 
     warn = []
     for st, g in ok_rows.groupby("state"):

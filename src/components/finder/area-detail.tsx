@@ -890,8 +890,8 @@ export function AreaDetail({
               <FlagMark on={flagged.has("sale_price")} />
             </Row>
             <Note>
-              By ZIP code. Zillow {String(r.zillow_month ?? "")} (home value and rent indexes) · Redfin to {String(r.redfin_period ?? "")}{" "}
-              (latest 90 days of sales).
+              By ZIP code. Zillow {String(r.zillow_month ?? "")} (home value and rent indexes)
+              {r.redfin_period ? ` · Redfin to ${String(r.redfin_period)} (latest 90 days of sales).` : "."}
             </Note>
           </>
         }

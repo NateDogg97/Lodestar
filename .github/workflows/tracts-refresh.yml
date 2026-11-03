@@ -4,6 +4,9 @@
 # Every run starts from scratch, so every source is fetched fresh: Zillow and
 # Redfin monthly, the newest FBI crime year when it's out, and so on. The
 # yearly vintages in etl/config.py (ACS, CRDC, LODES…) are still bumped by hand.
+# Redfin is optional: if its file can't be downloaded or read, the run goes on
+# without it and the summary says so. Florida's FDLE workbook comes from
+# the private bucket's hand-downloaded copy when FDLE refuses (etl/inputs.py).
 #
 # Nothing reaches the site unless the quality gate passes (etl/tracts/check.py):
 # too many failed counties, or a measure whose national coverage collapses,

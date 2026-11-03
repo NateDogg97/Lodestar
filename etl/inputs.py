@@ -38,6 +38,7 @@ MANUAL = [
     "seda_county_pool_cs_6.0.csv",    # county pipeline (sources/seda.py)
     "seda_geodist_pool_cs_6.0.csv",   # tracts: school districts (tracts/schools.py)
     "seda_school_pool_cs_6.0.csv",    # tracts: schools
+    "fdle_fibrs_offense_detail.xlsx",  # tracts: Florida crime, when FDLE refuses (tracts/crime_states.py)
 ]
 
 
