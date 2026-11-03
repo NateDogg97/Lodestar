@@ -1,0 +1,102 @@
+{
+  "about": "Data sources to re-check by hand, and how often. scripts/data-checks.mjs lists what's due (Claude Code shows it at session start). After a check: node scripts/data-checks.mjs done <id>. Dates are when someone last looked, not when the data was published. 'next' is a known release date that makes a check due early.",
+  "checks": [
+    {
+      "id": "acs",
+      "name": "Census ACS 5-year (county and area income, rent, home value, demographics)",
+      "where": "etl/config.py ACS_YEAR (2023 = 2019-2023); PUMS 2019-2023 in etl/sources/newbuyer.py and the area property tax",
+      "every_days": 180,
+      "last_checked": null,
+      "how": "A new 5-year release comes out each December. Check https://api.census.gov/data/{ACS_YEAR+1}/acs/acs5 (200 = published). If it is out, bump ACS_YEAR (the code only walks backwards from it), check the PUMS vintage, rebuild counties.json and run the area refresh."
+    },
+    {
+      "id": "bea",
+      "name": "BEA regional price parities and county income",
+      "where": "etl/config.py BEA_YEAR (2024)",
+      "every_days": 365,
+      "last_checked": "2026-09-20",
+      "next": "2026-12-11",
+      "how": "BEA's next release was scheduled for 2026-12-10 (adds 2025). Check bea.gov's release schedule; if out, bump BEA_YEAR and rebuild counties.json."
+    },
+    {
+      "id": "counties-json",
+      "name": "County dataset (public/data/counties.json, rebuilt by hand)",
+      "where": "python -m etl.build; python -m etl.patch for single sources",
+      "every_days": 90,
+      "last_checked": "2026-10-13",
+      "how": "Nothing rebuilds it automatically. Rebuild after any vintage bump above, or every few months for the sources that update on their own (BLS, Zillow county, NOAA). Keep it under 2 MB."
+    },
+    {
+      "id": "nri",
+      "name": "FEMA National Risk Index (hazards, county and area)",
+      "where": "etl/config.py NRI_VERSION (v1.20, December 2025), NRI_COUNTIES_URL, NRI_TRACTS_URL; mirrored in the private bucket",
+      "every_days": 180,
+      "last_checked": "2026-09-28",
+      "how": "Check FEMA's NRI data page for a newer version. If there is one, update the version and both URLs, rebuild, and re-push the mirror (python -m etl.inputs mirror) because FEMA refuses GitHub's runners."
+    },
+    {
+      "id": "schools",
+      "name": "Schools: CRDC, NCES school locations, SEDA",
+      "where": "etl/tracts/schools.py CRDC_URL (2023-24), SCHOOL_LOCATIONS_URL (EDGE 2023-24); SEDA 6.0 files (manual, private bucket)",
+      "every_days": 365,
+      "last_checked": "2026-10-02",
+      "how": "Look for a newer CRDC collection, NCES EDGE public school geocodes, and SEDA version. SEDA is downloaded by hand: save to etl/data/raw/ and python -m etl.inputs push."
+    },
+    {
+      "id": "lodes",
+      "name": "LODES jobs (where people work, for commutes and downtowns)",
+      "where": "etl/config.py LODES_YEAR (2023)",
+      "every_days": 365,
+      "last_checked": "2026-10-02",
+      "how": "Check lehd.ces.census.gov/data/lodes/LODES8/ for a newer year; bump LODES_YEAR."
+    },
+    {
+      "id": "geography",
+      "name": "Census geography: gazetteer, TIGER tracts and places, metro delineations",
+      "where": "etl/config.py GAZETTEER_YEAR (2024), CBSA_DELINEATION_YEAR (2023), TRACT_BOUNDARY_URL (GENZ2024); TIGER2024 URLs in etl/tracts/names.py and crime.py",
+      "every_days": 365,
+      "last_checked": "2026-09-20",
+      "how": "New TIGER and cartographic boundary files come out each year; OMB revises metro delineations now and then. Tracts are 2020 geography until 2030, so a bump is low priority unless something breaks."
+    },
+    {
+      "id": "pollution",
+      "name": "Pollution: PM2.5, EPA monitors, wildfire smoke, radon",
+      "where": "etl/pollution/pm25.py and monitors.py YEARS (2022-2024), smoke.py YEARS (2015-2024), radon.py",
+      "every_days": 365,
+      "last_checked": "2026-10-13",
+      "how": "Check whether ACAG's PM2.5, EPA's monitor summaries and NOAA's smoke archive have a newer complete year; extend YEARS."
+    },
+    {
+      "id": "fdle",
+      "name": "Florida crime workbook (FDLE FIBRS, downloaded by hand)",
+      "where": "etl/data/raw/fdle_fibrs_offense_detail.xlsx in the private bucket; page in etl/tracts/crime_states.py FDLE_PAGE",
+      "every_days": 365,
+      "last_checked": "2026-11-03",
+      "how": "FDLE refuses scripts, so it's manual. Refresh when the FBI publishes a new crime year (the build then warns 'no FIBRS Offense YYYY sheet'): download the workbook from FDLE_PAGE in a browser, save it as etl/data/raw/fdle_fibrs_offense_detail.xlsx, python -m etl.inputs push."
+    },
+    {
+      "id": "market",
+      "name": "Housing market by ZIP: Zillow and Redfin (fetched by the monthly refresh)",
+      "where": "etl/tracts/market.py ZHVI_URL, ZORI_URL, REDFIN_URL",
+      "every_days": 90,
+      "last_checked": "2026-11-03",
+      "how": "Fetched automatically, but publishers move files (Redfin did in 2026-11). Check the last area refresh's job summary for 'No Redfin data', and that redfin_data_center/index.json still lists housing_market/monthly/all_zips.csv."
+    },
+    {
+      "id": "refresh-runs",
+      "name": "Monthly workflows (area refresh, laws)",
+      "where": ".github/workflows/tracts-refresh.yml, laws-refresh.yml",
+      "every_days": 30,
+      "last_checked": "2026-11-03",
+      "how": "gh run list --workflow tracts-refresh.yml -L 3 and the same for laws-refresh.yml. A failed run keeps last month's data live; read the failed step's log."
+    },
+    {
+      "id": "source-review",
+      "name": "Better or new data sources",
+      "where": "Working Master Plan.md data source tables (§3 and Phase 8)",
+      "every_days": 90,
+      "last_checked": null,
+      "how": "For each measure the app shows, look for a newer, more reliable or finer-grained free source than the one used, and for sources being retired or changing terms. Report candidates with trade-offs (coverage, update frequency, licence, effort) and record decisions or open questions in the plan."
+    }
+  ]
+}

@@ -63,6 +63,16 @@ rather than leaving it stale. Record new decisions or open questions there, not 
   The refresh runs monthly in `.github/workflows/laws-refresh.yml` and publishes
   `public/data/laws.json`, which the county card's "Laws & taxes" section reads.
 
+## Data checks
+
+`etl/data_checks.json` lists the sources a person has to refresh or re-check (year settings
+bumped by hand, manual downloads, files publishers move), how often, and when they were last
+checked; plus a regular review for better sources. A SessionStart hook (`.claude/settings.json`
+→ `node scripts/data-checks.mjs --hook`) tells Claude at startup what's due, so it can tell
+the user. `node scripts/data-checks.mjs` lists everything. After a check, run
+`node scripts/data-checks.mjs done <id>` and commit the file. Add an entry for any new
+source that needs a person.
+
 ## Commands
 
 ```bash
