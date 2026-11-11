@@ -24,6 +24,7 @@ import {
   type MetricKey,
 } from "@/lib/scoring";
 
+import { Icon } from "@/components/ui/icons";
 import { InfoTip } from "@/components/ui/info-tip";
 import { LodestarLogo } from "@/components/ui/lodestar-logo";
 import { useTheme } from "@/components/ui/theme";
@@ -44,31 +45,40 @@ import { InsideIdentity, InsideView } from "./inside-view";
 import { ResultsList } from "./results-list";
 import { addRecent, initialSearch } from "./searches-store";
 import { encodeSearch } from "./search-url";
+import { PlaceLookup, PlaceSearchModal } from "./place-search";
 import { PlaceIdentity, PlaceView, type PlaceProps } from "./place-view";
 import { SettingsModal } from "./settings-modal";
 import { SidePanel } from "./side-panel";
 import { useCountyData, useLawData } from "./use-county-data";
-import { useCountyAreas, useNationalAreas, useTractIndex } from "./use-tract-data";
-import type { InsideLayer, ResultMarks } from "./county-map";
+import { useAreaShapes, useCountyAreas, useNationalAreas, useTractIndex } from "./use-tract-data";
+import { LOOKUP_RULED_OUT, LOOKUP_UNLISTED, LOOKUP_UNRANKED } from "./county-map";
+import type { InsideLayer, LookupLayer, ResultMarks } from "./county-map";
 import {
   AREA_MEASURE,
   areaCriteria,
   areaTaxSearch,
   areaValue,
   areaWatchOuts,
+  buildPlaceIndex,
   countiesOf,
   countyMatches,
   notResidential,
   MATCH,
   UNKNOWN,
+  OUT,
   countyParts,
+  nationalRank,
+  placeShapes,
+  rankAreas,
   formatArea,
+  formatAreaValue,
   resultBadges,
   scoreNational,
   topAreas,
   US_TYPICAL_COUNTY,
   withAreaTaxes,
   areaTaxRate,
+  type Place,
   type ResultBadges,
 } from "@/lib/tracts";
 import { AreaResultsList, CountyBestAreas, CountyResultsList, ResultsHeader, type ResultCap } from "./area-results";
@@ -128,6 +138,10 @@ const useIsWide = () =>
   useSyncExternalStore(subscribeWide, () => window.matchMedia(WIDE_QUERY).matches, () => true);
 
 const COMPARE_KEY = "nhf.compareFips";
+/** Inside a county with no by-area filter: the measure the map is shaded by, if any. */
+const AREA_SHADE_KEY = "nhf.areaShade";
+
+const NO_BADGES = new Map<number, ResultBadges>();
 
 const isPlaceEntry = (state: unknown) => Boolean((state as { nhfPlace?: boolean } | null)?.nhfPlace);
 
@@ -221,7 +235,23 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   const [selectedArea, setSelectedArea] = useState<string | null>(initial.area);
   // With no filter that varies inside the county, areas show Census home value
   // (it varies area by area; Zillow's is per ZIP).
-  const areaMeasure = "median_home_value";
+  const [areaMeasure, setAreaMeasure] = useState<string | null>(() => {
+    try {
+      const saved = window.localStorage.getItem(AREA_SHADE_KEY);
+      return saved && AREA_MEASURE.get(saved)?.colorable ? saved : null;
+    } catch {
+      return null;
+    }
+  });
+  const shadeBy = (key: string | null) => {
+    setAreaMeasure(key);
+    try {
+      if (key) window.localStorage.setItem(AREA_SHADE_KEY, key);
+      else window.localStorage.removeItem(AREA_SHADE_KEY);
+    } catch {
+      // storage blocked: the choice just isn't remembered
+    }
+  };
   const [areaFocus, setAreaFocus] = useState<{ geoid: string; n: number } | null>(
     initial.area ? { geoid: initial.area, n: 1 } : null,
   );
@@ -299,7 +329,29 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   // areas nationwide are the results and counties rank by their best area.
   const areaSearch = useMemo(() => areaCriteria(toAreaSearch(deferred)), [deferred]);
   const hasAreaFilters = areaSearch.criteria.length > 0 || areaSearch.limits.length > 0;
-  const nationalState = useNationalAreas(hasAreaFilters);
+  // Looking a place up by name (Phase 12). Cities, neighborhoods and ZIP codes are read off
+  // the national areas file, so opening the search loads it even for a county-only search.
+  const [findOpen, setFindOpen] = useState(false);
+  const [findUsed, setFindUsed] = useState(false);
+  const [lookup, setLookup] = useState<Place | null>(null);
+  // What the panel's heading and the back links call it: "Results in Austin", "← Austin".
+  const lookupName = lookup ? (lookup.near ? `Near ${lookup.name}` : lookup.name) : null;
+  const [fit, setFit] = useState<{ bounds: [number, number, number, number] } | null>(null);
+  const nationalState = useNationalAreas(hasAreaFilters || findUsed);
+  const placeIndex = useMemo(() => {
+    if (!findUsed) return [];
+    const off = new Set(excludedKey ? excludedKey.split(",") : []);
+    const keep = data.fips.map((_, i) => i).filter((i) => !off.has(data.state[i]));
+    return buildPlaceIndex(
+      {
+        fips: keep.map((i) => data.fips[i]),
+        countyName: keep.map((i) => data.countyName[i]),
+        state: keep.map((i) => data.state[i]),
+        population: keep.map((i) => data.values.population[i]),
+      },
+      nationalState.status === "ready" ? nationalState.data : null,
+    );
+  }, [findUsed, data, excludedKey, nationalState]);
   // Taxes by area (2026-10-13): each area's own estimate, with its own property tax rate.
   const national = useMemo(
     () => (nationalState.status === "ready" ? withAreaTaxes(nationalState.data, scoped, schedules, JSON.parse(householdKey)) : null),
@@ -323,6 +375,71 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     [national, hasAreaFilters, nationalSearch],
   );
   const areaMode = nscores !== null;
+  // A looked-up place's areas are scored on the same search, whichever level the results are at.
+  const lookupScores = useMemo(
+    () => nscores ?? (national && lookup ? scoreNational(national, nationalSearch) : null),
+    [nscores, national, lookup, nationalSearch],
+  );
+  const lookupAreas = useMemo(() => {
+    if (!lookup || !national || !lookupScores) return null;
+    const matches = rankAreas(national, lookupScores, lookup.areas, deferred.includeUnknown);
+    const matching = new Set(matches);
+    // Places nobody lives (and states that are switched off) aren't listed at all.
+    const ruledOut = lookup.areas.filter((i) => !matching.has(i) && lookupScores.status[i] !== OUT);
+    const best = matches[0];
+    const usRank =
+      best !== undefined && !Number.isNaN(lookupScores.score[best])
+        ? nationalRank(national, lookupScores, best, deferred.includeUnknown)
+        : null;
+    return { matches, ruledOut, usRank };
+  }, [lookup, national, lookupScores, deferred.includeUnknown]);
+  // On the map: the place's own outline and its areas, from its counties' shape files.
+  const areasFile = nationalState.status === "ready" ? nationalState.data : null;
+  const lookupCounties = useMemo(
+    () => (lookup && areasFile ? [...new Set(lookup.areas.map((i) => areasFile.county[i]))].sort() : null),
+    [lookup, areasFile],
+  );
+  const lookupTopologies = useAreaShapes(lookupCounties);
+  const lookupShapes = useMemo(
+    () =>
+      lookup && areasFile && lookupTopologies
+        ? placeShapes(lookupTopologies, new Set(lookup.areas.map((i) => areasFile.geoid[i])))
+        : null,
+    [lookup, areasFile, lookupTopologies],
+  );
+  const [lookupHover, setLookupHover] = useState<string[]>([]);
+  const baseLookupLayer = useMemo<Omit<LookupLayer, "highlight" | "showAreas"> | null>(() => {
+    if (!lookup || !national || !lookupScores || !lookupAreas || !lookupShapes || !lookupCounties) return null;
+    const { matches, ruledOut } = lookupAreas;
+    const values = new Map<string, number>(lookup.areas.map((i) => [national.geoid[i], LOOKUP_UNLISTED]));
+    const tips = new Map<string, { label: string; detail: string }>(
+      lookup.areas.map((i) => [national.geoid[i], { label: national.name[i], detail: "Not ranked: few or no residents" }]),
+    );
+    const ranked = matches.length > 0 && !Number.isNaN(lookupScores.score[matches[0]]);
+    matches.forEach((i, rank) => {
+      const g = national.geoid[i];
+      // Colored by rank among the place's matches, best deep green, like areas inside a county.
+      values.set(g, !ranked ? LOOKUP_UNRANKED : matches.length > 1 ? 100 * (1 - rank / (matches.length - 1)) : 100);
+      tips.set(g, {
+        label: national.name[i],
+        detail: ranked
+          ? `#${(rank + 1).toLocaleString()} of ${matches.length.toLocaleString()} here · match ${Math.round(lookupScores.score[i])}`
+          : "Passes your must-haves",
+      });
+    });
+    for (const i of ruledOut) {
+      values.set(national.geoid[i], LOOKUP_RULED_OUT);
+      tips.set(national.geoid[i], { label: national.name[i], detail: "Doesn’t pass your must-haves" });
+    }
+    return {
+      key: lookup.key,
+      counties: lookupCounties,
+      shapes: lookupShapes,
+      values,
+      tips,
+      legend: ranked ? { title: `${lookup.name}: your match`, low: "Weaker", high: "Stronger" } : null,
+    };
+  }, [lookup, national, lookupScores, lookupAreas, lookupShapes, lookupCounties]);
   const matchingAreas = useMemo(() => {
     if (!nscores) return 0;
     let n = 0;
@@ -549,6 +666,15 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         legend: { title: "Your match", low: "Weaker", high: "Stronger" },
       };
     }
+    // No by-area filter: unshaded unless a measure is picked (owner, 2026-11-10).
+    if (!areaMeasure) {
+      return {
+        ...common,
+        palette: "none" as const,
+        values: new Map<string, number | null>(areas.areas.map((a) => [a.geoid, null])),
+        legend: null,
+      };
+    }
     const vals = areas.areas
       .map((a) => [a.geoid, areaValue(a, areaMeasure)] as const)
       .filter((x): x is readonly [string, number] => x[1] !== null)
@@ -558,6 +684,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     return {
       ...common,
       palette: "measure" as const,
+      details: new Map(areas.areas.map((a) => [a.geoid, `${AREA_MEASURE.get(areaMeasure)?.label ?? areaMeasure}: ${formatAreaValue(a, areaMeasure)}`])),
       values,
       legend: {
         title: AREA_MEASURE.get(areaMeasure)?.label ?? areaMeasure,
@@ -565,7 +692,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         high: formatArea(areaMeasure, vals.at(-1)?.[1] ?? null),
       },
     };
-  }, [insideOpen, areasState, areaRanking, selectedArea, areaFocus]);
+  }, [insideOpen, areasState, areaRanking, selectedArea, areaFocus, areaMeasure]);
   // Hovering the list outlines areas on the map. Kept apart so a hover doesn't
   // rebuild the colors above (the map recolors when `values` changes).
   const insideLayer = useMemo<InsideLayer | null>(
@@ -627,6 +754,53 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     selectFromList(fips);
   };
 
+  const openFind = () => {
+    setFindUsed(true);
+    setFindOpen(true);
+  };
+  // "/" opens the search, as on most sites (not while typing, or with a dialog open).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (t?.closest("input, textarea, select, [contenteditable]") || document.querySelector("dialog[open]")) return;
+      e.preventDefault();
+      setFindUsed(true);
+      setFindOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  // A county opens its page; one area opens that area; a city, neighborhood or ZIP code
+  // with several lists them in the results panel, scored on the current search.
+  const pickPlace = (p: Place) => {
+    setFindOpen(false);
+    if (p.kind === "county") {
+      setLookup(null);
+      // The county's own page, even when one of its areas is open.
+      leaveInside();
+      if (p.fips) openCounty(p.fips);
+      return;
+    }
+    if (!national) return;
+    if (p.areas.length === 1) {
+      setLookup(null);
+      openArea(p.areas[0]);
+      return;
+    }
+    if (showPlace) {
+      leaveInside();
+      backToList();
+    }
+    // The place is what's outlined now, not a county picked earlier.
+    setSelectedFips(null);
+    setLookupHover([]);
+    setLookup(p);
+    if (p.bounds) setFit({ bounds: p.bounds });
+    if (wide) setResultsOpen(true);
+    else setSheetSnap(SHEET_START);
+  };
+
   // A county's page in area mode leads with its best areas (Phase 8f).
   const selectedMatches = useMemo(
     () => (national && nscores && selectedFips ? countyMatches(national, nscores, selectedFips, deferred.includeUnknown) : null),
@@ -644,6 +818,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         compareFips,
         onCompare: compareWith,
         onBack: backToList,
+        ...(lookupName ? { resultsLabel: lookupName } : {}),
         ...(tractIndex[selected.fips]
           ? { onExploreInside: () => setInsideFips(selected.fips), areaCount: tractIndex[selected.fips].tracts }
           : {}),
@@ -724,7 +899,9 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     />
   );
 
-  const resultsBadge = areaMode
+  const resultsBadge = lookup
+    ? `in ${lookup.near ? "areas near " : ""}${lookup.name}`
+    : areaMode
     ? `(${topIdx.length.toLocaleString()} areas)`
     : counts.match
       ? `(${ranked.length.toLocaleString()})`
@@ -816,6 +993,44 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       />
     </div>
   );
+  const lookupView =
+    lookup && national && lookupScores && lookupAreas ? (
+      <PlaceLookup
+        key={lookup.key}
+        place={lookup}
+        areas={national}
+        matches={lookupAreas.matches}
+        ruledOut={lookupAreas.ruledOut}
+        usRank={lookupAreas.usRank}
+        byArea={nationalSearch.criteria.length > 0}
+        onBack={() => {
+          setLookupHover([]);
+          setLookup(null);
+        }}
+        onOpenArea={openArea}
+        list={(count) => (
+          <AreaResultsList
+            top={lookupAreas.matches.slice(0, count)}
+            badges={NO_BADGES}
+            flagFirst={false}
+            areas={national}
+            scores={lookupScores}
+            search={nationalSearch}
+            countyScores={areaCountyByFips}
+            countyName={countyName}
+            onOpenArea={openArea}
+            onPreview={preview}
+            watchOuts={areaWatch}
+            onHover={(i) => setLookupHover(i === null ? [] : [national.geoid[i]])}
+          />
+        )}
+      />
+    ) : null;
+  // Kept apart from the colors, so a hover doesn't rebuild them.
+  const lookupLayer = useMemo<LookupLayer | null>(
+    () => (baseLookupLayer ? { ...baseLookupLayer, highlight: lookupHover, showAreas: !showPlace } : null),
+    [baseLookupLayer, lookupHover, showPlace],
+  );
   /**
    * List and place each scroll on their own. The list stays mounted (just
    * hidden) while a place is open, so "← All results" lands where you were.
@@ -826,7 +1041,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         className={`absolute inset-0 overflow-y-auto overscroll-contain ${showPlace ? "invisible" : ""}`}
         inert={showPlace}
       >
-        {resultsList}
+        {lookupView ?? resultsList}
       </div>
       {showPlace && placeProps && !insideOpen && (
         <div key={placeProps.score.fips} className="absolute inset-0 overflow-y-auto overscroll-contain">
@@ -847,6 +1062,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         state: areasState,
         ranking: areaRanking,
         fallbackMeasure: areaMeasure,
+        onMeasure: shadeBy,
         onEditFilters: () => setFiltersOpen(true),
         selected: selectedArea,
         onSelect: selectArea,
@@ -856,6 +1072,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
           leaveInside();
           backToList();
         },
+        ...(lookupName ? { resultsLabel: lookupName } : {}),
         countyEquality: ((i: number) => {
           const num = (x: number) => (Number.isNaN(x) ? null : x);
           return {
@@ -882,24 +1099,41 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       scoresByFips={scoresByFips}
       rankByFips={mapRank}
       relative={mapRelative}
-      selectedFips={selectedFips}
+      // With a looked-up place's list showing, the place is outlined, not a county.
+      selectedFips={lookup && !showPlace ? null : selectedFips}
       focus={focus}
       bottomInset={bottomInset}
       dark={theme === "dark"}
       inside={insideLayer}
       pin={
-        areaMode && national && previewArea !== null && !showPlace
+        (areaMode || lookupView) && national && previewArea !== null && !showPlace
           ? { lat: national.lat[previewArea], lon: national.lon[previewArea], fly: previewFly }
           : null
       }
+      fit={fit}
+      lookup={lookupLayer}
       byBestArea={areaMode}
-      marks={insideOpen ? null : resultMarks}
+      marks={insideOpen || lookup ? null : resultMarks}
       onOpenArea={(geoid) => {
         const i = national?.geoid.indexOf(geoid) ?? -1;
         if (i >= 0) openArea(i);
       }}
       onSelect={select}
     />
+  );
+
+  const findButton = (
+    <button
+      type="button"
+      onClick={openFind}
+      aria-haspopup="dialog"
+      aria-label="Find a place"
+      title="Find a place ( / )"
+      className="flex h-9 shrink-0 items-center gap-2 rounded-full text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 max-md:w-9 max-md:justify-center md:border md:border-neutral-300 md:px-3.5 md:text-label md:font-medium dark:text-neutral-400 dark:hover:bg-neutral-900 dark:hover:text-neutral-100 md:dark:border-neutral-700"
+    >
+      <Icon name="search" className="h-5 w-5 md:h-4 md:w-4" />
+      <span className="max-md:hidden">Find a place</span>
+    </button>
   );
 
   const settingsButton = (
@@ -939,6 +1173,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       leaveInside();
       backToList();
     }
+    setLookup(null);
     setTour("open");
   };
   // Phones: raise the results sheet to the step's height; wide: keep the panel open.
@@ -1027,6 +1262,13 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         laws={laws}
         onShowTour={startTour}
       />
+      <PlaceSearchModal
+        open={findOpen}
+        onClose={() => setFindOpen(false)}
+        index={placeIndex}
+        areas={nationalState.status === "ready" ? "ready" : nationalState.status === "error" ? "error" : "loading"}
+        onPick={pickPlace}
+      />
       {tourOpen && <Tour steps={tourSteps} onClose={closeTour} />}
     </>
   );
@@ -1040,7 +1282,10 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
           <h1 className="flex justify-center">
             <LodestarLogo size="sm" />
           </h1>
-          <div className="flex justify-end">{settingsButton}</div>
+          <div className="flex justify-end">
+            {findButton}
+            {settingsButton}
+          </div>
         </div>
 
         <div ref={area} className="relative min-h-0 flex-1 overflow-hidden">
@@ -1084,6 +1329,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
           <LodestarLogo />
         </h1>
         {filtersButton}
+        {findButton}
         <div className="ml-auto flex items-center gap-2">
           {settingsButton}
         </div>

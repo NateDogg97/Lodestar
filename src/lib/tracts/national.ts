@@ -402,6 +402,29 @@ export function countyMatches(
   return idx.sort(byResult(areas, sc));
 }
 
+/** These areas (a looked-up city's, say) that pass the search, best first. */
+export function rankAreas(areas: NationalAreas, sc: NationalScores, idx: number[], includeUnknown: boolean): number[] {
+  return idx.filter((i) => shown(sc.status[i], includeUnknown)).sort(byResult(areas, sc));
+}
+
+/** Where an area stands among every area that passes the search: its rank, and how many there are. */
+export function nationalRank(
+  areas: NationalAreas,
+  sc: NationalScores,
+  i: number,
+  includeUnknown: boolean,
+): { rank: number; of: number } {
+  const order = byResult(areas, sc);
+  let rank = 1;
+  let of = 0;
+  for (let j = 0; j < areas.n; j++) {
+    if (!shown(sc.status[j], includeUnknown)) continue;
+    of++;
+    if (j !== i && order(j, i) < 0) rank++;
+  }
+  return { rank, of };
+}
+
 export interface CountyResult {
   fips: string;
   /** Its areas among the results, best first. */

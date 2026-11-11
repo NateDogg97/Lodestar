@@ -99,6 +99,46 @@ export function useCountyAreas(fips: string | null): CountyAreasState {
   return fips ? state : { status: "idle" };
 }
 
+const shapesPending = new Map<string, Promise<Topology>>();
+
+function loadAreaShapes(fips: string): Promise<Topology> {
+  let p = shapesPending.get(fips);
+  if (!p) {
+    p = fetch(tractShapesUrl(fips))
+      .then((res) => {
+        if (!res.ok) throw new Error(`Could not load area shapes for ${fips} (HTTP ${res.status})`);
+        return res.json() as Promise<Topology>;
+      })
+      .catch((err: unknown) => {
+        shapesPending.delete(fips); // let a later attempt retry
+        throw err;
+      });
+    shapesPending.set(fips, p);
+  }
+  return p;
+}
+
+/**
+ * The area shapes of these counties (a looked-up city can span several), for drawing a
+ * place on the map. Null until all are in; a county whose file can't be read is left out.
+ */
+export function useAreaShapes(counties: string[] | null): Topology[] | null {
+  const key = counties?.join(",") ?? "";
+  const [loaded, setLoaded] = useState<{ key: string; shapes: Topology[] } | null>(null);
+  useEffect(() => {
+    if (!key) return;
+    let cancelled = false;
+    Promise.allSettled(key.split(",").map(loadAreaShapes)).then((all) => {
+      if (cancelled) return;
+      setLoaded({ key, shapes: all.flatMap((r) => (r.status === "fulfilled" ? [r.value] : [])) });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [key]);
+  return key && loaded?.key === key ? loaded.shapes : null;
+}
+
 let nationalPending: Promise<NationalAreas> | null = null;
 
 export type NationalAreasState =

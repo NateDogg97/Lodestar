@@ -16,6 +16,8 @@ accounts, no backend. It installs to a phone or desktop home screen and works of
 - **Results** as a ranked list and a map of the top 50, colored relative to each other. Each
   county has an Overview (why it ranks there), a Climate tab (monthly charts, compare with
   another county) and Laws & taxes (every value sourced and dated).
+- **Find a place:** look up a county, city, neighborhood or ZIP code by name and see how it
+  does on your search.
 - **Share and save:** the URL carries the whole search and the open county, so **Copy link**
   sends exactly what you see. Filters → **Saved** keeps named and recent searches on the
   device.
@@ -52,6 +54,12 @@ npm run lint
 npm run typecheck
 npm test           # Vitest: scoring engine, search links, climate families, real-data checks
 ```
+
+Area data (the areas inside counties, and the cities, neighborhoods and ZIP codes that
+**Find a place** searches) is too large for git. The dev server reads the published files from
+`data.lodestarmap.com` (`.env.development`), so a fresh clone works after `npm install`. To use
+area files you built yourself in `public/data/tracts/`, put `NEXT_PUBLIC_DATA_URL=/data` in
+`.env.local`. A production build needs `NEXT_PUBLIC_DATA_URL` set the same way.
 
 Rebuilding the data needs Python 3.12 or newer and the ETL's virtualenv. Full steps, including
 the one manual download (SEDA school data), are in [`etl/README.md`](etl/README.md).
