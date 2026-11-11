@@ -34,6 +34,10 @@ rather than leaving it stale. Record new decisions or open questions there, not 
 - `src/lib/scoring/` — the scoring engine (plan §6). Pure TS, no UI imports; tests beside it.
 - `src/components/finder/` — the UI: filters modal, results list, place view, and
   `county-map.tsx` (MapLibre).
+- Place search ("Find a place", plan §9 Phase 12): `src/lib/tracts/places.ts` builds the index
+  from county names and the area labels in `areas.json`; `place-search.tsx` is the dialog and
+  the looked-up place's list; the map draws the place from its counties' tract shapes
+  (`place-shapes.ts`, the `lookup` layer in `county-map.tsx`). No new data file, no geocoder.
 - `src/components/ui/` — generic pieces (`Modal`, `InfoTip`, `theme.ts`). Dark mode is `<html data-theme>`
   (use `dark:` as usual; never `prefers-color-scheme` directly). Type sizes and spacing are tokens
   in `globals.css` (`text-caption`/`label`/`body`/`title`/`heading`); don't use `text-[11px]`.
@@ -47,7 +51,8 @@ rather than leaving it stale. Record new decisions or open questions there, not 
 - ETL pipeline (Python, `pandas`) lives in `etl/`, outside the app runtime — see plan §2/§8.
 - Area data inside counties (plan §9 Phase 8, `etl/tracts/`) is **never in git**: production
   reads it from Cloudflare R2 (`data.lodestarmap.com`, `NEXT_PUBLIC_DATA_URL`), rebuilt monthly
-  by `.github/workflows/tracts-refresh.yml`. Hand-downloaded sources (SEDA) live in a private
+  by `.github/workflows/tracts-refresh.yml`. `next dev` reads the same host (`.env.development`, committed);
+  to use files you built yourself, set `NEXT_PUBLIC_DATA_URL=/data` in `.env.local`. Hand-downloaded sources (SEDA) live in a private
   R2 bucket: `python -m etl.inputs pull` after cloning. Don't commit data files under `etl/data/raw/`.
 - Pollution (plan §9 Phase 11, `etl/pollution/`): measured at every 2020 census block where
   people live and population-weighted — never a county source or a neighbour's value. CI runs

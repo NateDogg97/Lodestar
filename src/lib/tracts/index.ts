@@ -335,3 +335,5 @@ export * from "./national";
 export * from "./verdicts";
 export * from "./pollution";
 export * from "./taxes";
+export * from "./places";
+export * from "./place-shapes";

@@ -5,9 +5,28 @@
 > If something here conflicts with what you actually built, the code is right and this file is
 > stale — fix the file.
 >
-> Last updated: 2026-11-03
+> Last updated: 2026-11-10
 >
 > **Changelog**
+> - 2026-11-10 — **Inside a county, shading is opt-in** (§9 Phase 8; owner: "by default we
+>   shouldn't have any color sorting on the map when a user just looks in a county", and the
+>   colors were "a bit too solid"). With no by-area filter, a county's areas used to be shaded
+>   and sorted by Census home value, always. Now the map shows the areas' lines only, and
+>   **Sort and shade by** (above the list) picks a measure — any of the 21 `colorable` ones:
+>   home value, property tax rate, density, schools, crime… — which orders towns and their
+>   areas by it (High → low / Low → high), shows its value in each row and on the map's hover
+>   label, and washes the map with it at 45% opacity (was 80%), so streets and names read
+>   through. "Nothing" is the default; the choice is remembered on the device
+>   (`nhf.areaShade`). The control is a button that opens a panel of the measures as chips
+>   by topic (Homes and cost, Schools, People, Getting around, Safety and hazards, Air and
+>   environment), not a native list (owner; `shade-picker.tsx`). Ranked areas (a by-area filter is set) are unchanged.
+> - 2026-11-10 — **Find a place by name** (§9 Phase 12; owner: "look up a city, neighborhood,
+>   county, or zip code and see the results"). A **Find a place** button in the header (or `/`)
+>   searches counties, cities, neighborhoods and ZIP codes; picking one shows it scored on the
+>   current search. No new data and no backend: counties from `counties.json`, the rest read
+>   off the area labels already in `areas.json` (`src/lib/tracts/places.ts`). Also: a fresh
+>   clone's dev server now reads area data from the public data host (`.env.development`,
+>   committed) instead of 404ing on `/data/tracts/*`.
 > - 2026-11-03 — **Data checks at session start** (owner: "tell me if it's time to check for
 >   new data sets" and about better sources). `etl/data_checks.json` lists every source a
 >   person refreshes or re-checks, with a cadence and the last check; a Claude Code SessionStart
@@ -1337,7 +1356,7 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
       - [x] County view: **"Explore inside {county}"** button when the county has area data.
       - [x] Inside view: areas grouped by city / town / community, sorted by a chosen
             measure ("Color the map by"; default Census home value, which varies per area —
-            Zillow is per ZIP), rows named by neighborhood or ZIP, **yellow caution icon**
+            Zillow is per ZIP; **since 2026-11-10 "Sort and shade by", default Nothing**), rows named by neighborhood or ZIP, **yellow caution icon**
             on headline low-confidence values (hover/tap lists them). Area detail: stats,
             schools (district national pctl + rank in county; nearby schools with both),
             homes and people, getting around, safety (by police jurisdiction), housing
@@ -1684,7 +1703,8 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
       - The "Color the map by" dropdown is gone: the map is colored by match on the
         red→green score scale ("Your match"), the list ranked by match (towns by their best
         area). With no priority that varies inside a county, areas show Census home value
-        and a hint to add some. "Edit filters" opens the Filters modal.
+        and a hint to add some (**since 2026-11-10: unshaded and unsorted unless a measure is
+        picked in "Sort and shade by"**). "Edit filters" opens the Filters modal.
       - Open: the area view could show why an area scores as it does (as counties do);
         repeated labels ("Wells Branch · 78728" ×4) when several tracts share a
         neighborhood and ZIP.
@@ -2733,6 +2753,67 @@ ZCTAs) → blocks by Census's 2020 ZCTA–block file (8.04M blocks, 1 GB streame
 - [x] Which year(s) for PM2.5 — the 2022–2024 mean of V6.GL.03 (2026-10-13).
 - [ ] Refresh cadence for pollution inputs: annual (chosen) vs monthly with the rest.
 
+### Phase 12 — Find a place by name (2026-11-10) ✅ **BUILT** (open: phone check, link to a looked-up place)
+
+Until now a place could only be reached through the ranking: if Austin wasn't in your top
+results, there was no way to ask "how does Austin do?". Owner: look up a city, neighborhood,
+county or ZIP code and see the results.
+
+- **No new data, no backend** (§2). Counties come from `counties.json`. Cities, neighborhoods
+  and ZIP codes are read off every area's label in `areas.json` ("Zilker, Austin · 78704",
+  "Near Manor · 78653"; `etl/tracts/names.py`): a city, neighborhood or ZIP code *is* the
+  group of areas that carry its name. ~53,000 places, indexed in the browser in about 0.3 s;
+  a search is a few milliseconds. Opening the search loads `areas.json` (3.7 MB) if the
+  current search hasn't already; counties are searchable at once.
+- **This is name lookup, not natural-language search** — that stays deferred (§10).
+- **What a pick shows** — always on the *current* search (priorities and must-haves):
+  - a county → its page;
+  - a city, neighborhood or ZIP code → its areas in the results panel, best match first, with
+    the same summaries as the results, and where its best area stands nationally ("#1,154 of
+    82,059 matching US areas"). Areas that fail a must-have are listed below, not hidden: the
+    person asked about this place. The map frames the place. "← All results" goes back.
+  - a place that is one area → that area's page.
+  - With no by-area priority, areas are scored on the county-wide ones (so areas in one
+    county tie, and the list says so).
+- **Matching** (`searchPlaces`): the exact name first, then names that start with what's
+  typed, then names containing the words; ties by population. Words after the name say where
+  ("austin tx", "springfield illinois", "zilker austin"). A county matches with or without
+  "County"; "Saint" = "St."; Brooklyn, Manhattan and Staten Island find their counties.
+  A city says which county it's in, since names repeat ("Springfield · Greene County, MO").
+
+- [x] `src/lib/tracts/places.ts` (pure, tested): `parseLabel`, `buildPlaceIndex`,
+      `searchPlaces`; `rankAreas` and `nationalRank` in `national.ts`.
+- [x] `src/components/finder/place-search.tsx`: the search dialog (combobox: arrows, Enter)
+      and the looked-up place's list; `fit` on the map frames it at once (by its areas'
+      population centers), then the `lookup` layer by its real shape.
+- [x] **Recent places** (owner, 2026-11-10): with nothing typed, the dialog lists the last 8
+      places picked, newest first, with Clear. On this device only (`localStorage`,
+      `nhf.places.recent.v1`, `recent-places.ts`), stored by index key with the row's text, so
+      they show at once; a city, neighborhood or ZIP code is dimmed until the areas file loads.
+- [x] **The place on the map** (owner, 2026-11-10: "see the city outlined, and not the
+      county"). A looked-up city, neighborhood or ZIP code is drawn as itself: its outline
+      (its areas' tract shapes merged, `src/lib/tracts/place-shapes.ts`; the shape files of
+      its counties, ~20 KB each, `useAreaShapes`) and each of its areas, colored by rank among
+      the place's matches (best deep green, as inside a county); must-have failures grey,
+      unweighted searches one neutral color. The county fill, county outline and top-result
+      bubbles are hidden while the list shows. Hovering a row in the list outlines its area;
+      hovering an area on the map names it ("#210 of 214 here · match 26"); a click opens it.
+      With one of its areas open only the outline stays, and going back re-frames the place.
+      **The outline is the census tracts named after the place, not the legal boundary**, and
+      a place in several counties shows a seam along the county line (each county's shapes
+      are a separate file, so they can't be merged without a geometry library).
+- [x] **The panel says what it's showing** (owner): "Results in Austin", and an area or county
+      opened from there goes back with "← Austin", not "← Results".
+- [x] Checked live on localhost (desktop): city, ZIP code, county, opening an area from the list
+      and from the map, list and map hover, back to the place.
+- [ ] **Phone layout not yet checked** (the header button is the icon alone under 768 px).
+- [ ] **A looked-up place isn't in the URL** — a shared link carries the search and an open
+      county or area, not "Austin's areas". Would need a place key in `search-url.ts`.
+- Known limits: a ZIP code is listed only if it's the main one for at least one area (20,743
+  of ~33,000; small ZIPs fall under a larger neighbor — the empty state says so). A town with
+  no area inside it finds the areas beside it ("Near Manor"). Two same-named towns in one
+  state are one entry. New York's boroughs aren't cities in the Census, hence the aliases.
+
 ---
 
 ## 10. Explicitly deferred
@@ -2742,7 +2823,7 @@ Not in MVP. Do not build these until the above ships.
 - ~~Census tracts / neighborhoods / any sub-county geography~~ — **now Phase 8** (2026-09-30).
 - A nationwide tract map (all 85k tracts at once). Phase 8 drills into one county at a time.
 - User accounts and auth
-- Natural language search
+- Natural language search (looking a place up by name is Phase 12, built)
 - **Month-by-month climate envelope** (from Phase 6) — an acceptable range per month; a county
   passes if its monthly curve fits inside. The monthly data is already in the browser
   (`climate.json`); needs a chart-based control.
@@ -2783,6 +2864,19 @@ Not in MVP. Do not build these until the above ships.
 
 ## 11. Open questions
 
+- [ ] **NEXT SESSION — nearby schools: show the schools, not an average** (owner, 2026-11-10).
+      "The school nearby filter which takes the average of the nearest 5 schools should just
+      display the individual schools and their GreatSchools rating instead. Currently small
+      areas with only 1 school are either pulled up or dragged down by schools outside their
+      school district." Today `nearby_school_pctl` / `nearby_hs_pctl` average the nearest
+      scored schools within 5 miles whatever district they're in (`etl/tracts/schools.py`),
+      and that average is a priority, a must-have and a map shade. To settle before building
+      (not yet discussed with the owner): GreatSchools ratings come from a licensed API, not
+      a free download, so §2's static, free-data rule and the ETL need a decision (their
+      terms, cost, caching; or keep SEDA/CRDC percentiles per school, which the area page
+      already lists); and what schools then rank on, if anything — the area's own district,
+      its assigned or nearest school — since the filter and the audit scenarios use the
+      average now.
 - [x] **Pollution** — the owner decisions under §9 Phase 11, "Open questions", confirmed 2026-10-13.
 - [x] ~~Which 6–8 state law attributes actually matter?~~ Answered by `LAWS.md` (2026-09-27):
       12 laws, each marked filter / info / both.

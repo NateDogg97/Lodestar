@@ -421,8 +421,19 @@ function Summary({ i, parts, common }: { i: number; parts: AreaPart[]; common: C
 export function AreaResultsList({
   top,
   badges,
+  flagFirst = true,
+  empty = "No area passes every must-have. Loosen one in Filters to see results.",
+  onHover,
   ...common
-}: Common & { top: number[]; badges: Map<number, ResultBadges> }) {
+}: Common & {
+  top: number[];
+  badges: Map<number, ResultBadges>;
+  /** False for a looked-up place's areas: its best isn't your "#1 best match". */
+  flagFirst?: boolean;
+  empty?: string;
+  /** The row the pointer is over, for the map to outline its area. */
+  onHover?: (i: number | null) => void;
+}) {
   // One summary open at a time; the #1 result starts open (owner, 2026-10-03).
   const [open, setOpen] = useState<number | null>(top[0] ?? null);
   const toggle = (i: number) => {
@@ -437,7 +448,7 @@ export function AreaResultsList({
   if (top.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-neutral-300 p-8 text-center text-label text-neutral-500 dark:border-neutral-700">
-        No area passes every must-have. Loosen one in Filters to see results.
+        {empty}
       </p>
     );
   }
@@ -451,6 +462,8 @@ export function AreaResultsList({
             key={common.areas.geoid[i]}
             data-tour={rank === 0 ? "first-result" : undefined}
             className={isOpen ? "bg-neutral-50 dark:bg-neutral-900/50" : ""}
+            onPointerEnter={onHover && (() => onHover(i))}
+            onPointerLeave={onHover && (() => onHover(null))}
           >
             <div className="flex items-start gap-2 py-3 pl-1">
               <RankLabel rank={rank + 1} />
@@ -459,6 +472,8 @@ export function AreaResultsList({
                   <button
                     type="button"
                     onClick={() => common.onOpenArea(i)}
+                    onFocus={onHover && (() => onHover(i))}
+                    onBlur={onHover && (() => onHover(null))}
                     data-tour={rank === 0 ? "result-name" : undefined}
                     className="text-left text-body font-semibold underline decoration-neutral-300 underline-offset-[3px] hover:decoration-neutral-600 dark:decoration-neutral-700"
                   >
@@ -467,7 +482,7 @@ export function AreaResultsList({
                   <PriorityCaution parts={parts} />
                   <Badges
                     badges={badges.get(i)}
-                    first={rank === 0 && !Number.isNaN(common.scores.score[i])}
+                    first={flagFirst && rank === 0 && !Number.isNaN(common.scores.score[i])}
                   />
                 </div>
                 <p className="text-caption text-neutral-500">{common.countyName(common.areas.county[i])}</p>

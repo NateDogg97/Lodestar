@@ -5,7 +5,6 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Icon } from "@/components/ui/icons";
 import { InfoTip } from "@/components/ui/info-tip";
 import {
-  AREA_MEASURE,
   areaValue,
   flagLabel,
   formatArea,
@@ -27,6 +26,7 @@ import { getMetric, type CountyScore, type MetricKey } from "@/lib/scoring";
 import { AreaDetail, bound, type PeopleEquality } from "./area-detail";
 import { Fingerprint } from "./area-results";
 import { scoreColor } from "./score-colors";
+import { ShadePicker } from "./shade-picker";
 import type { CountyAreasState } from "./use-tract-data";
 
 /** A county's areas ranked by the search (plan §9 Phase 8f), as county-finder computes it. */
@@ -70,7 +70,9 @@ interface Props {
   state: CountyAreasState;
   /** Null while loading. With no criteria, areas show `fallbackMeasure`. */
   ranking: AreaRankingView | null;
-  fallbackMeasure: string;
+  /** The measure areas are shaded and sorted by when no filter varies by area; null for none. */
+  fallbackMeasure: string | null;
+  onMeasure: (key: string | null) => void;
   onEditFilters: () => void;
   selected: string | null;
   onSelect: (geoid: string | null) => void;
@@ -79,6 +81,8 @@ interface Props {
   onBack: () => void;
   /** From an area page, straight back to the results list (owner: no county detour). */
   onBackToResults: () => void;
+  /** What that list is: "Results", or a looked-up place ("Austin"). */
+  resultsLabel?: string;
   /** The county's racial equality, for an area's "Who lives here". */
   countyEquality?: PeopleEquality;
   /** For an area's own tax estimate (2026-10-13). */
@@ -90,7 +94,7 @@ interface Props {
  * or "Inside <county>". On phones this is the sheet's drag header (like `PlaceIdentity`
  * for a county), so it isn't repeated in the body (full audit, 2026-10-04).
  */
-export function InsideIdentity({ countyName, state, ranking, selected, onSelect, onBack, onBackToResults }: Props) {
+export function InsideIdentity({ countyName, state, ranking, selected, onSelect, onBack, onBackToResults, resultsLabel = "Results" }: Props) {
   const areas = state.status === "ready" ? state.data.areas : null;
   const area = selected && areas ? (areas.byGeoid.get(selected) ?? null) : null;
   return (
@@ -100,7 +104,7 @@ export function InsideIdentity({ countyName, state, ranking, selected, onSelect,
         onClick={area ? onBackToResults : onBack}
         className="-ml-1 rounded px-1 text-label font-medium text-emerald-700 hover:underline dark:text-emerald-400"
       >
-        ← {area ? "Results" : countyName}
+        ← {area ? resultsLabel : countyName}
       </button>
       {area ? (
         <AreaHeader
@@ -127,7 +131,7 @@ export function InsideIdentity({ countyName, state, ranking, selected, onSelect,
 }
 
 export function InsideView(props: Props & { withIdentity?: boolean }) {
-  const { countyName, state, ranking, fallbackMeasure, onEditFilters, selected, onSelect, onHover, withIdentity = true } = props;
+  const { countyName, state, ranking, fallbackMeasure, onMeasure, onEditFilters, selected, onSelect, onHover, withIdentity = true } = props;
   const areas = state.status === "ready" ? state.data.areas : null;
   const area = selected && areas ? (areas.byGeoid.get(selected) ?? null) : null;
 
@@ -146,6 +150,7 @@ export function InsideView(props: Props & { withIdentity?: boolean }) {
           areas={areas}
           ranking={ranking}
           measure={fallbackMeasure}
+          onMeasure={onMeasure}
           onEditFilters={onEditFilters}
           onSelect={onSelect}
           onHover={onHover}
@@ -195,23 +200,26 @@ function AreaList({
   areas,
   ranking,
   measure,
+  onMeasure,
   onEditFilters,
   onSelect,
   onHover,
 }: {
   areas: CountyAreas;
   ranking: AreaRankingView | null;
-  measure: string;
+  measure: string | null;
+  onMeasure: (key: string | null) => void;
   onEditFilters: () => void;
   onSelect: (geoid: string) => void;
   onHover: (geoids: string[]) => void;
 }) {
+  const [highFirst, setHighFirst] = useState(true);
   return (
     <div className="px-gutter py-4">
       <div className="flex items-start justify-between gap-3">
         {/* A div: the "i" holds paragraphs and lists, which can't sit inside a <p>. */}
         <div className="flex items-center gap-1 text-label text-neutral-600 dark:text-neutral-400">
-          {ranking ? "Ranked by your filters" : `${AREA_MEASURE.get(measure)?.label ?? measure} by area`}
+          {ranking ? "Ranked by your filters" : "Areas by city or town"}
           <InfoTip label="How areas are ranked">
             <RankingNote ranking={ranking} />
           </InfoTip>
@@ -231,7 +239,27 @@ function AreaList({
           <p className="mt-1 text-caption text-neutral-500">
             None of your priorities vary by area. Add some in Filters (they&apos;re tagged &ldquo;by area&rdquo;).
           </p>
-          <GroupedList areas={areas} measure={measure} onSelect={onSelect} onHover={onHover} />
+          <div className="mt-3 flex items-stretch gap-2">
+            <ShadePicker value={measure} onChange={onMeasure} />
+            {measure && (
+              <button
+                type="button"
+                onClick={() => setHighFirst((h) => !h)}
+                aria-label={`Order: ${highFirst ? "high to low" : "low to high"}. Switch`}
+                className="shrink-0 self-stretch rounded-xl border border-neutral-300 px-3 text-label font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+              >
+                {highFirst ? "High → low" : "Low → high"}
+              </button>
+            )}
+          </div>
+          <GroupedList
+            key={`${measure ?? ""}-${highFirst}`}
+            areas={areas}
+            measure={measure}
+            highFirst={highFirst}
+            onSelect={onSelect}
+            onHover={onHover}
+          />
         </>
       )}
     </div>
@@ -336,19 +364,38 @@ function MatchScore({ score }: { score: number }) {
   );
 }
 
-/** No area-level filter: the county's areas by town, with a measure (Census home value). */
+/**
+ * No area-level filter: the county's areas by town. With a measure picked, towns and
+ * their areas are in its order and show its value; with none, the biggest town first.
+ */
 function GroupedList({
   areas,
   measure,
+  highFirst,
   onSelect,
   onHover,
 }: {
   areas: CountyAreas;
-  measure: string;
+  measure: string | null;
+  highFirst: boolean;
   onSelect: (geoid: string) => void;
   onHover: (geoids: string[]) => void;
 }) {
-  const groups = useMemo(() => groupAreas(areas.areas), [areas]);
+  const sign = highFirst ? -1 : 1;
+  // Unknown values last, whichever way it's sorted.
+  const byValue = (x: number | null, y: number | null) =>
+    x === null ? (y === null ? 0 : 1) : y === null ? -1 : sign * (x - y);
+  const median = (list: Area[]) => {
+    if (!measure) return null;
+    const values = list.map((a) => areaValue(a, measure)).filter((v): v is number => v !== null);
+    return values.length ? values.sort((a, b) => a - b)[values.length >> 1] : null;
+  };
+  const groups = useMemo(() => {
+    const g = groupAreas(areas.areas);
+    return measure ? g.sort((x, y) => byValue(median(x.areas), median(y.areas))) : g;
+    // byValue and median read measure and highFirst, both listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [areas, measure, highFirst]);
   const [open, setOpen] = useState<Set<string>>(() => new Set(groups.slice(0, 1).map((g) => g.name)));
   const toggle = (name: string) =>
     setOpen((s) => {
@@ -357,12 +404,10 @@ function GroupedList({
       else n.add(name);
       return n;
     });
-  const key = (a: Area) => areaValue(a, measure) ?? -Infinity;
   return (
     <ul className="mt-3 divide-y divide-neutral-200 dark:divide-neutral-800">
       {groups.map((g) => {
-        const values = g.areas.map((a) => areaValue(a, measure)).filter((v): v is number => v !== null);
-        const median = values.length ? values.sort((a, b) => a - b)[values.length >> 1] : null;
+        const typical = median(g.areas);
         const isOpen = open.has(g.name);
         const all = g.areas.map((a) => a.geoid);
         // Hover or focus outlines on the map: a town, all its areas; one area, just it.
@@ -389,7 +434,7 @@ function GroupedList({
                       {g.population.toLocaleString()} people
                     </span>
                   </span>
-                  <span className="shrink-0 text-label tabular-nums">{formatAreaValue(a, measure)}</span>
+                  {measure && <span className="shrink-0 text-label tabular-nums">{formatAreaValue(a, measure)}</span>}
                 </button>
                 <Caution flags={headlineFlags(a)} />
               </div>
@@ -414,15 +459,19 @@ function GroupedList({
                   {g.areas.length} areas · {g.population.toLocaleString()} people
                 </span>
               </span>
-              <span className="shrink-0 text-right text-label tabular-nums">
-                {formatArea(measure, median)}
-                <span className="block text-caption text-neutral-500">typical</span>
-              </span>
+              {measure && (
+                <span className="shrink-0 text-right text-label tabular-nums">
+                  {formatArea(measure, typical)}
+                  <span className="block text-caption text-neutral-500">typical</span>
+                </span>
+              )}
             </button>
             {isOpen && (
               <ul className="mb-2 ml-[1.125rem] border-l border-neutral-200 dark:border-neutral-800" onMouseLeave={() => onHover(all)}>
                 {[...g.areas]
-                  .sort((a, b) => key(b) - key(a))
+                  .sort((a, b) =>
+                    measure ? byValue(areaValue(a, measure), areaValue(b, measure)) : areaName(a).localeCompare(areaName(b)),
+                  )
                   .map((a) => (
                     <li key={a.geoid}>
                       <div className="flex items-center gap-1 pl-3 hover:bg-neutral-100 dark:hover:bg-neutral-900">
@@ -433,7 +482,7 @@ function GroupedList({
                           className="flex min-w-0 flex-1 items-center justify-between gap-3 py-2 text-left"
                         >
                           <span className="truncate text-label">{areaName(a)}</span>
-                          <span className="shrink-0 text-label tabular-nums">{formatAreaValue(a, measure)}</span>
+                          {measure && <span className="shrink-0 text-label tabular-nums">{formatAreaValue(a, measure)}</span>}
                         </button>
                         <Caution flags={headlineFlags(a)} />
                       </div>
@@ -457,7 +506,8 @@ function RankingNote({ ranking }: { ranking: AreaRankingView | null }) {
   if (!ranking) {
     return (
       <p>
-        None of your priorities vary by area, so areas show Census home value. Priorities tagged &ldquo;by area&rdquo; in
+        None of your priorities vary by area, so areas are listed by city or town, unranked. &ldquo;Sort and shade
+        by&rdquo; orders them by one measure and shades the map with it. Priorities tagged &ldquo;by area&rdquo; in
         Filters — home value, schools, safety, walkability, distances… — rank areas.
       </p>
     );

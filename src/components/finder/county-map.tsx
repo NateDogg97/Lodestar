@@ -19,6 +19,7 @@ import type { Feature, FeatureCollection, Geometry, Position } from "geojson";
 import type { GeometryCollection, Topology } from "topojson-specification";
 
 import type { CountyDataset, CountyScore } from "@/lib/scoring";
+import type { PlaceShapes } from "@/lib/tracts";
 
 import { interpolateViridis } from "d3-scale-chromatic";
 
@@ -165,6 +166,9 @@ const FILL_OPACITY: ExpressionSpecification = [
   // The county you're inside: its areas are drawn instead, and the blank ones stay blank.
   ["boolean", ["feature-state", "inside"], false],
   0,
+  // A looked-up place's counties: its areas are drawn instead.
+  ["boolean", ["feature-state", "lookup"], false],
+  0,
   ["!", ["boolean", ["feature-state", "top"], false]],
   0,
   ["==", ["typeof", ["feature-state", "rel"]], "number"],
@@ -183,9 +187,13 @@ export interface InsideLayer {
   values: Map<string, number | null>;
   labels: Map<string, string>;
   /** "score": values are each area's match position, 0–100, on the red→green score
-   * scale (plan §9 Phase 8e). "measure": a measure's rank, 0–1, on neutral viridis. */
-  palette: "score" | "measure";
-  legend: { title: string; low: string; high: string };
+   * scale (plan §9 Phase 8e). "measure": a measure's rank, 0–1, on neutral viridis.
+   * "none": no shading, the areas' lines only (the default with no by-area filter). */
+  palette: "score" | "measure" | "none";
+  /** Null when nothing is shaded. */
+  legend: { title: string; low: string; high: string } | null;
+  /** A second line for the hover label: the shaded measure's value here. */
+  details?: Map<string, string>;
   selected: string | null;
   /** Areas to outline while the pointer is over them in the list (a town: all its areas). */
   highlight: string[];
@@ -194,6 +202,8 @@ export interface InsideLayer {
   onSelectArea: (geoid: string) => void;
 }
 
+/** How solid a measure's shading is (score colors stay at 0.8). */
+const MEASURE_OPACITY = 0.45;
 const AREA_STOPS = [0, 0.2, 0.4, 0.6, 0.8, 1].flatMap((t) => [t, interpolateViridis(t)]);
 const AREA_FILL = [
   "case",
@@ -211,6 +221,49 @@ const AREA_SCORE_FILL = [
   UNKNOWN_COLOR,
   ["interpolate", ["linear"], ["feature-state", "v"], ...SCORE_STOPS],
 ] as unknown as ExpressionSpecification;
+
+/**
+ * A place looked up by name (plan §9 Phase 12): its outline — the city, neighborhood or
+ * ZIP code itself, not its county — and, while its list is showing, each of its areas.
+ */
+export interface LookupLayer {
+  /** The place: a new key redraws and re-frames. */
+  key: string;
+  counties: string[];
+  shapes: PlaceShapes;
+  /** False while one of its areas is open: only the outline stays. */
+  showAreas: boolean;
+  /** By area: 0–100 on the score scale (its rank among the place's matches), or a `LOOKUP_*` code. */
+  values: Map<string, number>;
+  /** The hover label: the area's name, and how it does. */
+  tips: Map<string, { label: string; detail: string }>;
+  /** Areas to outline while the pointer is over them in the list. */
+  highlight: string[];
+  /** Null when nothing is weighted, so the colors aren't a scale. */
+  legend: { title: string; low: string; high: string } | null;
+}
+
+/** Fails a must-have: grey. */
+export const LOOKUP_RULED_OUT = -1;
+/** Not a place to live (water, an airport, a campus): its shape, no fill. */
+export const LOOKUP_UNLISTED = -2;
+/** Passes, with nothing weighted to rank it by: one neutral color. */
+export const LOOKUP_UNRANKED = -3;
+
+const LOOKUP_FILL = [
+  "case",
+  ["!=", ["typeof", ["feature-state", "v"]], "number"],
+  "rgba(0,0,0,0)",
+  [">=", ["feature-state", "v"], 0],
+  ["interpolate", ["linear"], ["feature-state", "v"], ...SCORE_STOPS],
+  ["==", ["feature-state", "v"], LOOKUP_RULED_OUT],
+  UNKNOWN_COLOR,
+  ["==", ["feature-state", "v"], LOOKUP_UNRANKED],
+  "#14b8a6",
+  "rgba(0,0,0,0)",
+] as unknown as ExpressionSpecification;
+
+const LOOKUP_AREA_LAYERS = ["lookup-fill", "lookup-line", "lookup-hover"];
 
 function bboxOf(geometry: Geometry): [number, number, number, number] {
   let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
@@ -247,6 +300,10 @@ interface Props {
    * there when `fly` changes — a summary the person opened, not the #1 open on load.
    */
   pin?: { lat: number; lon: number; fly: number } | null;
+  /** A looked-up place (west, south, east, north): the map goes there. A new object moves it again. */
+  fit?: { bounds: [number, number, number, number] } | null;
+  /** A looked-up place, drawn on the map. */
+  lookup?: LookupLayer | null;
   /** Area mode: where your top areas are, by zoom. */
   marks?: ResultMarks | null;
   /** A tap on an area dot opens that area. */
@@ -294,6 +351,8 @@ export default function CountyMap({
   dark,
   inside = null,
   pin = null,
+  fit = null,
+  lookup = null,
   byBestArea = false,
   marks = null,
   onOpenArea,
@@ -307,9 +366,9 @@ export default function CountyMap({
   const [error, setError] = useState<string | null>(null);
 
   // Latest props for map event handlers, which are registered once.
-  const latest = useRef({ data, scoresByFips, rankByFips, relative, byBestArea, onSelect, bottomInset, inside, onOpenArea });
+  const latest = useRef({ data, scoresByFips, rankByFips, relative, byBestArea, onSelect, bottomInset, inside, lookup, onOpenArea });
   useEffect(() => {
-    latest.current = { data, scoresByFips, rankByFips, relative, byBestArea, onSelect, bottomInset, inside, onOpenArea };
+    latest.current = { data, scoresByFips, rankByFips, relative, byBestArea, onSelect, bottomInset, inside, lookup, onOpenArea };
   });
 
   // The lower 48 above the phone's results sheet (owner, 2026-10-04): the opening view
@@ -405,7 +464,7 @@ export default function CountyMap({
         const popup = new Popup({ closeButton: false, closeOnClick: false, offset: 8 });
         // Over an area inside the explored county, the area layer handles it.
         const onArea = (e: { point: { x: number; y: number } }) => {
-          const layers = ["tract-fill", "result-areas"].filter((l) => map!.getLayer(l));
+          const layers = ["tract-fill", "lookup-fill", "result-areas"].filter((l) => map!.getLayer(l));
           return layers.length > 0 && map!.queryRenderedFeatures([e.point.x, e.point.y], { layers }).length > 0;
         };
         map.on("click", "result-areas", (e) => {
@@ -424,11 +483,53 @@ export default function CountyMap({
           const name = document.createElement("strong");
           name.textContent = label;
           el.append(name);
+          const more = latest.current.inside?.details?.get(geoid);
+          if (more) {
+            const detail = document.createElement("div");
+            detail.textContent = more;
+            el.append(detail);
+          }
           popup.setLngLat(e.lngLat).setDOMContent(el).addTo(map!);
         });
         map.on("click", "tract-fill", (e) => {
           const geoid = e.features?.[0]?.properties?.GEOID as string | undefined;
           if (geoid) latest.current.inside?.onSelectArea(geoid);
+        });
+        // A looked-up place's areas: name each under the pointer, outline it, open it on a click.
+        let over: string | null = null;
+        const setOver = (geoid: string | null) => {
+          if (geoid === over) return;
+          if (over && map!.getSource("lookup-areas")) map!.setFeatureState({ source: "lookup-areas", id: over }, { over: false });
+          over = geoid;
+          if (over) map!.setFeatureState({ source: "lookup-areas", id: over }, { over: true });
+        };
+        map.on("mousemove", "lookup-fill", (e) => {
+          const geoid = e.features?.[0]?.properties?.GEOID as string | undefined;
+          const tip = geoid && latest.current.lookup?.tips.get(geoid);
+          if (!geoid || !tip) return;
+          setOver(geoid);
+          map!.getCanvas().style.cursor = "pointer";
+          const el = document.createElement("div");
+          el.className = "text-xs text-neutral-900";
+          const name = document.createElement("strong");
+          name.textContent = tip.label;
+          const detail = document.createElement("div");
+          detail.textContent = tip.detail;
+          el.append(name, detail);
+          popup.setLngLat(e.lngLat).setDOMContent(el).addTo(map!);
+        });
+        map.on("mouseleave", "lookup-fill", () => {
+          setOver(null);
+          map!.getCanvas().style.cursor = "";
+          popup.remove();
+        });
+        map.on("click", "lookup-fill", (e) => {
+          const geoid = e.features?.[0]?.properties?.GEOID as string | undefined;
+          if (!geoid || !latest.current.lookup?.tips.has(geoid)) return;
+          // Its page opens and these areas are hidden, so no mouseleave follows.
+          setOver(null);
+          popup.remove();
+          latest.current.onOpenArea?.(geoid);
         });
         map.on("mousemove", "county-fill", (e) => {
           if (onArea(e)) return;
@@ -543,7 +644,18 @@ export default function CountyMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!ready || !map || !insideValues || !map.getSource("tracts")) return;
-    map.setPaintProperty("tract-fill", "fill-color", insidePalette === "score" ? AREA_SCORE_FILL : AREA_FILL);
+    map.setPaintProperty(
+      "tract-fill",
+      "fill-color",
+      insidePalette === "score" ? AREA_SCORE_FILL : insidePalette === "measure" ? AREA_FILL : "rgba(0,0,0,0)",
+    );
+    // A measure is a light wash, so streets and names read through it (owner, 2026-11-10).
+    map.setPaintProperty("tract-fill", "fill-opacity", insidePalette === "measure" ? MEASURE_OPACITY : 0.8);
+    // Unshaded, the lines are the areas: drawn in ink, since there's no fill to cut through.
+    const plain = insidePalette === "none";
+    map.setPaintProperty("tract-line", "line-color", plain ? (dark ? "#e5e5e5" : "#262626") : dark ? "#0a0a0a" : "#ffffff");
+    map.setPaintProperty("tract-line", "line-width", plain ? 1 : 0.6);
+    map.setPaintProperty("tract-line", "line-opacity", plain ? 0.55 : 0.8);
     for (const [geoid, v] of insideValues) map.setFeatureState({ source: "tracts", id: geoid }, { v });
   }, [ready, insideValues, insidePalette, insideFips, insideShapes, dark]);
 
@@ -568,6 +680,94 @@ export default function CountyMap({
     prevHighlight.current = insideHighlight ?? [];
     for (const id of prevHighlight.current) map.setFeatureState({ source: "tracts", id }, { hover: true });
   }, [ready, insideHighlight, insideFips, insideShapes, dark]);
+
+  const frameLookup = (map: MapLibreMap, bounds: PlaceShapes["bounds"]) => {
+    if (!bounds) return;
+    const [w, s, e, n] = bounds;
+    const height = map.getContainer().clientHeight;
+    const inset = Math.min(latest.current.bottomInset, height * 0.6);
+    const pad = Math.max(16, Math.min(60, (height - inset) / 6));
+    map.fitBounds([[w, s], [e, n]], { padding: { top: pad, left: pad, right: pad, bottom: inset + pad }, maxZoom: 13, duration: 600 });
+  };
+
+  // A looked-up place: its areas and its outline, framed once per place.
+  const lookupKey = lookup?.key ?? null;
+  const lookupShapes = lookup?.shapes ?? null;
+  const lookupCounties = lookup?.counties ?? null;
+  const framedLookup = useRef<string | null>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || !lookupKey || !lookupShapes || !lookupCounties) return;
+    const layers = map.getStyle().layers;
+    const lastShape = layers.findLastIndex((l) => l.type !== "symbol");
+    const firstLabel = layers.slice(lastShape + 1).find((l) => l.type === "symbol")?.id;
+    const ink = dark ? "#fff" : "#111";
+    const paper = dark ? "#0a0a0a" : "#ffffff";
+    for (const fips of lookupCounties) map.setFeatureState({ source: "counties", id: fips }, { lookup: true });
+    map.addSource("lookup-areas", { type: "geojson", data: lookupShapes.areas, promoteId: "GEOID" });
+    map.addSource("lookup-outline", { type: "geojson", data: lookupShapes.outline });
+    map.addLayer({ id: "lookup-fill", type: "fill", source: "lookup-areas",
+      paint: { "fill-color": LOOKUP_FILL, "fill-opacity": 0.75 } }, firstLabel);
+    map.addLayer({ id: "lookup-line", type: "line", source: "lookup-areas",
+      paint: { "line-color": paper, "line-width": 0.6, "line-opacity": 0.8 } }, firstLabel);
+    // The place's own edge, over everything: a light casing keeps it readable on any fill.
+    map.addLayer({ id: "lookup-outline-casing", type: "line", source: "lookup-outline",
+      layout: { "line-join": "round" }, paint: { "line-color": paper, "line-width": 5, "line-opacity": 0.7 } });
+    map.addLayer({ id: "lookup-outline", type: "line", source: "lookup-outline",
+      layout: { "line-join": "round" }, paint: { "line-color": ink, "line-width": 2.5 } });
+    // An area under the pointer — on the map (`over`) or in the list (`hover`).
+    map.addLayer({ id: "lookup-hover", type: "line", source: "lookup-areas",
+      layout: { "line-join": "round" },
+      paint: { "line-color": ink,
+        "line-width": ["case",
+          ["any", ["boolean", ["feature-state", "hover"], false], ["boolean", ["feature-state", "over"], false]], 3.5, 0] } });
+    if (framedLookup.current !== lookupKey) {
+      framedLookup.current = lookupKey;
+      frameLookup(map, lookupShapes.bounds);
+    }
+    return () => {
+      for (const id of ["lookup-hover", "lookup-outline", "lookup-outline-casing", "lookup-line", "lookup-fill"]) {
+        if (map.getLayer(id)) map.removeLayer(id);
+      }
+      for (const id of ["lookup-areas", "lookup-outline"]) if (map.getSource(id)) map.removeSource(id);
+      if (map.getSource("counties")) {
+        for (const fips of lookupCounties) map.setFeatureState({ source: "counties", id: fips }, { lookup: false });
+      }
+    };
+  }, [ready, lookupKey, lookupShapes, lookupCounties, dark]);
+  // No place: the next lookup of the same one frames it again.
+  useEffect(() => {
+    if (!lookupKey) framedLookup.current = null;
+  }, [lookupKey]);
+
+  // Its areas show while its list does; with one of them open, only the outline stays.
+  const lookupShowAreas = lookup?.showAreas ?? false;
+  const lookupAreasShown = useRef(true);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || !map.getLayer("lookup-fill")) return;
+    for (const id of LOOKUP_AREA_LAYERS) map.setLayoutProperty(id, "visibility", lookupShowAreas ? "visible" : "none");
+    // Back from one of its areas to its list: show the whole place again.
+    if (lookupShowAreas && !lookupAreasShown.current) frameLookup(map, lookupShapes?.bounds ?? null);
+    lookupAreasShown.current = lookupShowAreas;
+  }, [ready, lookupShowAreas, lookupKey, lookupShapes, lookupCounties, dark]);
+
+  const lookupValues = lookup?.values ?? null;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || !lookupValues || !map.getSource("lookup-areas")) return;
+    for (const [geoid, v] of lookupValues) map.setFeatureState({ source: "lookup-areas", id: geoid }, { v });
+  }, [ready, lookupValues, lookupKey, lookupShapes, lookupCounties, dark]);
+
+  const lookupHighlight = lookup?.highlight;
+  const prevLookupHighlight = useRef<string[]>([]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || !map.getSource("lookup-areas")) return;
+    for (const id of prevLookupHighlight.current) map.setFeatureState({ source: "lookup-areas", id }, { hover: false });
+    prevLookupHighlight.current = lookupHighlight ?? [];
+    for (const id of prevLookupHighlight.current) map.setFeatureState({ source: "lookup-areas", id }, { hover: true });
+  }, [ready, lookupHighlight, lookupKey, lookupShapes, lookupCounties, dark]);
 
   // The open result's area: a pin, and the map moves there (keeping a regional view).
   const pinLat = pin?.lat ?? null;
@@ -730,6 +930,25 @@ export default function CountyMap({
     );
   }, [ready, focus]);
 
+  // A place looked up by name: the map shows all of it (a city, a ZIP code), above the sheet.
+  const fitted = useRef<typeof fit>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || !fit || fitted.current === fit) return;
+    fitted.current = fit;
+    const [w, s, e, n] = fit.bounds;
+    const height = map.getContainer().clientHeight;
+    const inset = Math.min(latest.current.bottomInset, height * 0.6);
+    const pad = Math.max(16, Math.min(60, (height - inset) / 6));
+    map.fitBounds(
+      [
+        [w, s],
+        [e, n],
+      ],
+      { padding: { top: pad, left: pad, right: pad, bottom: inset + pad }, maxZoom: 12, duration: 600 },
+    );
+  }, [ready, fit]);
+
   // Panels opening or closing change the map's size.
   useEffect(() => {
     const map = mapRef.current;
@@ -752,7 +971,7 @@ export default function CountyMap({
           {error}
         </p>
       )}
-      {ready && inside ? <AreaLegend {...inside.legend} palette={inside.palette} /> : ready && relative.size > 0 && <Legend count={relative.size} byBestArea={byBestArea} />}
+      {ready && inside ? inside.legend && inside.palette !== "none" && <AreaLegend {...inside.legend} palette={inside.palette} /> : ready && lookup?.showAreas && lookup.legend ? <AreaLegend {...lookup.legend} palette="score" /> : ready && relative.size > 0 && <Legend count={relative.size} byBestArea={byBestArea} />}
       {basemapOnline === false && (
         <p className="pointer-events-none absolute bottom-[calc(var(--map-inset)+0.5rem)] left-2 rounded bg-white/85 px-2 py-1 text-caption text-neutral-700 dark:bg-neutral-900/85 dark:text-neutral-300">
           Offline — showing county lines only
@@ -769,7 +988,10 @@ function AreaLegend({ title, low, high, palette }: { title: string; low: string;
       <p className="font-medium">{title}</p>
       <div
         className="mt-1 h-2 rounded-sm"
-        style={{ background: `linear-gradient(to right, ${stops.filter((_, i) => i % 2 === 1).join(", ")})` }}
+        style={{
+          background: `linear-gradient(to right, ${stops.filter((_, i) => i % 2 === 1).join(", ")})`,
+          opacity: palette === "measure" ? MEASURE_OPACITY + 0.25 : undefined,
+        }}
       />
       <div className="mt-0.5 flex justify-between text-neutral-500">
         <span>{low}</span>

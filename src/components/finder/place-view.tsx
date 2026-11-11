@@ -45,6 +45,8 @@ const QUICK_FACTS: { metric: MetricKey; label: string }[] = [
 ];
 
 export interface PlaceProps {
+  /** What the back link returns to: "Results", or a looked-up place ("Austin"). */
+  resultsLabel?: string;
   score: CountyScore;
   /** The scored (scoped) dataset `score.index` points into. */
   data: CountyDataset;
@@ -76,7 +78,7 @@ export interface PlaceProps {
  * the rank on the right, colored as the map colors ranks. On phones this is the
  * sheet's drag header.
  */
-export function PlaceIdentity({ score: s, data, rank, total, onBack, topAreas }: PlaceProps) {
+export function PlaceIdentity({ score: s, data, rank, total, onBack, topAreas, resultsLabel = "Results" }: PlaceProps) {
   const people = data.values.population[s.index];
   return (
     <div>
@@ -85,7 +87,7 @@ export function PlaceIdentity({ score: s, data, rank, total, onBack, topAreas }:
         onClick={onBack}
         className="-ml-1 rounded px-1 text-label font-medium text-emerald-700 hover:underline dark:text-emerald-400"
       >
-        ← Results
+        ← {resultsLabel}
       </button>
       <div className="mt-1 flex items-start justify-between gap-3">
         <div className="min-w-0">
