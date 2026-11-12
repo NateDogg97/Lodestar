@@ -4,12 +4,17 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  areaValue,
+  countyWideCrime,
+  FEW_CRIMES,
   formatArea,
   formatAreaValue,
   groupAreas,
   headlineFlags,
   parseCountyAreas,
   parseTractIndex,
+  publishedValue,
+  reportedCrimes,
   TRACTS_FORMAT,
 } from "./index";
 
@@ -47,6 +52,33 @@ describe("area data", () => {
     expect(c.byGeoid.get("48453001309")?.nearbyHighSchools).toEqual(["h1", "h2"]);
     expect(c.schools.get("h1")).toMatchObject({ level: "high", apCourses: 25, apShare: 42.7, ib: false });
     expect(c.schools.get("h2")).toMatchObject({ inCounty: false, countyName: "Williamson County", countyRank: null });
+  });
+
+  it("gives no crime rate to an area whose only figure is a county-wide sheriff's (2026-11-11)", () => {
+    const c = parseCountyAreas({
+      ...payload,
+      columns: ["geoid", "label", "population", "low_confidence", "violent_rate", "property_rate", "crime_population",
+        "crime_months", "school_basis"],
+      rows: [
+        ["26161448000", "Near Chelsea · 48118", 4007, "crime_wide", 363, 658, 162060, 12, "district"],
+        ["26161446400", "Chelsea · 48118", 3078, "", 204, 781, 5379, 12, "nearby"],
+        ["26161400500", "Ann Arbor · 48104", 7588, "", 294, 1721, 122740, 6, null],
+      ],
+    });
+    const [near, chelsea, annArbor] = c.areas;
+    expect(countyWideCrime(near)).toBe(true);
+    // Not ranked, sorted or shaded on it; the area page can still say what the county's was.
+    expect(areaValue(near, "violent_rate")).toBeNull();
+    expect(areaValue(near, "property_rate")).toBeNull();
+    expect(formatAreaValue(near, "violent_rate")).toBe("—");
+    expect(publishedValue(near, "violent_rate")).toBe(363);
+    expect(areaValue(chelsea, "violent_rate")).toBe(204);
+    // 204 per 100,000 for 5,379 people is 11 crimes: too few for a steady rate.
+    expect(reportedCrimes(chelsea, "violent_rate")).toBe(11);
+    expect(reportedCrimes(chelsea, "violent_rate")!).toBeLessThan(FEW_CRIMES);
+    // A partial year's rate was scaled to a year: the count is what was reported.
+    expect(reportedCrimes(annArbor, "violent_rate")).toBe(180);
+    expect([near.schoolBasis, chelsea.schoolBasis, annArbor.schoolBasis]).toEqual(["district", "nearby", null]);
   });
 
   it("flags only headline values for the list's caution icon", () => {

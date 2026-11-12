@@ -9,6 +9,10 @@ import {
   areaLimitResults,
   areaPriority,
   areaValue,
+  countyWideCrime,
+  FEW_CRIMES,
+  publishedValue,
+  reportedCrimes,
   aroundVerdict,
   explainArea,
   formatArea,
@@ -626,6 +630,9 @@ export function AreaDetail({
   const name = (s: School) => <span className="capitalize">{s.name.toLowerCase()}</span>;
 
   const schoolP = v("nearby_school_pctl");
+  const district = r.district_name ? String(r.district_name).replace(/ Independent School District$/, " ISD") : null;
+  const wideCrime = countyWideCrime(area);
+  const violentCount = reportedCrimes(area, "violent_rate");
   const owners = v("owner_share");
   const highrise = v("highrise_share");
   const single = v("single_family_share");
@@ -641,7 +648,7 @@ export function AreaDetail({
         <PriceStat area={area} ranking={ranking} label="Home value" census="median_home_value" zillow="zhvi" />
         <PriceStat area={area} ranking={ranking} label="Rent" census="median_gross_rent" zillow="zori" />
         <Stat k="median_household_income" text={formatAreaValue(area, "median_household_income")} flagged={flagged.has("median_household_income")} />
-        <Stat k="violent_rate" text={formatAreaValue(area, "violent_rate")} flagged={flagged.has("crime") || flagged.has("crime_wide")} />
+        <Stat k="violent_rate" text={formatAreaValue(area, "violent_rate")} flagged={flagged.has("crime")} />
         <Stat k="commute_minutes" text={formatAreaValue(area, "commute_minutes")} flagged={flagged.has("commute_minutes")} />
         <Stat k="walkability" text={formatAreaValue(area, "walkability")} flagged={flagged.has("walkability")} />
       </dl>
@@ -650,37 +657,51 @@ export function AreaDetail({
         id="schools"
         icon="school"
         title="Schools"
-        lead={`${schoolsVerdict(schoolP)}${schoolP !== null ? ` · ${ordinal(Math.round(schoolP))} percentile nationally` : ""}`}
+        lead={`${schoolsVerdict(schoolP)}${schoolP !== null ? ` · ${ordinal(Math.round(schoolP))} percentile among US districts` : ""}`}
         details={
           <>
-            <SubHead>Elementary &amp; middle</SubHead>
+            <SubHead>Elementary &amp; middle{district ? ` in ${district}` : ""}</SubHead>
             {schools.length === 0 ? (
-              <Note>No scored schools within 5 miles.</Note>
+              <Note>No elementary or middle school in this district has its own test scores.</Note>
             ) : (
               schools.map((s) => <PctRow key={s.id} label={name(s)} sub={`${s.level} · ${where(s)}`} p={s.pctl} />)
             )}
             <SubHead>High schools · college-prep access</SubHead>
             {highSchools.length === 0 ? (
-              <Note>No high school within 5 miles.</Note>
+              <Note>No high school in this district has college-prep data.</Note>
             ) : (
               highSchools.map((s) => <PctRow key={s.id} label={name(s)} sub={[apLine(s), where(s)].filter(Boolean).join(" · ")} p={s.pctl} />)
             )}
             <Note>
-              The nearest schools to where people here live — not attendance zones. Elementary and middle: SEDA test scores
-              (grades 3–8). High schools: AP participation and courses offered (Civil Rights Data Collection 2023–24).
-              National percentiles.
+              {area.schoolBasis === null
+                ? "The nearest schools to where people here live. "
+                : "Only schools inside this area's district boundary, nearest first; a closer school in another district isn't one a child here would attend. "}
+              Not attendance zones: the district decides which of its schools a street goes to. Elementary and middle: SEDA
+              test scores (grades 3–8), each school against US schools of its level. High schools: AP participation and
+              courses offered (Civil Rights Data Collection 2023–24).
             </Note>
           </>
         }
       >
-        <PctRow label="Elementary & middle" sub={`${schools.length} nearest, average`} p={schoolP} />
-        <PctRow label="High schools" sub="Nearest, college-prep access" p={v("nearby_hs_pctl")} />
-        {r.district_name && (
+        <PctRow
+          label="Grades 3–8"
+          sub={
+            area.schoolBasis === "district"
+              ? `${district ?? "The district"}, against US districts`
+              : area.schoolBasis === "nearby"
+                ? `The ${schools.length} nearest schools in ${district ?? "the district"}, against US districts`
+                : `${schools.length} nearest, average`
+          }
+          p={schoolP}
+        />
+        <PctRow
+          label="High schools"
+          sub={area.schoolBasis === null ? "Nearest, college-prep access" : "In the district, college-prep access"}
+          p={v("nearby_hs_pctl")}
+        />
+        {district && (
           <p className="text-label text-neutral-600 dark:text-neutral-400">
-            District:{" "}
-            <span className="font-semibold text-neutral-900 dark:text-neutral-100">
-              {String(r.district_name).replace(/ Independent School District$/, " ISD")}
-            </span>
+            District: <span className="font-semibold text-neutral-900 dark:text-neutral-100">{district}</span>
             {v("district_pctl") !== null && ` · ${ordinal(v("district_pctl")!)} percentile`}
             {v("district_rank") !== null && ` · ${ordinal(v("district_rank")!)} of ${v("district_count")} in county`}
           </p>
@@ -691,25 +712,20 @@ export function AreaDetail({
         id="safety"
         icon="shield"
         title="Safety"
-        lead={safetyVerdict(v("violent_rate"), r.crime_note ? String(r.crime_note) : null)}
+        lead={wideCrime ? "No crime rate for this area alone" : safetyVerdict(v("violent_rate"), r.crime_note ? String(r.crime_note) : null)}
         details={
           <>
-            <CompareBar
-              label="Property crime"
-              value={v("property_rate")}
-              text={`${formatArea("property_rate", v("property_rate"))}`}
-              typical={US_TYPICAL.property_rate}
-              typicalText={US_TYPICAL.property_rate.toLocaleString()}
-              max={4000}
-              maxText="4,000+"
-              flagged={flagged.has("crime") || flagged.has("crime_wide")}
-            />
-            {typeof r.crime_shared === "number" && r.crime_shared > 1 && (
-              <Note>
-                {flagged.has("crime_wide")
-                  ? `One rate for all ${r.crime_shared} areas policed by ${String(r.crime_agency)}, from farmland to suburbs: the FBI reports crime by police agency, so it can't tell them apart. Treat it as the county's, not this area's.`
-                  : `The same rate for all ${r.crime_shared} areas policed by ${String(r.crime_agency)}: the FBI reports crime by police agency, not by neighborhood.`}
-              </Note>
+            {!wideCrime && (
+              <CompareBar
+                label="Property crime"
+                value={v("property_rate")}
+                text={`${formatArea("property_rate", v("property_rate"))}`}
+                typical={US_TYPICAL.property_rate}
+                typicalText={US_TYPICAL.property_rate.toLocaleString()}
+                max={4000}
+                maxText="4,000+"
+                flagged={flagged.has("crime")}
+              />
             )}
             <Note>
               {r.crime_agency && r.crime_note
@@ -724,16 +740,41 @@ export function AreaDetail({
           </>
         }
       >
-        <CompareBar
-          label="Violent crime"
-          value={v("violent_rate")}
-          text={formatArea("violent_rate", v("violent_rate"))}
-          typical={US_TYPICAL.violent_rate}
-          typicalText={String(US_TYPICAL.violent_rate)}
-          max={800}
-          maxText="800+"
-          flagged={flagged.has("crime") || flagged.has("crime_wide")}
-        />
+        {wideCrime ? (
+          <Note>
+            The only figure here is for {String(r.crime_agency)}: {formatArea("violent_rate", publishedValue(area, "violent_rate"))}{" "}
+            violent and {formatArea("property_rate", publishedValue(area, "property_rate"))} property, one rate for all{" "}
+            {typeof r.crime_shared === "number" ? r.crime_shared : "the"} areas it polices, from farmland to suburbs. The FBI
+            reports crime by police agency, so that is the county&rsquo;s number, not this area&rsquo;s: it isn&rsquo;t ranked or
+            shaded on the map.
+          </Note>
+        ) : (
+          <>
+            <CompareBar
+              label="Violent crime"
+              value={v("violent_rate")}
+              text={formatArea("violent_rate", v("violent_rate"))}
+              typical={US_TYPICAL.violent_rate}
+              typicalText={String(US_TYPICAL.violent_rate)}
+              max={800}
+              maxText="800+"
+              flagged={flagged.has("crime")}
+            />
+            {violentCount !== null && violentCount < FEW_CRIMES && v("violent_rate") !== null && (
+              <Note>
+                That is about {violentCount} violent {violentCount === 1 ? "crime" : "crimes"} reported in {String(r.crime_year)}
+                {typeof r.crime_population === "number" ? ` for ${r.crime_population.toLocaleString()} people` : ""}. With so
+                few, the rate per 100,000 can change a lot from one year to the next.
+              </Note>
+            )}
+            {typeof r.crime_shared === "number" && r.crime_shared > 1 && (
+              <Note>
+                One rate for all {r.crime_shared} areas policed by {String(r.crime_agency)}: the FBI reports crime by police
+                agency, not by neighborhood.
+              </Note>
+            )}
+          </>
+        )}
       </AreaSection>
 
       <AreaSection

@@ -44,10 +44,14 @@ export interface Area {
   lowConfidence: string[];
   /** Census top-coded columns: the value means "this much or more". */
   topcoded: string[];
-  /** Nearest scored elementary and middle schools (ids into CountyAreas.schools). */
+  /** The scored elementary and middle schools inside the area's district, nearest first
+   *  (ids into CountyAreas.schools). Files from before 2026-11-11 list the nearest of any district. */
   nearbySchools: string[];
-  /** Nearest high schools. */
+  /** The high schools inside its district, nearest first. */
   nearbyHighSchools: string[];
+  /** What `nearby_school_pctl` is: the district's score, or (a big one-district city) the
+   *  nearest schools in it placed among US districts. Null in a file from before 2026-11-11. */
+  schoolBasis: "district" | "nearby" | null;
 }
 
 export interface School {
@@ -120,6 +124,7 @@ export function parseCountyAreas(payload: unknown): CountyAreas {
       topcoded: (str(row.topcoded) ?? "").split(";").filter(Boolean),
       nearbySchools: (str(row.nearby_schools) ?? "").split(";").filter(Boolean),
       nearbyHighSchools: (str(row.nearby_high_schools) ?? "").split(";").filter(Boolean),
+      schoolBasis: row.school_basis === "district" || row.school_basis === "nearby" ? row.school_basis : null,
     };
   });
   const schools = new Map<string, School>();
@@ -184,11 +189,11 @@ export const AREA_MEASURES: AreaMeasure[] = [
   { key: "per_capita_income", label: "Income per person", format: "dollars", colorable: true,
     note: "Census, 2019–2023. Fairer than household income where households are small (downtowns)." },
   { key: "median_household_income", label: "Household income", format: "dollars" },
-  { key: "nearby_school_pctl", label: "Nearby elementary & middle schools", format: "pctl", colorable: true,
-    note: "Average national percentile of the nearest scored elementary and middle schools within 5 miles (SEDA test scores, grades 3–8). Not attendance zones." },
-  { key: "nearby_hs_pctl", label: "Nearby high schools", format: "pctl", colorable: true,
-    note: "Average national percentile of the 2 nearest high schools for college-prep access: AP participation and AP courses offered (Civil Rights Data Collection, 2023–24)." },
-  { key: "district_pctl", label: "School district", format: "pctl", colorable: true,
+  { key: "nearby_school_pctl", label: "Schools (grades 3–8)", format: "pctl", colorable: true,
+    note: "The area's school district against every US district (SEDA test scores, grades 3–8). In a big district with 20 or more schools, the nearest schools inside it instead, placed on the same scale. Schools in other districts never count." },
+  { key: "nearby_hs_pctl", label: "High schools", format: "pctl", colorable: true,
+    note: "The high schools inside the area's district (the 2 nearest, in a big one), national percentile for college-prep access: AP participation and AP courses offered (Civil Rights Data Collection, 2023–24)." },
+  { key: "district_pctl", label: "School district", format: "pctl",
     note: "National percentile of the area's school district (SEDA, grades 3–8)." },
   { key: "walkability", label: "Walkability", format: "walk", colorable: true,
     note: "EPA National Walkability Index, 1–20: street grid, transit nearby, mix of homes and jobs. 15+ is most walkable." },
@@ -220,7 +225,7 @@ export const AREA_MEASURES: AreaMeasure[] = [
   { key: "commute_minutes", label: "Average commute", format: "minutes" },
   { key: "work_from_home_share", label: "Work from home", format: "percent" },
   { key: "violent_rate", label: "Violent crime", format: "rate", colorable: true,
-    note: "FBI, per 100,000 residents per year, for the police agency covering the area (city police or county sheriff) — not the neighborhood itself. A partial year's reports are scaled to a year; an agency with too little to rate shows none." },
+    note: "FBI, per 100,000 residents per year, for the city or town police covering the area — not the neighborhood itself. A partial year's reports are scaled to a year; an agency with too little to rate shows none, and neither does an area whose only figure is a sheriff's for a whole county of farmland and suburbs." },
   { key: "property_rate", label: "Property crime", format: "rate", note: "FBI, per 100,000 residents per year, for the covering police agency." },
   { key: "zhvi_yoy", label: "Home value, last 12 months (by ZIP)", format: "change", colorable: true },
   { key: "days_on_market", label: "Days on market", format: "number", note: "Redfin median for the ZIP, latest 90 days." },
@@ -270,8 +275,41 @@ export function flagLabel(col: string): string {
   return AREA_MEASURE.get(col)?.label ?? col.replace(/_/g, " ");
 }
 
-export function areaValue(a: Area, key: string): number | null {
+/**
+ * The area's only crime figure is a county agency's one rate over farmland and suburbs
+ * alike (the ETL's "crime_wide"): the county's, not this area's (owner, 2026-11-11).
+ */
+export const countyWideCrime = (a: Area) => a.lowConfidence.includes("crime_wide");
+
+const CRIME_RATES = new Set(["violent_rate", "property_rate"]);
+
+/** The value as published, whatever it can claim: for saying what a county-wide figure was. */
+export function publishedValue(a: Area, key: string): number | null {
   return num(a.row[key] ?? null);
+}
+
+/**
+ * The area's value on a measure — what lists, the map's shading and ranking use. A
+ * county-wide crime rate isn't the area's, so it has none (see `countyWideCrime`).
+ */
+export function areaValue(a: Area, key: string): number | null {
+  if (CRIME_RATES.has(key) && countyWideCrime(a)) return null;
+  return publishedValue(a, key);
+}
+
+/** Fewer reported crimes than this in the year and a per-100,000 rate says less than the count. */
+export const FEW_CRIMES = 20;
+
+/**
+ * How many crimes the area's police agency reported in its year, from the published rate
+ * and the people it serves (rates are whole numbers, so this is within one of the count).
+ */
+export function reportedCrimes(a: Area, key: "violent_rate" | "property_rate"): number | null {
+  const rate = publishedValue(a, key);
+  const pop = num(a.row.crime_population ?? null);
+  if (rate === null || pop === null) return null;
+  const months = num(a.row.crime_months ?? null) ?? 12;
+  return Math.round((rate * pop * months) / 12 / 100_000);
 }
 
 /** Like formatArea, with "+" on a Census top-coded value ("$3,501+" = that or more). */

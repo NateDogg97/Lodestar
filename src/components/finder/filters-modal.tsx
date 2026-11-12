@@ -67,7 +67,8 @@ const SECTION_TIPS: Partial<Record<SectionId, string>> = {
     "All optional. A budget scores home value (or rent) by fit — full marks at or under it, none at 1.5× it — instead of “cheaper is better”. Income and filing set the Taxes estimate. Kept on this device only: links you share never include them.",
   hazards:
     "FEMA National Risk Index (Dec 2025): where an area ranks nationally on the share of its buildings, people and farms expected to be lost to each hazard in a typical year.",
-  safety: "FBI crime rates for the police agency covering each area.",
+  safety:
+    "FBI crime rates for the city or town police covering each area. Where the only figure is a sheriff's for a whole county of farmland and suburbs, the area has no rate: it counts as average and is unknown for a must-have.",
   pollution:
     "Measured where people in each area live (2020 census blocks). Scored against fixed health benchmarks, not ranks, so differences smaller than the data's error don't move a score. Radon isn't here: its estimates are too uncertain to rank on — area pages show it.",
   states:
