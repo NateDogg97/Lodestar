@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lodestar",
+  "compatibility_date": "2026-11-01",
+  // Assets-only Worker serving the Next.js static export. No routes/custom domains here.
+  "assets": {
+    "directory": "./out",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  }
+}

@@ -35,7 +35,11 @@ yarn-error.log*
 !.env.example
 # Local dev reads area data from the public data host (no secrets in it).
 !/.env.development
+!/.env.production
 !/etl/.env.example
+
+# wrangler
+/.wrangler/
 
 # vercel
 .vercel

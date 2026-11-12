@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "concurrently -p none \"serwist build serwist.config.mjs --watch\" \"next dev\"",
-    "build": "next build && serwist build serwist.config.mjs",
-    "start": "next start",
+    "build": "next build && serwist build serwist.config.mjs && node scripts/copy-sw-to-out.mjs",
+    "start": "wrangler dev",
+    "preview": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -38,7 +40,8 @@
     "eslint-config-next": "16.4.4",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.1",
+    "wrangler": "^4.161.0"
   },
   "overrides": {
     "zod": "^4.6.7",
