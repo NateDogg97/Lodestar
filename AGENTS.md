@@ -30,7 +30,14 @@ rather than leaving it stale. Record new decisions or open questions there, not 
   `apple-icon.png`, `opengraph-image.png`); sources and colors are in `brand/` (app name:
   Lodestar). The in-app logo is `src/components/ui/lodestar-logo.tsx`.
 - `src/components/pwa-provider.tsx` — registers the service worker on the client.
-- `serwist.config.mjs` — builds `public/sw.js` after `next build` (generated, git-ignored).
+- `serwist.config.mjs` — builds `public/sw.js` after `next build` (generated, git-ignored);
+  `scripts/copy-sw-to-out.mjs` then copies it into `out/`.
+- Hosting (plan §9 Phase 13): a Cloudflare Worker serving the static export in `out/`
+  (Workers Static Assets, no Worker script). `wrangler.jsonc` is its config, `public/_headers`
+  holds the response headers (a static export can't use `next.config.ts` `headers()`),
+  `public/.assetsignore` keeps a locally built `data/tracts` out of a deploy, and the committed
+  `.env.production` sets `NEXT_PUBLIC_DATA_URL`. Until the cutover finishes, Vercel still
+  serves production (`vercel.json`).
 - `src/lib/scoring/` — the scoring engine (plan §6). Pure TS, no UI imports; tests beside it.
 - `src/components/finder/` — the UI: filters modal, results list, place view, and
   `county-map.tsx` (MapLibre).
@@ -82,8 +89,10 @@ source that needs a person.
 
 ```bash
 npm run dev        # next dev + service-worker watcher (SW disabled in dev)
-npm run build      # next build && serwist build
-npm run start      # serve production build; use this to test install/offline
+npm run build      # next build (static export to out/) && serwist build, then copy sw.js into out/
+npm run start      # serve out/ with `wrangler dev`; use this to test install/offline
+npm run preview    # build, then wrangler dev
+npm run deploy     # build, then wrangler deploy (the Worker)
 npm run lint
 npm run typecheck
 npm test           # Vitest: scoring engine unit + real-data tests
@@ -98,7 +107,10 @@ For ETL changes, also run `etl/.venv/bin/python -m etl.test_offline`. For law ch
 - TypeScript, App Router, Tailwind 4. Server Components by default; `"use client"` only
   where needed.
 - Scoring logic is a pure TS module with unit tests — no UI imports (plan §9, Phase 2).
-- Keep the app fully static; anything that needs a server is out of scope for v1.
+- Keep the app fully static; anything that needs a server is out of scope for v1. It is a
+  Next.js static export (`output: "export"`), so route handlers, `headers()`/`redirects()`/
+  `rewrites()` in `next.config.ts`, server actions, middleware/proxy and `next/image`
+  optimization won't build. Response headers go in `public/_headers`.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

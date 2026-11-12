@@ -5,9 +5,18 @@
 > If something here conflicts with what you actually built, the code is right and this file is
 > stale — fix the file.
 >
-> Last updated: 2026-11-10
+> Last updated: 2026-11-12
 >
 > **Changelog**
+> - 2026-11-12 — **Hosting moves from Vercel to a Cloudflare Worker** (§9 Phase 13; owner's
+>   call). DNS and the R2 data bucket are already on Cloudflare, the app has no server-side
+>   features, and this leaves one vendor. The app becomes a Next.js static export
+>   (`output: "export"` → `out/`) served by Workers Static Assets (`wrangler.jsonc`, no Worker
+>   script). OpenNext was considered and rejected: nothing runs on a server, so an assets-only
+>   Worker has fewer moving parts. Response headers move from `next.config.ts` to
+>   `public/_headers`; `NEXT_PUBLIC_DATA_URL` moves from a Vercel env var to the committed
+>   `.env.production`. The R2 bucket and both monthly workflows are unchanged. Cutover is
+>   staged for zero downtime and instant rollback; none of it is done yet.
 > - 2026-11-10 — **Inside a county, shading is opt-in** (§9 Phase 8; owner: "by default we
 >   shouldn't have any color sorting on the map when a user just looks in a county", and the
 >   colors were "a bit too solid"). With no by-area filter, a county's areas used to be shaded
@@ -693,7 +702,7 @@ structured. Think SQL, not LLM.
 | Color scale | `d3-scale-chromatic` | |
 | Filter state | **URL query params** | Free shareable links, back/forward, and "saved searches" with no auth and no DB |
 | Shortlist | `localStorage` | |
-| Hosting | Cloudflare Pages or Vercel | Static files on a CDN |
+| Hosting | Cloudflare Worker with Static Assets (Next.js static export in `out/`); Vercel until the §9 Phase 13 cutover | Static files on a CDN. No Worker script and no OpenNext: nothing runs server-side. |
 | Database | **None for v1** | If needed later: Neon (100 CU-hours + 0.5 GB free, fails soft by suspending compute). Note Supabase's free tier pauses projects after a week of inactivity, taking Auth and PostgREST down with it. |
 | ETL | **Python** (`pandas` + `geopandas`) | Cuts against the JS stack, but saves days on spatial joins, projections, and centroid math. Build-time only — never touches app runtime. |
 | PWA | Service worker + Serwist precache + manifest | Data is static files, so full offline support is nearly free |
@@ -709,7 +718,8 @@ structured. Think SQL, not LLM.
 | Claude API for NL search (if added) | ~$1–5 |
 | Domain | ~$1 amortized |
 
-**No server space needs to be purchased.** The entire MVP is static files on a CDN.
+**No server space needs to be purchased.** The entire MVP is static files on a CDN (a Cloudflare
+Worker serving static assets from 2026-11-12's migration on, §9 Phase 13).
 
 ---
 
@@ -2177,7 +2187,7 @@ limits are as published; a part ranked on an estimate ≥5% off says "ranked as 
 
 **Still open**
 - [ ] **Reach production.** This work was done in a fork (`zamays/Lodestar`); production
-      deploys from `NateDogg97/Lodestar` (Vercel) and its R2 bucket. A merged PR ships the
+      deploys from `NateDogg97/Lodestar` (Vercel until the Phase 13 cutover, then the Cloudflare Worker) and its R2 bucket. A merged PR ships the
       code, `counties.json` and `laws.json`; the parent's `tracts-refresh` workflow (monthly,
       or run by hand) then publishes `areas.json` with the `*_eb` columns — or the owner runs
       `etl.tracts.upload` with the R2 keys. Until then areas rank on published values (the
@@ -2813,6 +2823,55 @@ county or ZIP code and see the results.
   of ~33,000; small ZIPs fall under a larger neighbor — the empty state says so). A town with
   no area inside it finds the areas beside it ("Near Manor"). Two same-named towns in one
   state are one entry. New York's boroughs aren't cities in the Census, hence the aliases.
+
+### Phase 13 — Hosting: Vercel to a Cloudflare Worker (2026-11-12, owner's call) — **in progress**
+
+www.lodestarmap.com moves from Vercel to a **Cloudflare Worker using Workers Static Assets**.
+Why: DNS and the R2 data bucket (`data.lodestarmap.com`) are already on Cloudflare, the app has
+no server-side features, and it leaves one vendor. The app is a Next.js static export
+(`output: "export"` → `out/`) served by `wrangler.jsonc` with no Worker script. **OpenNext was
+considered and rejected:** nothing runs server-side, so an assets-only Worker is simpler.
+The R2 bucket and both monthly GitHub workflows are unchanged.
+
+What changes in the repo:
+- `next.config.ts` gets `output: "export"`; the response headers (no-cache for `/sw.js`,
+  immutable for `/_next/static/*`) move from its `headers()` to `public/_headers`.
+- New `wrangler.jsonc` (Worker `lodestar`, assets from `./out`, no routes yet), and `public/.assetsignore` (keeps a locally built `data/tracts` out of
+  a deploy).
+- New committed `.env.production` with `NEXT_PUBLIC_DATA_URL=https://data.lodestarmap.com`
+  (was a Vercel project env var).
+- `scripts/copy-sw-to-out.mjs`, the last step of `npm run build`: `serwist build` writes
+  `public/sw.js` after `next build` has already copied `public/` into `out/`, so it copies the
+  fresh service worker (and its map) into `out/`.
+- New scripts `npm run preview` (`npm run build && wrangler dev`) and `npm run deploy`
+  (`npm run build && wrangler deploy`). `npm run start` can no longer use `next start` (a static
+  export can't); the production build is served locally with `wrangler dev`.
+
+Cutover (zero downtime, instant rollback):
+- [ ] 1. Branch `cloudflare-workers`: static export + Workers config; lint, typecheck, test,
+      build pass; local `wrangler dev` parity check against production.
+- [ ] 2. First deploy to the `workers.dev` URL (production domain untouched); owner QA on phone
+      and desktop: map, filters, results, place search, an area page, install, offline.
+- [ ] 3. Automated parity check, Vercel production vs `workers.dev`: status codes, headers,
+      every precached URL.
+- [ ] 4. Merge to main (Vercel keeps serving; it builds static exports too). Connect the repo in
+      Cloudflare Workers Builds so pushes to main deploy the Worker (the monthly laws refresh
+      commits to main and must still redeploy the site).
+- [ ] 5. Cutover: add Worker routes for `lodestarmap.com/*` and `www.lodestarmap.com/*` while
+      the DNS records are still "DNS only" (routes are inert until traffic is proxied), add an
+      apex-to-www redirect rule (today Vercel 308-redirects apex to www; the service worker and
+      installed PWAs live on the www origin, so www must stay canonical), then switch the two
+      DNS records to Proxied. Rollback = switch them back to DNS only (Vercel is still
+      deployed).
+- [ ] 6. Watch for a week; then remove the Vercel project, `vercel.json` and `.vercelignore`,
+      and replace the routes with Worker Custom Domains if desired.
+
+Risks:
+- Installed PWAs and service workers must update cleanly from the Vercel build to the Worker
+  build (same origin, same `/sw.js` path, `skipWaiting`). Check on a device with the app
+  installed before step 5.
+- Workers static assets limits: 25 MiB per file, 20,000 files on the free plan. The build is
+  far below both; tract data stays on R2.
 
 ---
 

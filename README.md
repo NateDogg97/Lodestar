@@ -48,8 +48,10 @@ Everything is scored in the browser over two static files. There is no search ba
 ```bash
 npm install
 npm run dev        # Next dev server + service-worker watcher (the worker is off in dev)
-npm run build      # production build, then public/sw.js
-npm run start      # serve the production build (use this to test install, offline, updates)
+npm run build      # static export to out/, then the service worker
+npm run start      # serve out/ with wrangler dev (use this to test install, offline, updates)
+npm run preview    # build, then wrangler dev
+npm run deploy     # build, then wrangler deploy
 npm run lint
 npm run typecheck
 npm test           # Vitest: scoring engine, search links, climate families, real-data checks
@@ -59,7 +61,7 @@ Area data (the areas inside counties, and the cities, neighborhoods and ZIP code
 **Find a place** searches) is too large for git. The dev server reads the published files from
 `data.lodestarmap.com` (`.env.development`), so a fresh clone works after `npm install`. To use
 area files you built yourself in `public/data/tracts/`, put `NEXT_PUBLIC_DATA_URL=/data` in
-`.env.local`. A production build needs `NEXT_PUBLIC_DATA_URL` set the same way.
+`.env.local`. A production build reads `NEXT_PUBLIC_DATA_URL` from the committed `.env.production`.
 
 Rebuilding the data needs Python 3.12 or newer and the ETL's virtualenv. Full steps, including
 the one manual download (SEDA school data), are in [`etl/README.md`](etl/README.md).
@@ -75,8 +77,11 @@ API keys (Census, BEA, BLS, EIA) are read from the environment; `etl/.env.exampl
 
 ## Deploying
 
-- Host on anything that serves a static Next.js build and **redeploys on every push to
-  `main`**: the monthly laws refresh publishes new data by committing to the repo.
+- The site is a static export (`out/`) served by a Cloudflare Worker with static assets
+  (`wrangler.jsonc`; headers in `public/_headers`). The host must **redeploy on every push to
+  `main`** (Cloudflare Workers Builds): the monthly laws refresh publishes new data by
+  committing to the repo. `npm run deploy` deploys by hand. Hosting is moving over from Vercel
+  (plan §9 Phase 13); until the cutover, Vercel still serves production.
 - Add `EIA_API_KEY` as a GitHub Actions secret (the refresh falls back to the EIA's shared
   demo key without it), plus the Census/BEA/BLS keys if the county ETL ever runs in CI.
 - The site URL for share cards is `SITE_URL` in `src/app/layout.tsx` (https://www.lodestarmap.com;
