@@ -18,6 +18,8 @@
  * - An area unknown for a must-have ranks after every verified match.
  * - A value scores as at least as good as the values it ties with (best value = 100).
  * - Zero violent AND zero property crime is no report, not a perfect record.
+ * - A sheriff's one rate for a whole county of farmland and suburbs ("crime_wide") is no
+ *   rate for an area: unknown, so average on crime and never shaded (2026-11-11).
  *
  * Full audit (2026-10-04):
  * - National percentiles are over the areas that can be results: places nobody lives
@@ -100,6 +102,16 @@ export function parseNationalAreas(raw: unknown): NationalAreas {
       if (violent[i] === 0 && property[i] === 0) violent[i] = property[i] = NaN;
     }
   }
+  const lowConfidence = text("low_confidence").map((s) => (s ? s.split(";").filter(Boolean) : []));
+  // A county agency's one rate over farmland and suburbs alike ("crime_wide") is the
+  // county's, not the area's: no rate, so it is neither ranked nor shaded (owner, 2026-11-11).
+  for (const c of ["violent_rate", "property_rate", "violent_rate_eb", "property_rate_eb"]) {
+    const v = values.get(c);
+    if (!v) continue;
+    for (let i = 0; i < n; i++) {
+      if (lowConfidence[i].includes("crime_wide")) v[i] = NaN;
+    }
+  }
   const geoid = text("geoid");
   const label = text("label");
   const lat = values.get("pop_lat") ?? new Float64Array(n).fill(NaN);
@@ -110,7 +122,7 @@ export function parseNationalAreas(raw: unknown): NationalAreas {
     county: geoid.map((g) => g.slice(0, 5)),
     label,
     name: distinctNames(label, lat, lon),
-    lowConfidence: text("low_confidence").map((s) => (s ? s.split(";").filter(Boolean) : [])),
+    lowConfidence,
     population: values.get("population") ?? new Float64Array(n).fill(NaN),
     lat,
     lon,

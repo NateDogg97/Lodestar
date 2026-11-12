@@ -685,6 +685,61 @@ def test_crime_shared_rates() -> None:
     check(not bool(one_kind.any()), "a sheriff over similar rural areas isn't")
 
 
+def test_area_schools_in_district() -> None:
+    """An area's schools are the ones inside its district boundary, never a neighbor's."""
+    print("\ntracts.schools.area_schools (schools inside the area's district only)")
+    from .tracts import schools
+    from .tracts.schools import area_schools, district_percentile
+
+    curve = np.sort(np.linspace(-1, 1, 201))
+    sch = pd.DataFrame([
+        # Chelsea's two schools, and a neighbor district's much nearer to the tract.
+        {"key": "c-el", "level": "elementary", "lat": 42.30, "lon": -84.00, "score": 0.4, "pctl": 86, "boundary": "A", "hs_boundary": "A"},
+        {"key": "c-mid", "level": "middle", "lat": 42.31, "lon": -84.00, "score": 0.5, "pctl": 90, "boundary": "A", "hs_boundary": "A"},
+        {"key": "c-hs", "level": "high", "lat": 42.31, "lon": -84.01, "score": 90, "pctl": 95, "boundary": "A", "hs_boundary": "A"},
+        {"key": "n-el", "level": "elementary", "lat": 42.301, "lon": -84.05, "score": -0.2, "pctl": 40, "boundary": "B", "hs_boundary": "B"},
+        {"key": "n-hs", "level": "high", "lat": 42.301, "lon": -84.05, "score": 30, "pctl": 30, "boundary": "B", "hs_boundary": "B"},
+        # An elementary district (E) inside a secondary one (S): the high school is S's.
+        {"key": "e-el", "level": "elementary", "lat": 41.0, "lon": -88.0, "score": 0.1, "pctl": 60, "boundary": "E", "hs_boundary": "S"},
+        {"key": "s-hs", "level": "high", "lat": 41.2, "lon": -88.0, "score": 70, "pctl": 70, "boundary": "E2", "hs_boundary": "S"},
+    ] + [  # a big one-district city: good schools north, weak ones south
+        {"key": f"big-{i}", "level": "elementary" if i % 2 else "middle", "lat": 40 + i / 100, "lon": -90.0,
+         "score": -0.8 + i * 0.07, "pctl": 10 + i * 3, "boundary": "BIG", "hs_boundary": "BIG"}
+        for i in range(schools.BIG_DISTRICT_SCHOOLS + 4)
+    ])
+    tracts = pd.DataFrame([
+        {"pop_lat": 42.30, "pop_lon": -84.049, "boundary": "A", "hs_boundary": "A", "district_pctl": 90.0},
+        {"pop_lat": 41.0, "pop_lon": -88.0, "boundary": "E", "hs_boundary": "S", "district_pctl": 55.0},
+        {"pop_lat": 40.0, "pop_lon": -90.0, "boundary": "BIG", "hs_boundary": "BIG", "district_pctl": 20.0},
+        {"pop_lat": 40.23, "pop_lon": -90.0, "boundary": "BIG", "hs_boundary": "BIG", "district_pctl": 20.0},
+        {"pop_lat": 42.30, "pop_lon": -84.05, "boundary": "NONE", "hs_boundary": "NONE", "district_pctl": np.nan},
+        {"pop_lat": 42.30, "pop_lon": -84.05, "boundary": "B", "hs_boundary": "B", "district_pctl": np.nan},
+    ])
+    out = area_schools(tracts, sch, curve)
+    a = out.iloc[0]
+    check(a["nearby_schools"] == "c-el;c-mid" and a["nearby_high_schools"] == "c-hs",
+          "a neighbor district's school next door isn't listed; the area's own are")
+    check(a["nearby_school_pctl"] == 90.0 and a["school_basis"] == "district", "a small district's areas take the district's score")
+    check(a["nearby_hs_pctl"] == 95, "the high school score is the district's own high school's")
+    e = out.iloc[1]
+    check(e["nearby_schools"] == "e-el" and e["nearby_high_schools"] == "s-hs",
+          "in a split state the high school comes from the secondary district")
+    south, north = out.iloc[2], out.iloc[3]
+    check(south["school_basis"] == "nearby" and north["school_basis"] == "nearby"
+          and north["nearby_school_pctl"] > south["nearby_school_pctl"] + 20,
+          "a big district's areas are told apart by their nearest schools in it")
+    check(len(south["nearby_schools"].split(";")) == 5, "3 elementary and 2 middle schools at most")
+    none = out.iloc[4]
+    check(none["nearby_schools"] == "" and pd.isna(none["nearby_school_pctl"]) and pd.isna(none["nearby_hs_pctl"]),
+          "no district score and no school in the district: unknown, not a neighbor's")
+    unscored = out.iloc[5]
+    check(unscored["school_basis"] == "nearby"
+          and abs(unscored["nearby_school_pctl"] - district_percentile(-0.2, curve)) < 1e-9,
+          "a district SEDA has no score for is placed by its own schools")
+    check(district_percentile(1.0, curve) == 100 and district_percentile(-2, curve) == 0
+          and abs(district_percentile(0.0, curve) - 50) < 1, "a score is placed among the districts")
+
+
 def test_edges_and_hazard_ratings() -> None:
     """Distance to a shape's edge (0 inside), and FEMA's rating words kept beside the rates."""
     print("\nedges.distance_to / nri.hazard_columns")
@@ -1697,6 +1752,7 @@ def main() -> int:
         test_tract_today_prices()
         test_tract_backfill_audit_columns()
         test_tract_publish_text_columns()
+        test_area_schools_in_district()
         test_tract_crime_rates()
         test_demographics()
         test_racial_equality()

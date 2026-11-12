@@ -15,7 +15,7 @@ import { Icon } from "@/components/ui/icons";
 
 const GROUPS: { title: string; keys: string[] }[] = [
   { title: "Homes and cost", keys: ["median_home_value", "zhvi", "zhvi_yoy", "median_gross_rent", "property_tax_rate", "highrise_share"] },
-  { title: "Schools", keys: ["nearby_school_pctl", "nearby_hs_pctl", "district_pctl"] },
+  { title: "Schools", keys: ["nearby_school_pctl", "nearby_hs_pctl"] },
   { title: "People", keys: ["per_capita_income", "kids_share", "density_per_sq_mi"] },
   { title: "Getting around", keys: ["walkability", "dist_downtown_mi", "dist_airport_mi"] },
   { title: "Safety and hazards", keys: ["violent_rate", "hazard_risk"] },

@@ -100,9 +100,9 @@ export function hazardWord(p: number): string {
   return p < 20 ? "Very low" : p < 40 ? "Low" : p < 60 ? "Moderate" : p < 80 ? "High" : "Very high";
 }
 
-/** Nearby schools' national percentile. */
+/** The area's schools: its district's national percentile (or its nearest schools', in a big one). */
 export function schoolsVerdict(p: number | null): string {
-  if (p === null) return "No scored schools nearby";
+  if (p === null) return "No test scores for this district";
   return p >= 75 ? "Strong schools" : p >= 60 ? "Above average" : p >= 40 ? "About average" : p >= 25 ? "Below average" : "Weak schools";
 }
 

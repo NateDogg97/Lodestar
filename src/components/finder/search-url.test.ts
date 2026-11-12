@@ -83,6 +83,6 @@ describe("search URLs", () => {
         limits: { rpp_all: { max: 100 } },
         area: { weights: { nearby_school_pctl: 5 }, directions: {}, limits: { walkability: { min: 10 } } },
       }),
-    ).toBe("Nearby schools, Cost of living +1 · 2 must-haves");
+    ).toBe("Schools, Cost of living +1 · 2 must-haves");
   });
 });

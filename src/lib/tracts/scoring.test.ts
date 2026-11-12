@@ -145,6 +145,36 @@ describe("area names", () => {
   });
 });
 
+describe("a county-wide crime rate isn't an area's (2026-11-11)", () => {
+  // b's only figure is its sheriff's, for a whole county of farmland and suburbs.
+  const a = parseNationalAreas({
+    format: "areas-v1",
+    n: 3,
+    columns: {
+      geoid: ["48001000100", "48001000200", "48001000300"],
+      label: ["A", "B", "C"],
+      low_confidence: ["", "crime;crime_wide", "crime"],
+      population: [1000, 2000, 3000],
+      violent_rate: [100, 50, 600],
+      violent_rate_eb: [110, 60, 590],
+      property_rate: [900, 400, 2000],
+      property_rate_eb: [900, 400, 2000],
+    },
+  });
+
+  it("has no rate: average on crime, unknown for a crime must-have, never the safest", () => {
+    for (const c of ["violent_rate", "violent_rate_eb", "property_rate", "property_rate_eb"]) {
+      expect([...a.values.get(c)!].map(Number.isNaN)).toEqual([false, true, false]);
+    }
+    const { criteria, limits } = areaCriteria({ areaWeights: { violent_rate: 1 }, areaDirections: {},
+      areaLimits: { violent_rate: { max: 300 } } });
+    const sc = scoreNational(a, search({ criteria }));
+    expect([...sc.score].map(Math.round)).toEqual([100, 50, 0]);
+    const gated = scoreNational(a, search({ criteria, limits }));
+    expect([...gated.status]).toEqual([MATCH, UNKNOWN, EXCLUDED]);
+  });
+});
+
 describe("results audit rules (2026-10-04)", () => {
   // e: 20 people (a park); f: zero violent and zero property crime (no report).
   const a = parseNationalAreas({
