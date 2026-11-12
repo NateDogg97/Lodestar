@@ -17,7 +17,7 @@ import {
 describe("area page verdicts", () => {
   it("say what stands out, in words", () => {
     expect(schoolsVerdict(73)).toBe("Above average");
-    expect(schoolsVerdict(null)).toBe("No scored schools nearby");
+    expect(schoolsVerdict(null)).toBe("No test scores for this district");
     expect(safetyVerdict(360)).toBe("More crime than a typical US area");
     expect(safetyVerdict(100)).toBe("Much safer than a typical US area");
     expect(peopleVerdict({ age: 31.8, owners: 25.9, highrise: 55.3, singleFamily: 18 })).toBe(

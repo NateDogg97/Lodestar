@@ -8,14 +8,19 @@ WHAT THIS PRODUCES
         district_pctl         national percentile among all US districts (0–100)
         district_rank, district_count   rank among the districts serving the county
         nearby_schools        ";"-joined school ids: up to 3 elementary and 2 middle
-                              scored schools nearest to where people live, within
-                              NEARBY_MI (15 mi: rural Texas has none within 5 for
-                              5% of tracts; 90% of those have one within 11)
-        nearby_school_pctl    the mean national percentile of those schools. This is
-                              what separates neighborhoods inside a one-district city
+                              scored schools nearest to where people live, INSIDE THE
+                              AREA'S DISTRICT BOUNDARY (see IN THE DISTRICT)
+        nearby_school_pctl    the area's schools, as a national percentile among school
+                              districts: its district's (`district_pctl`); or, in a
+                              district with BIG_DISTRICT_SCHOOLS+ scored schools (or one
+                              SEDA has no score for), the mean score of those nearest
+                              schools placed among the districts. That is what
+                              separates neighborhoods inside a one-district city
                               (Chicago Public Schools is one district: every Chicago
                               tract has the same district score).
-        nearby_high_schools   ";"-joined ids of the 2 nearest high schools within NEARBY_MI
+        school_basis          "district" or "nearby": which of the two it is
+        nearby_high_schools   ";"-joined ids of the 2 nearest high schools inside the
+                              area's (secondary or unified) district
         nearby_hs_pctl        their mean national percentile for college-prep access
     schools(county) -> one row per scored school located in the county:
         school_id, name, level (elementary / middle / high), city, lat, lon,
@@ -62,9 +67,23 @@ SOURCES
     School locations: NCES EDGE public school geocodes, 2023–24 (current
     schools; ones that closed since SEDA's years simply have no location).
 
+IN THE DISTRICT (2026-11-11)
+    Schools used to be the nearest within 15 miles whatever their district, and
+    the area's score their average. Measured on 400 published counties: 67% of
+    areas averaged in a school from another district, moving the score 10+
+    points for a third of them (Chelsea, MI: shown 64th; its own schools 88th,
+    its district 90th — the rest were a charter and a district in two other
+    counties). Now a school counts for an area only if it stands inside the
+    boundary the area's people live in: the elementary or unified district for
+    elementary and middle schools, the secondary or unified one for high
+    schools. Charters inside the boundary count, as in SEDA's geographic
+    districts. An area whose district has no scored school of a level lists
+    none: unknown, not a neighbor's.
+
 NOT ATTENDANCE ZONES
-    "Nearby" is distance from where the tract's people live, not which school
-    a street is zoned for. No national zone data exists after 2015-16 (plan §9).
+    Inside a district, "nearest" is distance from where the tract's people live,
+    not which school a street is zoned for. No national zone data exists after
+    2015-16 (plan §9).
 
 RUN STANDALONE
     python -m etl.tracts.schools 48453
@@ -93,9 +112,11 @@ SEDA_SCHOOL_FILE = config.RAW_DIR / "seda_school_pool_cs_6.0.csv"
 SCHOOL_LOCATIONS_URL = "https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_PUBLICSCH_2324.zip"
 DISTRICT_URL = "https://www2.census.gov/geo/tiger/TIGER2019/{kind}/tl_2019_{state}_{kind_lower}.zip"
 SCORE_COLUMNS = ("cs_mn_avg_eb", "cs_mn_avg_ol")  # preferred first, as in sources/seda.py
-NEARBY_MI = 15.0  # nearest first; in towns they're close anyway (was 5: missed rural areas)
 NEARBY_COUNT = {"elementary": 3, "middle": 2}
 NEARBY_HIGH = 2
+# A district with this many scored elementary and middle schools is ranked by the nearest
+# of them, not by its one district score (Chicago, Clark County NV, a Florida county).
+BIG_DISTRICT_SCHOOLS = 20
 CRDC_URL = "https://civilrightsdata.ed.gov/assets/ocr/docs/2023-24-crdc-data.zip"
 CRDC_CACHE = config.INTERIM_DIR / "crdc_high_schools.csv"
 MIN_HS_ENROLLMENT = 100
@@ -236,10 +257,12 @@ def school_locations() -> pd.DataFrame:
     })
 
 
-@functools.lru_cache(maxsize=4)
-def _district_polygons(state: str) -> list:
+@functools.lru_cache(maxsize=8)
+def _district_polygons(state: str, first: str = "ELSD") -> list:
+    """Elementary + unified districts (where grades 3–8 go), or with `first="SCSD"` the
+    secondary + unified ones (where high schoolers go). `first` wins where both cover a point."""
     polys = []
-    for kind in ("ELSD", "UNSD"):  # elementary first: it wins where both exist
+    for kind in (first, "UNSD"):
         url = DISTRICT_URL.format(kind=kind, state=state, kind_lower=kind.lower())
         try:
             found = geo.load_polygons(url, f"tl_2019_{state}_{kind.lower()}", ["GEOID", "NAME"])
@@ -258,14 +281,86 @@ SUCCESSOR_DISTRICTS = {
 }
 
 
+def _boundary(hit: dict | None) -> str | None:
+    return hit["GEOID"] if hit else None
+
+
+def district_percentile(score: float, curve: np.ndarray) -> float:
+    """Where a score stands among the districts' (`curve`: their scores, sorted), 0–100."""
+    if not np.isfinite(score) or not len(curve):
+        return np.nan
+    return 100.0 * np.searchsorted(curve, score, side="right") / len(curve)
+
+
+def area_schools(tracts: pd.DataFrame, sch: pd.DataFrame, curve: np.ndarray) -> pd.DataFrame:
+    """Each tract's schools, inside its district only (see IN THE DISTRICT). Pure.
+
+    `tracts`: pop_lat, pop_lon, boundary, hs_boundary (district GEOIDs where its people
+    live), district_pctl. `sch`: key, level, lat, lon, score, pctl, boundary, hs_boundary
+    (where the school stands) — every scored school that could be in those districts.
+    `curve`: all districts' scores, sorted.
+    Returns nearby_schools, nearby_school_pctl, school_basis, nearby_high_schools,
+    nearby_hs_pctl, in the tracts' order.
+    """
+    # Schools sharing a building (New York City) are equally near: by id, so a rebuild and a
+    # backfill pick the same ones.
+    sch = sch.sort_values("key", kind="stable")
+    lower = sch[sch["level"].isin(NEARBY_COUNT)]
+    by_district = {k: g for k, g in lower.groupby("boundary")}
+    by_hs_district = {k: g for k, g in sch[sch["level"] == "high"].groupby("hs_boundary")}
+
+    def nearest(g: pd.DataFrame, la: float, lo: float, n: int) -> pd.DataFrame:
+        d = haversine_miles(la, lo, g["lat"].to_numpy(float), g["lon"].to_numpy(float))
+        return g.iloc[np.argsort(d, kind="stable")[:n]]
+
+    rows = []
+    for la, lo, bd, hbd, dp in zip(tracts["pop_lat"], tracts["pop_lon"], tracts["boundary"],
+                                   tracts["hs_boundary"], tracts["district_pctl"]):
+        own = by_district.get(bd)
+        picks = pd.concat([nearest(own[own["level"] == level], la, lo, n) for level, n in NEARBY_COUNT.items()]
+                          ) if own is not None else None
+        value, basis = np.nan, None
+        if picks is not None and len(picks) and (len(own) >= BIG_DISTRICT_SCHOOLS or pd.isna(dp)):
+            value, basis = district_percentile(float(picks["score"].mean()), curve), "nearby"
+        elif pd.notna(dp):
+            value, basis = float(dp), "district"
+        hs_own = by_hs_district.get(hbd)
+        hs = nearest(hs_own, la, lo, NEARBY_HIGH) if hs_own is not None else None
+        rows.append({
+            "nearby_schools": ";".join(picks["key"]) if picks is not None else "",
+            "nearby_school_pctl": value,
+            "school_basis": basis,
+            "nearby_high_schools": ";".join(hs["key"]) if hs is not None else "",
+            "nearby_hs_pctl": float(hs["pctl"].mean()) if hs is not None and len(hs) else np.nan,
+        })
+    return pd.DataFrame(rows, index=tracts.index)
+
+
+@functools.lru_cache(maxsize=4)
+def _state_schools(state: str) -> pd.DataFrame:
+    """Every scored school standing in a state, with the district boundaries it stands in
+    (`boundary`: elementary or unified; `hs_boundary`: secondary or unified)."""
+    locs = school_locations()
+    scored = pd.concat([_rekey_by_name(school_scores(), locs), high_school_scores()], ignore_index=True)
+    sch = locs[locs["county_fips"].astype(str).str[:2] == state].merge(scored, on="id", how="inner")
+    sch = sch.dropna(subset=["lat", "lon"]).reset_index(drop=True)
+    # One key per school AND level: a small district's K-12 campus is both a
+    # SEDA elementary/middle school and a CRDC high school under one NCES id
+    # (Dawson County, TX); sharing a key let one overwrite the other.
+    sch["key"] = np.where(sch["level"] == "high", sch["id"] + "-hs", sch["id"])
+    la, lo = sch["lat"].to_numpy(float), sch["lon"].to_numpy(float)
+    sch["boundary"] = [_boundary(h) for h in geo.locate(la, lo, _district_polygons(state))]
+    sch["hs_boundary"] = [_boundary(h) for h in geo.locate(la, lo, _district_polygons(state, "SCSD"))]
+    return sch
+
+
 def build(county_fips: str, tracts: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """`tracts` needs geoid, pop_lat, pop_lon. Returns (per-tract columns, county schools)."""
+    state = county_fips[:2]
     lat, lon = tracts["pop_lat"].to_numpy(float), tracts["pop_lon"].to_numpy(float)
 
-    polys = _district_polygons(county_fips[:2])
     # Elementary districts first: locate() keeps the first containing polygon.
-    polys.sort(key=lambda pg: 0 if pg[0]["kind"] == "ELSD" else 1)
-    hit = geo.locate(lat, lon, polys)
+    hit = geo.locate(lat, lon, _district_polygons(state))
     out = pd.DataFrame({
         "geoid": tracts["geoid"],
         "district_id": [SUCCESSOR_DISTRICTS.get(h["GEOID"], h["GEOID"]) if h else None for h in hit],
@@ -276,7 +371,7 @@ def build(county_fips: str, tracts: pd.DataFrame) -> tuple[pd.DataFrame, pd.Data
     # (Vermont's merged unified districts): use that one.
     unscored = out["district_id"].notna() & ~out["district_id"].isin(scores["id"])
     if unscored.any():
-        st = STATE_ABBR[county_fips[:2]].upper()
+        st = STATE_ABBR[state].upper()
         here = scores[scores["stateabb"] == st]
         by_name = dict(zip(here["seda_name"].map(_name_key), here["id"]))
         alias = out.loc[unscored, "district_name"].map(_name_key).map(by_name)
@@ -288,52 +383,34 @@ def build(county_fips: str, tracts: pd.DataFrame) -> tuple[pd.DataFrame, pd.Data
     out["district_rank"] = out["district_id"].map(rank)
     out["district_count"] = len(served)
 
-    locs = school_locations()
-    scored = pd.concat([_rekey_by_name(school_scores(), locs), high_school_scores()], ignore_index=True)
-    # Nearby means nearby, across county lines (Leander's high schools are in
-    # Williamson County): every scored school within reach of the county's
-    # tracts. County ranks are among the county's own schools only.
-    pad = NEARBY_MI / 50  # degrees; generous at any US latitude
-    near_box = locs["lat"].between(lat.min() - pad, lat.max() + pad) & locs["lon"].between(
-        lon.min() - pad * 1.5, lon.max() + pad * 1.5)
-    sch = locs[near_box].merge(scored, on="id", how="inner")
-    # One key per school AND level: a small district's K-12 campus is both a
-    # SEDA elementary/middle school and a CRDC high school under one NCES id
-    # (Dawson County, TX); sharing a key let one overwrite the other.
-    sch["key"] = np.where(sch["level"] == "high", sch["id"] + "-hs", sch["id"])
+    # A district's schools may stand in the next county (Leander's high schools are in
+    # Williamson County): every scored school in the state is a candidate, by boundary.
+    # County ranks are among the county's own schools only.
+    sch = _state_schools(state).copy()
     sch["in_county"] = sch["county_fips"] == county_fips
     own = sch[sch["in_county"]]
     sch["county_rank"] = own.groupby("level")["score"].rank(ascending=False, method="min")
     sch["county_count"] = sch["level"].map(own.groupby("level").size())
     sch.loc[~sch["in_county"], "county_count"] = np.nan
 
-    near, near_pctl, near_hs, near_hs_pctl = [], [], [], []
-    pctl_by_id = dict(zip(sch["key"], sch["pctl"]))
-    for la, lo in zip(lat, lon):
-        d = haversine_miles(la, lo, sch["lat"].to_numpy(float), sch["lon"].to_numpy(float))
-        picks = []
-        for level, n in NEARBY_COUNT.items():
-            mask = (sch["level"].to_numpy() == level) & (d <= NEARBY_MI)
-            idx = np.flatnonzero(mask)
-            picks += list(sch["key"].to_numpy()[idx[np.argsort(d[idx])][:n]])
-        near.append(";".join(picks))
-        near_pctl.append(float(np.mean([pctl_by_id[i] for i in picks])) if picks else np.nan)
-        hs = np.flatnonzero((sch["level"].to_numpy() == "high") & (d <= NEARBY_MI))
-        hs_picks = list(sch["key"].to_numpy()[hs[np.argsort(d[hs])][:NEARBY_HIGH]])
-        near_hs.append(";".join(hs_picks))
-        near_hs_pctl.append(float(np.mean([pctl_by_id[i] for i in hs_picks])) if hs_picks else np.nan)
-    out["nearby_schools"] = near
-    out["nearby_school_pctl"] = near_pctl
-    out["nearby_high_schools"] = near_hs
-    out["nearby_hs_pctl"] = near_hs_pctl
+    where = pd.DataFrame({
+        "pop_lat": lat, "pop_lon": lon,
+        # The boundary itself, not `district_id`: that may be a successor's or an alias.
+        "boundary": [_boundary(h) for h in hit],
+        "hs_boundary": [_boundary(h) for h in geo.locate(lat, lon, _district_polygons(state, "SCSD"))],
+        "district_pctl": out["district_pctl"].to_numpy(),
+    }, index=out.index)
+    curve = np.sort(scores["score"].to_numpy(float))
+    out = pd.concat([out, area_schools(where, sch, curve)], axis=1)
 
-    # Publish the county's own schools plus any outside one that is some tract's neighbor.
-    used = {i for picks in (near + near_hs) for i in picks.split(";") if i}
+    # Publish the county's own schools plus any outside one that some tract lists.
+    used = {i for col in ("nearby_schools", "nearby_high_schools") for picks in out[col] for i in picks.split(";") if i}
     sch = sch[sch["in_county"] | sch["key"].isin(used)]
     no_district = out["district_id"].isna().sum()
     log.info("schools %s: %d districts serve the county (%d scored); %d scored schools in the county, "
-             "%d nearby outside it; %d tracts outside any district", county_fips, out["district_id"].nunique(),
-             len(served), int(sch["in_county"].sum()), int((~sch["in_county"]).sum()), no_district)
+             "%d of its districts' outside it; %d tracts outside any district; %d ranked by their nearest schools",
+             county_fips, out["district_id"].nunique(), len(served), int(sch["in_county"].sum()),
+             int((~sch["in_county"]).sum()), no_district, int((out["school_basis"] == "nearby").sum()))
     cols = ["id", "name", "level", "city", "county_name", "in_county", "lat", "lon", "score", "pctl",
             "county_rank", "county_count",
             "ap_courses", "ap_share", "dual_share", "satact_share", "ib", "enrollment"]

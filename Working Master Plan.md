@@ -5,9 +5,29 @@
 > If something here conflicts with what you actually built, the code is right and this file is
 > stale — fix the file.
 >
-> Last updated: 2026-11-10
+> Last updated: 2026-11-11
 >
 > **Changelog**
+> - 2026-11-11 — **Schools by district; no crime rate from a county-wide sheriff** (owner agreed
+>   to both after the accuracy check in §11). **Schools:** an area's schools are only those
+>   standing inside its district boundary (elementary or unified for grades 3–8, secondary or
+>   unified for high schools; `etl/tracts/schools.py`, `area_schools`). `nearby_school_pctl`
+>   — the key is kept for saved searches and links, the label is now "Schools" — is the
+>   district's percentile among US districts; in a district with 20+ scored schools
+>   (`BIG_DISTRICT_SCHOOLS`: Chicago, Clark County) or one SEDA has no score for, the nearest
+>   schools inside it, placed on the same scale. `school_basis` says which. `nearby_hs_pctl`
+>   is the district's own high schools. Applied to the published files locally with
+>   `python -m etl.tracts.backfill --schools` (no SEDA needed): 99.9% of areas keep a school
+>   score, 98.0% a high-school score; in the biggest districts the areas' median matches the
+>   district's (New York 48 vs 49, Los Angeles 9 vs 8, Chicago 15 vs 16). The real
+>   `schools.build` gave the same answer on six counties. **Crime:** an area flagged
+>   `crime_wide` (its only figure is a county agency's rate over farmland and suburbs) has no
+>   rate in the app: average on crime, unknown for a must-have, not shaded, and the area page
+>   says whose number it was. A rate resting on fewer than 20 crimes shows the count beside
+>   it. **Not uploaded yet:** the R2 keys in `etl/.env` were refused (`SignatureDoesNotMatch`: the
+>   secret didn't belong to the access key ID; rolled and fixed the same day, in `etl/.env`
+>   and the repo secrets), so production still serves the old school columns until
+>   `python -m etl.tracts.upload` is run or the monthly refresh.
 > - 2026-11-10 — **Inside a county, shading is opt-in** (§9 Phase 8; owner: "by default we
 >   shouldn't have any color sorting on the map when a user just looks in a county", and the
 >   colors were "a bit too solid"). With no by-area filter, a county's areas used to be shaded
@@ -1299,6 +1319,8 @@ fallback), and its **ZIP**. For example "Westlake Hills · 78746", "Govalle, Eas
             Public Schools: every Chicago tract 16th), so a `nearby_school_pctl` (mean of
             the nearby schools) was added: Chicago north 66 vs south 27; Travis west 92 vs
             east 28. **SEDA covers grades 3–8: high schools have no score** (say so in UI).
+            *Superseded 2026-11-11: only schools inside the area's district count, and the
+            score is the district's except in big districts (changelog).*
       - [x] **Downtown** (`geo.downtown`): each metro's densest job cluster (Census LODES
             2023 jobs within 1 mi), not a hand-picked point. Austin → Congress & 6th
             (131k jobs), Chicago → the Loop (687k), rural Zavala → downtown San Antonio
@@ -2864,19 +2886,42 @@ Not in MVP. Do not build these until the above ships.
 
 ## 11. Open questions
 
-- [ ] **NEXT SESSION — nearby schools: show the schools, not an average** (owner, 2026-11-10).
-      "The school nearby filter which takes the average of the nearest 5 schools should just
-      display the individual schools and their GreatSchools rating instead. Currently small
-      areas with only 1 school are either pulled up or dragged down by schools outside their
-      school district." Today `nearby_school_pctl` / `nearby_hs_pctl` average the nearest
-      scored schools within 5 miles whatever district they're in (`etl/tracts/schools.py`),
-      and that average is a priority, a must-have and a map shade. To settle before building
-      (not yet discussed with the owner): GreatSchools ratings come from a licensed API, not
-      a free download, so §2's static, free-data rule and the ETL need a decision (their
-      terms, cost, caching; or keep SEDA/CRDC percentiles per school, which the area page
-      already lists); and what schools then rank on, if anything — the area's own district,
-      its assigned or nearest school — since the filter and the audit scenarios use the
-      average now.
+- [x] ~~**Nearby schools: show the schools, not an average**~~ (owner, 2026-11-10; decided
+      and built 2026-11-11, see the changelog). The complaint: "small areas with only 1
+      school are either pulled up or dragged down by schools outside their school district."
+      Measured on 400 random published counties (11,382 areas): 67% of areas averaged in a
+      school whose NCES district wasn't theirs, moving the score a median 6 points and 10+
+      for a third (Chelsea, MI: shown 64th; its own schools 88th; its district 90th).
+      Decided: rank on the district, list only schools inside its boundary, keep a
+      nearest-schools score only inside big districts. GreatSchools stays out (§4: licensed).
+      Still open: SEDA 6.0's latest school year hasn't been checked — if it ends before 2020
+      the scores are old, however well they're matched.
+- [ ] **Crime: what the number can and can't claim** (owner, 2026-11-11: Chelsea, MI "shows
+      some" violent crime; "I would rather not display information if it is inaccurate").
+      - Chelsea's 204/100k is Chelsea PD's own report, not a neighbor's: 11 violent crimes
+        in 2025 for 5,379 people (9 aggravated-assault victims, 2 rapes; no murder or robbery
+        in 2023–2025; 5 in 2023, 8 in 2024). The areas *around* Chelsea did carry someone
+        else's crime: 363/100k is the sheriff plus State Police over 162,060 people, which
+        includes Ypsilanti Township.
+      - Same 400-county sample: 33% of areas carry a county agency's rate (26% one shared by
+        8+ areas); 30% a city's rate shared by 20+ areas (14% by 100+); 15% rest on fewer
+        than 20 crimes (9% fewer than 10); 6% have none. About 20% have a rate that is both
+        local (a city or town agency over fewer than 20 areas) and built on 20+ crimes.
+      - Michigan agencies, 2024 → 2025: serving 2,500–5,000 people the rate moves a median
+        47% (43% of them by more than half); 5–10k 37%; 25–100k 18%; 100k+ 12%.
+      - [x] `crime_wide` areas have no rate in the app; few crimes show their count (built
+            2026-11-11, app only: the county files still publish the agency's rate, which the
+            area page quotes as the county's).
+      - [ ] **Pool three years** in `etl/tracts/crime.py` (counts and person-years summed
+            over the years an agency reported), so a town of 5,000 stops swinging by half.
+            Touches the partial-year, exposure and low-confidence rules and the state
+            programs, and needs every state's files for three years: do it with the
+            sentinels (`python -m etl.tracts.sentinels --crime`), then a full refresh.
+      - [ ] **Murder and robbery apart from assault and rape** (the incident files have the
+            offense codes): Chelsea would read "no murders or robberies in 3 years".
+      - [ ] A big city's one rate over 100+ areas (14% of areas) is still ranked and shaded
+            as each area's; the area page says it's one rate. No public national source is
+            finer than the agency; city open-data incident feeds would be city by city.
 - [x] **Pollution** — the owner decisions under §9 Phase 11, "Open questions", confirmed 2026-10-13.
 - [x] ~~Which 6–8 state law attributes actually matter?~~ Answered by `LAWS.md` (2026-09-27):
       12 laws, each marked filter / info / both.

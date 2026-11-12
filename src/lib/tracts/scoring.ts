@@ -48,14 +48,15 @@ export const AREA_PRIORITIES: readonly AreaPriorityDef[] = [
   { key: "median_gross_rent", label: "Rent", unit: "$/mo", defaultDirection: "lower", group: "housing",
     note: "This area's Census gross rent at today's prices: the Census median times its ZIP's Zillow rent index / Census ratio.",
     badge: "Lowest rent", topBadge: "Top 1% lowest rent in the US", good: "low rent", bad: "high rent" },
-  { key: "nearby_school_pctl", label: "Nearby schools", unit: "pctl", defaultDirection: "higher", group: "schools",
-    note: "The nearest elementary and middle schools' test scores (Stanford SEDA), national percentile — specific schools, not a county average.",
+  // The key is from when this was the nearest schools' average; saved searches and links use it.
+  { key: "nearby_school_pctl", label: "Schools", unit: "pctl", defaultDirection: "higher", group: "schools",
+    note: "The area's school district against every US district: test scores, grades 3–8 (Stanford SEDA). In a big district, the nearest schools inside it. Schools in other districts never count.",
     badge: "Best schools", topBadge: "Top 1% schools in the US", good: "strong schools", bad: "weaker schools" },
   { key: "nearby_hs_pctl", label: "High schools", unit: "pctl", defaultDirection: "higher", group: "schools",
-    note: "Access to college-prep courses (AP) at the nearest high schools, national percentile.",
-    badge: "Best high schools", topBadge: "Top 1% high schools in the US", good: "strong high schools", bad: "the nearest high schools" },
+    note: "Access to college-prep courses (AP) at the high schools inside the area's district, national percentile.",
+    badge: "Best high schools", topBadge: "Top 1% high schools in the US", good: "strong high schools", bad: "its high schools" },
   { key: "violent_rate", label: "Violent crime", unit: "per 100k", defaultDirection: "lower", group: "safety",
-    note: "FBI, per 100,000 residents, for the police agency covering the area.",
+    note: "FBI, per 100,000 residents, for the city or town police covering the area. An area whose only figure is a sheriff's for a whole county has none.",
     badge: "Safest", topBadge: "Top 1% safest in the US", good: "low violent crime", bad: "more violent crime" },
   { key: "property_rate", label: "Property crime", unit: "per 100k", defaultDirection: "lower", group: "safety",
     note: "FBI, per 100,000 residents, for the police agency covering the area.",
@@ -123,7 +124,7 @@ export function areaPriority(key: string): AreaPriorityDef | undefined {
 /**
  * County priorities that are area measures now, and the area measure each becomes.
  * `keepLimit`: the county limit is in the same units, so it moves too (a maximum home
- * value); schools' grade levels don't (areas use the nearest schools' percentile).
+ * value); schools' grade levels don't (areas use their district's percentile).
  */
 export const MOVED_TO_AREAS: Partial<Record<MetricKey, { to: string; keepLimit: boolean }>> = {
   median_home_value: { to: "median_home_value", keepLimit: true },

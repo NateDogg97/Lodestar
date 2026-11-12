@@ -25,6 +25,10 @@ thing; this patches public/data/tracts/{fips}.json in place:
 - property tax by area (2026-10-13): `--taxes` adds `property_tax_rate` (taxes paid ÷ home
   values, owner-occupied) and its margin from the tract ACS, flagged like a median.
 
+- schools inside the district (2026-11-11): `--schools` re-picks each area's schools by
+  district boundary and re-derives its school score (schools.area_schools), from the
+  published files and the Census district boundaries alone — no SEDA or CRDC files.
+
 One Census API call per state (all tracts at once), then `python -m etl.tracts.national`
 to rebuild areas.json, then `python -m etl.tracts.upload`.
 
@@ -34,6 +38,7 @@ to rebuild areas.json, then `python -m etl.tracts.upload`.
     python -m etl.tracts.backfill --demographics  # only who lives here
     python -m etl.tracts.backfill --pollution     # only pollution (after the national runs)
     python -m etl.tracts.backfill --taxes         # only the property tax rate by area
+    python -m etl.tracts.backfill --schools       # only the schools, by district boundary
 """
 
 from __future__ import annotations
@@ -159,6 +164,102 @@ def patch_crime_scope(payload: dict) -> dict[str, int]:
             flags.append("crime_wide")
         r[at["low_confidence"]] = ";".join(flags)
     return {"wide": int(wide.sum())}
+
+
+def published_district_curve(payloads: list[dict]) -> "np.ndarray":
+    """Every published district's score, sorted: what a big district's nearest schools are
+    placed among (a rebuild uses SEDA's full list; a district no area's people live in is
+    the only difference)."""
+    import numpy as np
+
+    scores: dict[str, float] = {}
+    for p in payloads:
+        cols = p["columns"]
+        if "district_id" not in cols or "district_score" not in cols:
+            continue
+        i, j = cols.index("district_id"), cols.index("district_score")
+        for r in p["rows"]:
+            if r[i] is not None and r[j] is not None:
+                scores[r[i]] = r[j]
+    return np.sort(np.array(list(scores.values()), dtype=float))
+
+
+SCHOOL_COLUMNS = ["nearby_schools", "nearby_school_pctl", "school_basis", "nearby_high_schools", "nearby_hs_pctl"]
+
+
+def patch_schools(payloads: dict[str, dict], curve: "np.ndarray") -> dict[str, int]:
+    """One state's published counties, in place: each area's schools are those standing
+    inside its district boundary (etl/tracts/schools.py, IN THE DISTRICT). The state's
+    scored schools are the union of its counties' school tables."""
+    import numpy as np
+    import pandas as pd
+
+    from . import geo, schools
+
+    state = next(iter(payloads))[:2]
+    by_key: dict[str, dict] = {}
+    for fips, p in payloads.items():
+        sc = p["schools"]["columns"]
+        for r in p["schools"]["rows"]:
+            row = dict(zip(sc, r))
+            if row.get("in_county") is not False:  # listed by its own county: rank and all
+                by_key[row["school_id"]] = {**row, "home": fips}
+    sch = pd.DataFrame(list(by_key.values())).rename(columns={"school_id": "key"})
+    counts = {"areas": 0, "schools_changed": 0, "moved10": 0, "by_nearby": 0, "lost": 0, "hs_lost": 0}
+    if sch.empty:
+        return counts
+    la, lo = sch["lat"].to_numpy(float), sch["lon"].to_numpy(float)
+    sch["boundary"] = [schools._boundary(h) for h in geo.locate(la, lo, schools._district_polygons(state))]
+    sch["hs_boundary"] = [schools._boundary(h) for h in geo.locate(la, lo, schools._district_polygons(state, "SCSD"))]
+    for fips, p in payloads.items():
+        cols: list[str] = p["columns"]
+        for c in SCHOOL_COLUMNS:
+            if c not in cols:
+                cols.append(c)
+                for r in p["rows"]:
+                    r.append(None)
+        at = {c: cols.index(c) for c in cols}
+        rows = p["rows"]
+        lat = np.array([r[at["pop_lat"]] for r in rows], dtype=float)
+        lon = np.array([r[at["pop_lon"]] for r in rows], dtype=float)
+        where = pd.DataFrame({
+            "pop_lat": lat, "pop_lon": lon,
+            "boundary": [schools._boundary(h) for h in geo.locate(lat, lon, schools._district_polygons(state))],
+            "hs_boundary": [schools._boundary(h) for h in geo.locate(lat, lon, schools._district_polygons(state, "SCSD"))],
+            "district_pctl": pd.to_numeric(pd.Series([r[at["district_pctl"]] for r in rows], dtype="object"), errors="coerce"),
+        })
+        new = schools.area_schools(where, sch, curve)
+        used: set[str] = set()
+        for k, r in enumerate(rows):
+            n = new.iloc[k]
+            residential = (r[at["population"]] or 0) > 50
+            before, before_hs = r[at["nearby_school_pctl"]], r[at["nearby_hs_pctl"]]
+            after = _num(n["nearby_school_pctl"], 1)
+            after_hs = _num(n["nearby_hs_pctl"], 1)
+            if residential:
+                counts["areas"] += 1
+                counts["schools_changed"] += (r[at["nearby_schools"]] or "") != n["nearby_schools"]
+                counts["moved10"] += before is not None and after is not None and abs(after - before) >= 10
+                counts["by_nearby"] += n["school_basis"] == "nearby"
+                counts["lost"] += before is not None and after is None
+                counts["hs_lost"] += before_hs is not None and after_hs is None
+            r[at["nearby_schools"]] = n["nearby_schools"] or None
+            r[at["nearby_school_pctl"]] = after
+            r[at["school_basis"]] = n["school_basis"] if isinstance(n["school_basis"], str) else None
+            r[at["nearby_high_schools"]] = n["nearby_high_schools"] or None
+            r[at["nearby_hs_pctl"]] = after_hs
+            used.update(i for c in ("nearby_schools", "nearby_high_schools") for i in n[c].split(";") if i)
+        # The county's own schools, plus the ones its areas list from the next county.
+        sc = p["schools"]["columns"]
+        out_rows = []
+        for key, row in by_key.items():
+            if row["home"] == fips:
+                out_rows.append([row.get(c) for c in sc])
+            elif key in used:
+                away = {**row, "in_county": False, "county_rank": None, "county_count": None}
+                out_rows.append([away.get(c) for c in sc])
+        p["schools"]["rows"] = out_rows
+    return counts
 
 
 def patch_hazards(payload: dict, table: "pd.DataFrame") -> dict[str, int]:
@@ -395,6 +496,7 @@ def main() -> None:
     ap.add_argument("--edges", action="store_true", help="only the metro-edge, Great Lake and town-center distances")
     ap.add_argument("--pollution", action="store_true", help="only pollution (national interim tables + ACS older housing)")
     ap.add_argument("--taxes", action="store_true", help="only the property tax rate by area (one Census call per state)")
+    ap.add_argument("--schools", action="store_true", help="only the schools: inside each area's district boundary")
     args = ap.parse_args()
     wanted = set(args.state.split(",")) if args.state else None
     files = sorted(PUBLISH_DIR.glob("[0-9][0-9][0-9][0-9][0-9].json"))
@@ -403,6 +505,21 @@ def main() -> None:
         if wanted is None or f.stem[:2] in wanted:
             by_state[f.stem[:2]].append(f)
     total = defaultdict(int)
+    if args.schools:
+        # The curve is national, whatever states are patched.
+        curve = published_district_curve([json.loads(f.read_text()) for f in files])
+        for state, paths in sorted(by_state.items()):
+            payloads = {path.stem: json.loads(path.read_text()) for path in paths}
+            for k, v in patch_schools(payloads, curve).items():
+                total[k] += v
+            for path in paths:
+                path.write_text(json.dumps(payloads[path.stem], separators=(",", ":"), allow_nan=False))
+            log.info("state %s: %d counties", state, len(paths))
+        log.info("done: %d areas; %d list different schools; %d scores moved 10+ points; %d ranked by their "
+                 "nearest schools in a big district; %d lost their school score, %d their high-school score "
+                 "(no scored school in the district)", total["areas"], total["schools_changed"], total["moved10"],
+                 total["by_nearby"], total["lost"], total["hs_lost"])
+        return
     if args.edges:
         for state, paths in sorted(by_state.items()):
             for path in paths:
