@@ -2870,11 +2870,14 @@ What changes in the repo:
   export can't); the production build is served locally with `wrangler dev`.
 
 Cutover (zero downtime, instant rollback):
-- [ ] 1. Branch `cloudflare-workers`: static export + Workers config; lint, typecheck, test,
+- [x] 1. Branch `cloudflare-workers`: static export + Workers config; lint, typecheck, test,
       build pass; local `wrangler dev` parity check against production.
-- [ ] 2. First deploy to the `workers.dev` URL (production domain untouched); owner QA on phone
+- [ ] 2. First deploy to the `workers.dev` URL (done 2026-11-12:
+      https://lodestar.nathaniel-fe3.workers.dev; production domain untouched); owner QA on phone
       and desktop: map, filters, results, place search, an area page, install, offline.
-- [ ] 3. Automated parity check, Vercel production vs `workers.dev`: status codes, headers,
+- [x] 3. Automated parity check (2026-11-12: no blockers; data files byte-identical, all 31
+      precached URLs 200; HSTS was missing and is now in `public/_headers`; range requests
+      return the whole file, which nothing in the app uses), Vercel production vs `workers.dev`: status codes, headers,
       every precached URL.
 - [ ] 4. Merge to main (Vercel keeps serving; it builds static exports too). Connect the repo in
       Cloudflare Workers Builds so pushes to main deploy the Worker (the monthly laws refresh

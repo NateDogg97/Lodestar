@@ -9,3 +9,7 @@
 # Hashed build output never changes.
 /_next/static/*
   Cache-Control: public, max-age=31536000, immutable
+
+# HTTPS only (the same value Vercel sent).
+/*
+  Strict-Transport-Security: max-age=63072000
