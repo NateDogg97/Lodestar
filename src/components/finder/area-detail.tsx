@@ -993,7 +993,7 @@ export interface AreaClimateContext {
 /**
  * Climate (Phase 14c, 2026-11-13): the county's NOAA normals with the same "Compare with..."
  * overlay as the county's Climate tab. There is no area-level climate data, so the section
- * says it is the whole county's. The data loads only once the section is opened.
+ * says it is the whole county's. The key figures and the temperature chart show at once; the other charts, the table and the source are behind "Show details".
  */
 function ClimateSection({ countyName, ...climate }: AreaClimateContext & { countyName: string }) {
   return (
@@ -1003,20 +1003,16 @@ function ClimateSection({ countyName, ...climate }: AreaClimateContext & { count
       title="Climate"
       lead={`Measured for all of ${countyName}, not this area`}
       expandable
-      detailsLabel="Show climate"
-      lessLabel="Hide climate"
     >
-      {(more) =>
-        more ? (
-          <>
+      {(more) => (
+        <>
             <p className="text-label text-neutral-600 dark:text-neutral-400">
               Lodestar has climate figures for whole counties only, taken from weather stations near
               where most of the county&rsquo;s people live. Every area in the county shows the same climate.
             </p>
-            <ClimateTab {...climate} />
-          </>
-        ) : null
-      }
+            <ClimateTab {...climate} more={more} />
+        </>
+      )}
     </AreaSection>
   );
 }
