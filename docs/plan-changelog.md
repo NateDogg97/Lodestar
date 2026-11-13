@@ -3,6 +3,29 @@
 Dated decisions and progress for `Working Master Plan.md`, newest first. Add an entry here
 when a decision changes or a step lands; the plan itself holds the current state.
 
+- 2026-11-13 — **Crime out of the filters; shown only where a figure exists** (§9 Phase 14a,
+  owner; PR #13). Violent and property crime are no longer priorities, must-haves,
+  watch-outs or a shade-by measure (saved searches and links drop them). The area page
+  shows the area's own agency's rate; a big city's one rate over 100+ areas as the city's
+  figure; otherwise no rate, with a button listing the agency that polices the area and the
+  county's other agencies. The caution icon no longer lists "crime wide". App only.
+- 2026-11-13 — **Climate on area pages** (§9 Phase 14c; PR #12): the county's climate, with
+  the comparison overlay, key figures and temperature chart shown by default.
+- 2026-11-13 — **Score colors on the map are a wash** (owner: "too solid, making the map
+  difficult to read"; PR #14). Ranked counties, ranked areas inside a county and a
+  looked-up place's areas are filled at 0.5 in light and 0.6 in dark (were 0.85 / 0.8 /
+  0.75); an unscored top county 0.35 / 0.4 (was 0.6). Map legends draw their scale at the
+  fill's opacity (the measure legend 0.45, was 0.7).
+- 2026-11-13 — **The "typical" marker on meters** (owner; PR #14): on every `CompareBar`
+  meter the ▲ sits directly under the typical tick, between the end values, and "typical
+  US area …" is on its own line under it, kept within the track (`typical-mark.ts`).
+- 2026-11-13 — **One camera move per selection** (owner: "zooms in to the old area, then
+  repositions"; PR #14). Cause: `useCountyAreas` handed out the previous county's data for
+  one render after the county changed, so the map zoomed to the old county first. Find a
+  place frames the place once, when its shapes are in. A shared link to an area opens on
+  the area, not its county.
+- 2026-11-13 — **Drive-time research** (§9 Phase 14e): no free routing service clearly
+  qualifies; a free county-to-county table exists. Table first, TravelTime as an upgrade.
 - 2026-11-13 — **Phase 14 decisions** (owner): offline still works, with backend features off
   or limited there; drive time from a routing service behind the Worker if a free tier
   covers it, else county-to-county; the daily agents are a Claude Code cloud routine on
