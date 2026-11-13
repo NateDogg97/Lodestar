@@ -23,7 +23,7 @@ import {
 
 import { getMetric, type CountyScore, type MetricKey } from "@/lib/scoring";
 
-import { AreaDetail, bound, type PeopleEquality } from "./area-detail";
+import { AreaDetail, bound, type AreaClimateContext, type PeopleEquality } from "./area-detail";
 import { Fingerprint } from "./area-results";
 import { scoreColor } from "./score-colors";
 import { ShadePicker } from "./shade-picker";
@@ -87,6 +87,8 @@ interface Props {
   countyEquality?: PeopleEquality;
   /** For an area's own tax estimate (2026-10-13). */
   taxes?: AreaTaxContext;
+  /** The county's climate, shown on the area page (14c). */
+  climate?: AreaClimateContext;
 }
 
 /**
@@ -164,6 +166,7 @@ export function InsideView(props: Props & { withIdentity?: boolean }) {
           ranking={ranking}
           countyEquality={props.countyEquality}
           taxes={props.taxes}
+          climate={props.climate}
         />
       )}
     </div>
