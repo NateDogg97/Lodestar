@@ -17,9 +17,10 @@
  * - A home value from mostly mobile homes is flagged and never wins "cheapest homes".
  * - An area unknown for a must-have ranks after every verified match.
  * - A value scores as at least as good as the values it ties with (best value = 100).
- * - Zero violent AND zero property crime is no report, not a perfect record.
- * - A sheriff's one rate for a whole county of farmland and suburbs ("crime_wide") is no
- *   rate for an area: unknown, so average on crime and never shaded (2026-11-11).
+ *
+ * Crime is not a priority, a must-have or a watch-out (owner, 2026-11-13): a rate is one
+ * police agency's for everything it polices, too coarse to rank areas on. areas.json still
+ * carries the crime columns; nothing here reads them. Area pages show crime (./crime.ts).
  *
  * Full audit (2026-10-04):
  * - National percentiles are over the areas that can be results: places nobody lives
@@ -30,7 +31,7 @@
  * - Each part says whether its value is low confidence (`flagged`), so lists can show it.
  *
  * Results that don't mislead (Phase 10, 2026-10-12):
- * - Home value, rent, income and crime rank by their empirical-Bayes estimate (`*_eb`,
+ * - Home value, rent and income rank by their empirical-Bayes estimate (`*_eb`,
  *   etl/tracts/shrink.py) where the file has one: a noisy small-sample value is weighed
  *   toward its county's typical area. Shown values and must-have limits are as published.
  * - With a budget, home value (or rent) scores fit to it (`budgetPoints`), not "cheaper
@@ -93,26 +94,8 @@ export function parseNationalAreas(raw: unknown): NationalAreas {
   for (const c of Object.keys(cols)) {
     if (c !== "geoid" && c !== "label" && c !== "low_confidence") values.set(c, nums(c));
   }
-  // Zero violent and zero property crime for a whole area is an agency that reported
-  // nothing (106 of the 108 such areas are flagged low confidence): no data.
-  const violent = values.get("violent_rate");
-  const property = values.get("property_rate");
-  if (violent && property) {
-    for (let i = 0; i < n; i++) {
-      if (violent[i] === 0 && property[i] === 0) violent[i] = property[i] = NaN;
-    }
-  }
-  const lowConfidence = text("low_confidence").map((s) => (s ? s.split(";").filter(Boolean) : []));
-  // A county agency's one rate over farmland and suburbs alike ("crime_wide") is the
-  // county's, not the area's: no rate, so it is neither ranked nor shaded (owner, 2026-11-11).
-  for (const c of ["violent_rate", "property_rate", "violent_rate_eb", "property_rate_eb"]) {
-    const v = values.get(c);
-    if (!v) continue;
-    for (let i = 0; i < n; i++) {
-      if (lowConfidence[i].includes("crime_wide")) v[i] = NaN;
-    }
-  }
   const geoid = text("geoid");
+  const lowConfidence = text("low_confidence").map((s) => (s ? s.split(";").filter(Boolean) : []));
   const label = text("label");
   const lat = values.get("pop_lat") ?? new Float64Array(n).fill(NaN);
   const lon = values.get("pop_lon") ?? new Float64Array(n).fill(NaN);
@@ -200,8 +183,6 @@ export const SCORED_AS: Partial<Record<string, string>> = {
   median_home_value: "median_home_value_eb",
   median_gross_rent: "median_gross_rent_eb",
   median_household_income: "median_household_income_eb",
-  violent_rate: "violent_rate_eb",
-  property_rate: "property_rate_eb",
 };
 
 /**
@@ -284,14 +265,13 @@ export function areaPercentiles(areas: NationalAreas, column: string): Float64Ar
 
 /**
  * The scoring columns an area's low-confidence flags cover: a flag is usually the
- * column's own name; "crime" covers both crime rates and "mobile_homes" the home value.
+ * column's own name; "mobile_homes" covers the home value. (The crime flags cover no
+ * scoring column: crime isn't scored.)
  */
 export function flaggedColumns(areas: NationalAreas, i: number): Set<string> {
   const out = new Set<string>();
   for (const f of areas.lowConfidence[i]) {
-    // "crime_wide": a county agency's one rate over rural and suburban areas alike (Phase 10 follow-up).
-    if (f === "crime" || f === "crime_wide") out.add("violent_rate").add("property_rate");
-    else if (f === "mobile_homes") out.add("median_home_value");
+    if (f === "mobile_homes") out.add("median_home_value");
     // The area's own property tax rate: Taxes is estimated on it (./taxes.ts).
     else if (f === "property_tax_rate") out.add(f).add("taxes").add("taxes_rate");
     else out.add(f);
@@ -657,7 +637,8 @@ export const WATCH_SHARE = 5;
 const AREA_WATCH: { key: string; text: (pct: number) => string }[] = [
   { key: "median_home_value", text: (p) => `Homes cost more than in ${p}% of US areas` },
   { key: "median_gross_rent", text: (p) => `Rent is higher than in ${p}% of US areas` },
-  { key: "violent_rate", text: (p) => `More violent crime than ${p}% of US areas` },
+  // No crime caution (owner, 2026-11-13): ranking areas against each other on one police
+  // agency's rate is what crime left the filters for.
   { key: "hazard_risk", text: (p) => `Higher natural hazard risk than ${p}% of US areas` },
   // The household's estimate with the area's own rate (./taxes.ts), when the file has it.
   { key: "taxes", text: (p) => `Taxes higher than in ${p}% of US areas` },

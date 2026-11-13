@@ -6,6 +6,7 @@ import { Icon } from "@/components/ui/icons";
 import { InfoTip } from "@/components/ui/info-tip";
 import {
   areaValue,
+  cautionFlags,
   flagLabel,
   formatArea,
   formatAreaValue,
@@ -511,7 +512,7 @@ function RankingNote({ ranking }: { ranking: AreaRankingView | null }) {
       <p>
         None of your priorities vary by area, so areas are listed by city or town, unranked. &ldquo;Sort and shade
         by&rdquo; orders them by one measure and shades the map with it. Priorities tagged &ldquo;by area&rdquo; in
-        Filters — home value, schools, safety, walkability, distances… — rank areas.
+        Filters — home value, schools, walkability, distances… — rank areas.
       </p>
     );
   }
@@ -593,9 +594,9 @@ function AreaHeader({
         <h2 className="text-heading font-semibold">
           {area.neighborhood ?? area.group}
           {side && <span className="font-normal text-neutral-500"> · {side}</span>}
-          {area.lowConfidence.length > 0 && (
+          {cautionFlags(area).length > 0 && (
             <span className="ml-1.5 inline-flex align-middle">
-              <Caution flags={area.lowConfidence} />
+              <Caution flags={cautionFlags(area)} />
             </span>
           )}
         </h2>

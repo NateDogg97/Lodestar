@@ -1,18 +1,23 @@
 "use client";
 
-import { useId, useSyncExternalStore, type ReactNode } from "react";
+import { useId, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { Icon } from "@/components/ui/icons";
 import { InfoTip } from "@/components/ui/info-tip";
 import {
   AREA_MEASURE,
+  agencyCoverage,
+  agencyRates,
   areaLimitResults,
   areaPriority,
   areaValue,
-  countyWideCrime,
+  cityCrimeNote,
+  crimeLead,
+  crimeView,
   FEW_CRIMES,
-  publishedValue,
-  reportedCrimes,
+  wideCrimeNote,
+  type AgencyFigure,
+  type CrimeView,
   aroundVerdict,
   explainArea,
   formatArea,
@@ -21,7 +26,6 @@ import {
   hazardsVerdict,
   marketVerdict,
   peopleVerdict,
-  safetyVerdict,
   schoolsVerdict,
   diversityVerdict,
   incomeGapWord,
@@ -636,8 +640,8 @@ export function AreaDetail({
 
   const schoolP = v("nearby_school_pctl");
   const district = r.district_name ? String(r.district_name).replace(/ Independent School District$/, " ISD") : null;
-  const wideCrime = countyWideCrime(area);
-  const violentCount = reportedCrimes(area, "violent_rate");
+  // Crime: the area's own figure, its city's, or the nearest on request (lib/tracts/crime.ts).
+  const crime = crimeView(area, county.areas);
   const owners = v("owner_share");
   const highrise = v("highrise_share");
   const single = v("single_family_share");
@@ -653,7 +657,7 @@ export function AreaDetail({
         <PriceStat area={area} ranking={ranking} label="Home value" census="median_home_value" zillow="zhvi" />
         <PriceStat area={area} ranking={ranking} label="Rent" census="median_gross_rent" zillow="zori" />
         <Stat k="median_household_income" text={formatAreaValue(area, "median_household_income")} flagged={flagged.has("median_household_income")} />
-        <Stat k="violent_rate" text={formatAreaValue(area, "violent_rate")} flagged={flagged.has("crime")} />
+        <CrimeStat view={crime} flagged={flagged.has("crime")} />
         <Stat k="commute_minutes" text={formatAreaValue(area, "commute_minutes")} flagged={flagged.has("commute_minutes")} />
         <Stat k="walkability" text={formatAreaValue(area, "walkability")} flagged={flagged.has("walkability")} />
       </dl>
@@ -713,74 +717,7 @@ export function AreaDetail({
         )}
       </AreaSection>
 
-      <AreaSection
-        id="safety"
-        icon="shield"
-        title="Safety"
-        lead={wideCrime ? "No crime rate for this area alone" : safetyVerdict(v("violent_rate"), r.crime_note ? String(r.crime_note) : null)}
-        details={
-          <>
-            {!wideCrime && (
-              <CompareBar
-                label="Property crime"
-                value={v("property_rate")}
-                text={`${formatArea("property_rate", v("property_rate"))}`}
-                typical={US_TYPICAL.property_rate}
-                typicalText={US_TYPICAL.property_rate.toLocaleString()}
-                max={4000}
-                maxText="4,000+"
-                flagged={flagged.has("crime")}
-              />
-            )}
-            <Note>
-              {r.crime_agency && r.crime_note
-                ? `${String(r.crime_agency)} ${String(r.crime_note)}. `
-                : r.crime_agency
-                  ? `Reported for ${String(r.crime_agency)}, ${String(r.crime_year)}${
-                      typeof r.crime_months === "number" && r.crime_months < 12 ? ` (${r.crime_months} months, scaled to a year)` : ""
-                    } (FBI Crime Data Explorer). `
-                  : ""}
-              {AREA_MEASURE.get("violent_rate")?.note}
-            </Note>
-          </>
-        }
-      >
-        {wideCrime ? (
-          <Note>
-            The only figure here is for {String(r.crime_agency)}: {formatArea("violent_rate", publishedValue(area, "violent_rate"))}{" "}
-            violent and {formatArea("property_rate", publishedValue(area, "property_rate"))} property, one rate for all{" "}
-            {typeof r.crime_shared === "number" ? r.crime_shared : "the"} areas it polices, from farmland to suburbs. The FBI
-            reports crime by police agency, so that is the county&rsquo;s number, not this area&rsquo;s: it isn&rsquo;t ranked or
-            shaded on the map.
-          </Note>
-        ) : (
-          <>
-            <CompareBar
-              label="Violent crime"
-              value={v("violent_rate")}
-              text={formatArea("violent_rate", v("violent_rate"))}
-              typical={US_TYPICAL.violent_rate}
-              typicalText={String(US_TYPICAL.violent_rate)}
-              max={800}
-              maxText="800+"
-              flagged={flagged.has("crime")}
-            />
-            {violentCount !== null && violentCount < FEW_CRIMES && v("violent_rate") !== null && (
-              <Note>
-                That is about {violentCount} violent {violentCount === 1 ? "crime" : "crimes"} reported in {String(r.crime_year)}
-                {typeof r.crime_population === "number" ? ` for ${r.crime_population.toLocaleString()} people` : ""}. With so
-                few, the rate per 100,000 can change a lot from one year to the next.
-              </Note>
-            )}
-            {typeof r.crime_shared === "number" && r.crime_shared > 1 && (
-              <Note>
-                One rate for all {r.crime_shared} areas policed by {String(r.crime_agency)}: the FBI reports crime by police
-                agency, not by neighborhood.
-              </Note>
-            )}
-          </>
-        )}
-      </AreaSection>
+      <SafetySection area={area} view={crime} />
 
       <AreaSection
         id="people"
@@ -1541,6 +1478,204 @@ function Stat({
         <FlagMark on={flagged} />
       </dd>
       {source && <dd className="text-caption text-neutral-500">{source}</dd>}
+    </div>
+  );
+}
+
+// ---- Safety (lib/tracts/crime.ts): a figure only where the area or its city has one ----
+
+/** The headline tile: the area's own rate, its city's (said so), or none. */
+function CrimeStat({ view, flagged }: { view: CrimeView; flagged: boolean }) {
+  if (view.kind === "own") {
+    return <Stat k="violent_rate" text={formatArea("violent_rate", view.figure.violent)} flagged={flagged} />;
+  }
+  if (view.kind === "city") {
+    const f = view.figure;
+    return (
+      <Stat
+        k="violent_rate"
+        text={formatArea("violent_rate", f.violent)}
+        source={f.countyAgency ? `Everywhere ${f.agency} polices` : `All of ${f.agency}`}
+        flagged={false}
+      />
+    );
+  }
+  return <Stat k="violent_rate" text="No local figure" source="See Safety" flagged={false} />;
+}
+
+function SafetySection({ area, view }: { area: Area; view: CrimeView }) {
+  const r = area.row;
+  const flagged = area.lowConfidence.includes("crime");
+  const shown = view.kind === "own" || view.kind === "city" ? view.figure : null;
+  const source = shown
+    ? `Reported for ${shown.agency}${shown.year !== null ? `, ${shown.year}` : ""}${
+        shown.months !== null && shown.months < 12 ? ` (${shown.months} months, scaled to a year)` : ""
+      } (FBI Crime Data Explorer). ${AREA_MEASURE.get("violent_rate")?.note ?? ""}`
+    : null;
+  // The agency's reason it has no rate (too few months, too few people, implausibly little).
+  const withdrawn = !shown && r.crime_agency && r.crime_note ? `${String(r.crime_agency)} ${String(r.crime_note)}.` : null;
+  const whole = (what: string, f: AgencyFigure) => `${what}, ${f.countyAgency ? "all it polices" : `all of ${f.agency}`}`;
+  return (
+    <AreaSection
+      id="safety"
+      icon="shield"
+      title="Safety"
+      lead={crimeLead(view)}
+      details={
+        source && (
+          <>
+            {view.kind === "own" && (
+              <CompareBar
+                label="Property crime"
+                value={view.figure.property}
+                text={formatArea("property_rate", view.figure.property)}
+                typical={US_TYPICAL.property_rate}
+                typicalText={US_TYPICAL.property_rate.toLocaleString()}
+                max={4000}
+                maxText="4,000+"
+                flagged={flagged}
+              />
+            )}
+            <Note>{source}</Note>
+          </>
+        )
+      }
+    >
+      {view.kind === "own" && (
+        <>
+          <CompareBar
+            label="Violent crime"
+            value={view.figure.violent}
+            text={formatArea("violent_rate", view.figure.violent)}
+            typical={US_TYPICAL.violent_rate}
+            typicalText={String(US_TYPICAL.violent_rate)}
+            max={800}
+            maxText="800+"
+            flagged={flagged}
+          />
+          {view.figure.violentCrimes !== null && view.figure.violentCrimes < FEW_CRIMES && (
+            <Note>
+              That is about {view.figure.violentCrimes} violent {view.figure.violentCrimes === 1 ? "crime" : "crimes"} reported
+              {view.figure.year !== null ? ` in ${view.figure.year}` : ""}
+              {view.figure.people !== null ? ` for ${view.figure.people.toLocaleString()} people` : ""}. With so few, the rate
+              per 100,000 can change a lot from one year to the next.
+            </Note>
+          )}
+          {view.figure.areas > 1 && (
+            <Note>
+              One rate for all {view.figure.areas} areas policed by {view.figure.agency}: the FBI reports crime by police
+              agency, not by neighborhood.
+            </Note>
+          )}
+        </>
+      )}
+      {view.kind === "city" && (
+        <>
+          {/* The city's figure as information: grey bars, beside the typical US area for scale. */}
+          <CompareBar
+            label={whole("Violent crime", view.figure)}
+            value={view.figure.violent}
+            text={formatArea("violent_rate", view.figure.violent)}
+            typical={US_TYPICAL.violent_rate}
+            typicalText={String(US_TYPICAL.violent_rate)}
+            max={800}
+            maxText="800+"
+            neutral
+          />
+          <CompareBar
+            label={whole("Property crime", view.figure)}
+            value={view.figure.property}
+            text={formatArea("property_rate", view.figure.property)}
+            typical={US_TYPICAL.property_rate}
+            typicalText={US_TYPICAL.property_rate.toLocaleString()}
+            max={4000}
+            maxText="4,000+"
+            neutral
+          />
+          <Note>{cityCrimeNote(view.figure)}</Note>
+        </>
+      )}
+      {view.kind === "nearby" && <NearbyCrime key={area.geoid} view={view} withdrawn={withdrawn} />}
+      {view.kind === "none" && (
+        <Note>
+          {withdrawn ? `${withdrawn} ` : ""}No police agency in this county has a crime rate to show: the FBI has too
+          little from them.
+        </Note>
+      )}
+    </AreaSection>
+  );
+}
+
+/** How many other agencies show before "Show all". */
+const AGENCIES_SHOWN = 8;
+
+/**
+ * No figure for the area or its city: why, and on request the agency that polices it (its
+ * county-wide rate) and every other agency in the county, each once, for the spread.
+ */
+function NearbyCrime({ view, withdrawn }: { view: Extract<CrimeView, { kind: "nearby" }>; withdrawn: string | null }) {
+  const [open, setOpen] = useState(false);
+  const [all, setAll] = useState(false);
+  const listId = useId();
+  const others = all ? view.others : view.others.slice(0, AGENCIES_SHOWN);
+  return (
+    <>
+      <Note>
+        {view.covering ? wideCrimeNote(view.covering) : (withdrawn ?? "No police agency reports a crime rate for this area.")}{" "}
+        The FBI counts crime by police agency, not by neighborhood.
+      </Note>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={listId}
+        onClick={() => setOpen(!open)}
+        className="inline-flex min-h-11 items-center gap-1 rounded-full border border-neutral-300 px-4 text-label font-semibold hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+      >
+        {open ? "Hide the nearest crime figures" : "Show the nearest crime figures"}
+        <Chevron up={open} className="h-3.5 w-3.5" />
+      </button>
+      {open && (
+        <div id={listId} className="space-y-4 rounded-xl bg-neutral-50 p-3.5 dark:bg-neutral-900/60">
+          {view.covering && (
+            <div className="space-y-2">
+              <SubHead>Polices this area</SubHead>
+              <AgencyRow f={view.covering} />
+            </div>
+          )}
+          {view.others.length > 0 && (
+            <div className="space-y-3">
+              <SubHead>{view.covering ? "Other police in this county" : "Police in this county"}</SubHead>
+              {others.map((f) => (
+                <AgencyRow key={f.agency} f={f} />
+              ))}
+              {view.others.length > AGENCIES_SHOWN && (
+                <button
+                  type="button"
+                  onClick={() => setAll(!all)}
+                  className="inline-flex min-h-8 items-center text-label font-semibold text-emerald-700 hover:underline dark:text-emerald-400"
+                >
+                  {all ? "Show fewer" : `Show all ${view.others.length}`}
+                </button>
+              )}
+            </div>
+          )}
+          <Note>
+            FBI Crime Data Explorer. Each agency&rsquo;s rate covers everywhere it polices, so none of these is this
+            area&rsquo;s own. Where an agency reported fewer than {FEW_CRIMES} violent crimes, the count is shown: with so
+            few, its rate can change a lot from one year to the next.
+          </Note>
+        </div>
+      )}
+    </>
+  );
+}
+
+function AgencyRow({ f }: { f: AgencyFigure }) {
+  return (
+    <div className="text-label">
+      <p className="font-medium">{f.agency}</p>
+      <p className="tabular-nums">{agencyRates(f)}</p>
+      <p className="text-caption text-neutral-500 dark:text-neutral-400">{agencyCoverage(f)}</p>
     </div>
   );
 }

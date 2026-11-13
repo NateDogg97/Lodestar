@@ -6,6 +6,9 @@
 
 import { ordinal } from "@/lib/scoring/format";
 
+import { agencyFigure, CITY_WIDE_AREAS, crimesReported, rateKey, sharedRateCounts } from "./crime";
+import { MIN_RESIDENTS } from "./national";
+
 export const TRACTS_FORMAT = "tracts-v1";
 
 /**
@@ -52,6 +55,8 @@ export interface Area {
   /** What `nearby_school_pctl` is: the district's score, or (a big one-district city) the
    *  nearest schools in it placed among US districts. Null in a file from before 2026-11-11. */
   schoolBasis: "district" | "nearby" | null;
+  /** How many areas of the county share its police agency's rate (./crime.ts); 0 with no rate. */
+  crimeShared: number;
 }
 
 export interface School {
@@ -109,7 +114,14 @@ export function parseCountyAreas(payload: unknown): CountyAreas {
   if (!isObj(payload) || payload.format !== TRACTS_FORMAT) {
     throw new Error(`Area data is not in the "${TRACTS_FORMAT}" format. Rebuild it with \`python -m etl.tracts.publish\`.`);
   }
-  const areas: Area[] = rows(payload, "area").map((row) => {
+  const table = rows(payload, "area");
+  // How many areas of the county share each area's police agency rate: whether it's shown
+  // as the area's own or as its city's (./crime.ts). Equals the ETL's `crime_shared`.
+  const shared = sharedRateCounts(
+    table.map((row) => rateKey(String(row.geoid).slice(0, 5), num(row.violent_rate ?? null), num(row.property_rate ?? null))),
+    table.map((row) => (num(row.population) ?? 0) >= MIN_RESIDENTS),
+  );
+  const areas: Area[] = table.map((row, i) => {
     const place = str(row.place);
     const near = str(row.near_place);
     return {
@@ -125,6 +137,7 @@ export function parseCountyAreas(payload: unknown): CountyAreas {
       nearbySchools: (str(row.nearby_schools) ?? "").split(";").filter(Boolean),
       nearbyHighSchools: (str(row.nearby_high_schools) ?? "").split(";").filter(Boolean),
       schoolBasis: row.school_basis === "district" || row.school_basis === "nearby" ? row.school_basis : null,
+      crimeShared: shared[i],
     };
   });
   const schools = new Map<string, School>();
@@ -224,8 +237,10 @@ export const AREA_MEASURES: AreaMeasure[] = [
     note: "The nearest town or city of 15,000+ people (GeoNames' point for it)." },
   { key: "commute_minutes", label: "Average commute", format: "minutes" },
   { key: "work_from_home_share", label: "Work from home", format: "percent" },
-  { key: "violent_rate", label: "Violent crime", format: "rate", colorable: true,
-    note: "FBI, per 100,000 residents per year, for the city or town police covering the area — not the neighborhood itself. A partial year's reports are scaled to a year; an agency with too little to rate shows none, and neither does an area whose only figure is a sheriff's for a whole county of farmland and suburbs." },
+  // Not colorable (owner, 2026-11-13): shading ranks areas against each other, and a crime
+  // rate is one police agency's for everything it polices (./crime.ts).
+  { key: "violent_rate", label: "Violent crime", format: "rate",
+    note: "FBI, per 100,000 residents per year, for the police agency covering the area — every area it polices has the same rate, not one for the neighborhood. A partial year's reports are scaled to a year; an agency with too little to rate has none." },
   { key: "property_rate", label: "Property crime", format: "rate", note: "FBI, per 100,000 residents per year, for the covering police agency." },
   { key: "zhvi_yoy", label: "Home value, last 12 months (by ZIP)", format: "change", colorable: true },
   { key: "days_on_market", label: "Days on market", format: "number", note: "Redfin median for the ZIP, latest 90 days." },
@@ -265,7 +280,15 @@ export const LOW_CONFIDENCE_HEADLINE = new Set([
   "mobile_homes",
 ]);
 
-export const headlineFlags = (a: Area) => a.lowConfidence.filter((c) => LOW_CONFIDENCE_HEADLINE.has(c));
+/**
+ * The area's low-confidence flags for its caution icon: not "crime_wide" (a sheriff's
+ * county-wide rate isn't uncertain, it's not the area's — the Safety section says so), nor
+ * "crime" when the area shows no crime figure of its own (./crime.ts).
+ */
+export const cautionFlags = (a: Area) =>
+  a.lowConfidence.filter((c) => c !== "crime_wide" && (c !== "crime" || ownCrimeRate(a)));
+
+export const headlineFlags = (a: Area) => cautionFlags(a).filter((c) => LOW_CONFIDENCE_HEADLINE.has(c));
 
 /** Plain words for a flagged column, for the caution icon's details. */
 export function flagLabel(col: string): string {
@@ -281,35 +304,35 @@ export function flagLabel(col: string): string {
  */
 export const countyWideCrime = (a: Area) => a.lowConfidence.includes("crime_wide");
 
+/**
+ * The area's only crime figure is one agency's rate over `CITY_WIDE_AREAS` or more areas
+ * of the county — a big city's: the city's, not this area's (owner, 2026-11-13; ./crime.ts).
+ */
+export const cityWideCrime = (a: Area) => !countyWideCrime(a) && a.crimeShared >= CITY_WIDE_AREAS;
+
+/** The area has a crime rate of its own: its city or town agency's, under the city-wide line (`crimeView` "own"). */
+export const ownCrimeRate = (a: Area) => !countyWideCrime(a) && !cityWideCrime(a) && agencyFigure(a) !== null;
+
 const CRIME_RATES = new Set(["violent_rate", "property_rate"]);
 
-/** The value as published, whatever it can claim: for saying what a county-wide figure was. */
+/** The value as published, whatever it can claim: for saying what a county- or city-wide figure was. */
 export function publishedValue(a: Area, key: string): number | null {
   return num(a.row[key] ?? null);
 }
 
 /**
- * The area's value on a measure — what lists, the map's shading and ranking use. A
- * county-wide crime rate isn't the area's, so it has none (see `countyWideCrime`).
+ * The area's value on a measure — what lists and the map's shading use. A crime rate only
+ * where it is the area's own (`ownCrimeRate`); a city's or a county's is shown on the area
+ * page as theirs (`crimeView`).
  */
 export function areaValue(a: Area, key: string): number | null {
-  if (CRIME_RATES.has(key) && countyWideCrime(a)) return null;
+  if (CRIME_RATES.has(key) && !ownCrimeRate(a)) return null;
   return publishedValue(a, key);
 }
 
-/** Fewer reported crimes than this in the year and a per-100,000 rate says less than the count. */
-export const FEW_CRIMES = 20;
-
-/**
- * How many crimes the area's police agency reported in its year, from the published rate
- * and the people it serves (rates are whole numbers, so this is within one of the count).
- */
+/** How many crimes the area's police agency reported in its year (see `crimesReported`). */
 export function reportedCrimes(a: Area, key: "violent_rate" | "property_rate"): number | null {
-  const rate = publishedValue(a, key);
-  const pop = num(a.row.crime_population ?? null);
-  if (rate === null || pop === null) return null;
-  const months = num(a.row.crime_months ?? null) ?? 12;
-  return Math.round((rate * pop * months) / 12 / 100_000);
+  return crimesReported(publishedValue(a, key), num(a.row.crime_population ?? null), num(a.row.crime_months ?? null));
 }
 
 /** Like formatArea, with "+" on a Census top-coded value ("$3,501+" = that or more). */
@@ -369,6 +392,7 @@ export function groupAreas(areas: Area[]): { name: string; areas: Area[]; popula
     .sort((x, y) => y.population - x.population);
 }
 export * from "./scoring";
+export * from "./crime";
 export * from "./national";
 export * from "./verdicts";
 export * from "./pollution";

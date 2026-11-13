@@ -24,7 +24,7 @@ import {
   type NationalSearch,
 } from "./national";
 import { formatArea } from "./index";
-import { areaCriteria, MOVED_TO_AREAS } from "./scoring";
+import { AREA_PRIORITIES, areaCriteria, MOVED_TO_AREAS } from "./scoring";
 
 // Four areas in two counties (48001: a, b; 48003: c, d).
 const areas = parseNationalAreas({
@@ -37,7 +37,7 @@ const areas = parseNationalAreas({
     population: [1000, 2000, 3000, 4000],
     median_home_value: [300_000, 500_000, 900_000, 200_000],
     walkability: [15, 8, null, 12],
-    violent_rate: [200, 100, 600, 300],
+    dist_downtown_mi: [20, 10, 60, 30],
   },
 });
 
@@ -97,13 +97,13 @@ describe("areas as the results (Phase 8f)", () => {
   });
 
   it("explains an area and says its trade-off from the top 3 priorities", () => {
-    const { criteria } = areaCriteria({ areaWeights: { median_home_value: 3, walkability: 1, violent_rate: 2 },
+    const { criteria } = areaCriteria({ areaWeights: { median_home_value: 3, walkability: 1, dist_downtown_mi: 2 },
       areaDirections: {}, areaLimits: {} });
     const s = search({ criteria });
     const parts = explainArea(areas, 3, s, undefined);
-    expect(parts.map((p) => p.key)).toEqual(["median_home_value", "violent_rate", "walkability"]);
-    // d: cheapest (+150), more crime than most (2 × (33.3 − 50)), walkability exactly middling (0).
-    expect(tradeOff(parts)).toBe("Helped by cheap homes; held back by more violent crime.");
+    expect(parts.map((p) => p.key)).toEqual(["median_home_value", "dist_downtown_mi", "walkability"]);
+    // d: cheapest (+150), farther downtown than most (2 × (33.3 − 50)), walkability exactly middling (0).
+    expect(tradeOff(parts)).toBe("Helped by cheap homes; held back by a long trip downtown.");
   });
 
   it("words county priorities by their direction", () => {
@@ -120,14 +120,14 @@ describe("areas as the results (Phase 8f)", () => {
   });
 
   it("badges the one best result per priority, and gold for the US top 1%", () => {
-    const { criteria } = areaCriteria({ areaWeights: { walkability: 1, violent_rate: 1 }, areaDirections: {}, areaLimits: {} });
+    const { criteria } = areaCriteria({ areaWeights: { walkability: 1, dist_downtown_mi: 1 }, areaDirections: {}, areaLimits: {} });
     const s = search({ criteria });
     const top = [0, 1, 3];
     const b = resultBadges(areas, top, s);
     expect(b.get(0)?.best).toEqual(["Most walkable"]);
-    expect(b.get(1)?.best).toEqual(["Safest"]);
-    // Area b has the lowest violent crime of all four: the top 1% of these "US" areas.
-    expect(b.get(1)?.top1).toEqual(["Top 1% safest in the US"]);
+    expect(b.get(1)?.best).toEqual(["Closest to downtown"]);
+    // Area b is the closest to downtown of all four: the top 1% of these "US" areas.
+    expect(b.get(1)?.top1).toEqual(["Top 1% closest to downtown in the US"]);
   });
 
   it("moves county stand-ins for area measures to the area level", () => {
@@ -145,51 +145,53 @@ describe("area names", () => {
   });
 });
 
-describe("a county-wide crime rate isn't an area's (2026-11-11)", () => {
-  // b's only figure is its sheriff's, for a whole county of farmland and suburbs.
+describe("crime is not a priority, a must-have or a watch-out (owner, 2026-11-13)", () => {
+  // b has the most violent crime by far: nothing ranks, rules out or warns on it.
   const a = parseNationalAreas({
     format: "areas-v1",
     n: 3,
     columns: {
       geoid: ["48001000100", "48001000200", "48001000300"],
       label: ["A", "B", "C"],
-      low_confidence: ["", "crime;crime_wide", "crime"],
+      low_confidence: ["", "", ""],
       population: [1000, 2000, 3000],
-      violent_rate: [100, 50, 600],
-      violent_rate_eb: [110, 60, 590],
-      property_rate: [900, 400, 2000],
-      property_rate_eb: [900, 400, 2000],
+      walkability: [10, 12, 14],
+      violent_rate: [100, 5000, 200],
+      violent_rate_eb: [100, 5000, 200],
+      property_rate: [900, 9000, 1000],
     },
   });
 
-  it("has no rate: average on crime, unknown for a crime must-have, never the safest", () => {
-    for (const c of ["violent_rate", "violent_rate_eb", "property_rate", "property_rate_eb"]) {
-      expect([...a.values.get(c)!].map(Number.isNaN)).toEqual([false, true, false]);
-    }
-    const { criteria, limits } = areaCriteria({ areaWeights: { violent_rate: 1 }, areaDirections: {},
-      areaLimits: { violent_rate: { max: 300 } } });
-    const sc = scoreNational(a, search({ criteria }));
-    expect([...sc.score].map(Math.round)).toEqual([100, 50, 0]);
-    const gated = scoreNational(a, search({ criteria, limits }));
-    expect([...gated.status]).toEqual([MATCH, UNKNOWN, EXCLUDED]);
+  it("isn't offered, and an old search's crime weight or limit asks nothing", () => {
+    expect(AREA_PRIORITIES.map((d) => d.key)).not.toContain("violent_rate");
+    expect(AREA_PRIORITIES.map((d) => d.key)).not.toContain("property_rate");
+    const { criteria, limits } = areaCriteria({
+      areaWeights: { violent_rate: 5, property_rate: 3, walkability: 1 },
+      areaDirections: { violent_rate: "higher" },
+      areaLimits: { violent_rate: { max: 300 } },
+    });
+    expect(criteria.map((c) => c.column)).toEqual(["walkability"]);
+    expect(limits).toEqual([]);
+    const sc = scoreNational(a, search({ criteria, limits }));
+    expect([...sc.status]).toEqual([MATCH, MATCH, MATCH]);
+    expect(explainArea(a, 1, search({ criteria }), undefined).map((p) => p.key)).toEqual(["walkability"]);
+    expect(areaWatchOuts(a, 1, search({ criteria })).map((w) => w.key)).toEqual([]);
   });
 });
 
 describe("results audit rules (2026-10-04)", () => {
-  // e: 20 people (a park); f: zero violent and zero property crime (no report).
+  // e: 20 people (a park).
   const a = parseNationalAreas({
     format: "areas-v1",
     n: 6,
     columns: {
       geoid: ["48001000100", "48001000200", "48001000300", "48001000400", "48001000500", "48001000600"],
       label: ["A", "B", "C", "D", "E", "F"],
-      low_confidence: ["", "", "", "", "", "crime"],
+      low_confidence: ["", "", "", "", "", ""],
       population: [1000, 5000, 3000, 2000, 20, 4000],
       walkability: [10, 18, null, 12, 20, 8],
       hazard_hurricane: [0, 0, 0, 0, 0, 40],
       median_home_value: [200_000, 300_000, 100_000, null, 50_000, 250_000],
-      violent_rate: [100, 200, 300, 150, 0, 0],
-      property_rate: [1000, 2000, 1500, 900, 0, 0],
     },
   });
   const s = (over: Partial<NationalSearch>) => ({
@@ -230,11 +232,6 @@ describe("results audit rules (2026-10-04)", () => {
     const parts = explainArea(a, 0, s({ criteria }), undefined);
     expect(parts[0].points).toBe(100);
     expect(parts[0].beats).toBeLessThan(99); // tied with most areas: no "top 1%" claim
-  });
-
-  it("reads zero violent and zero property crime as no data", () => {
-    expect(Number.isNaN(a.values.get("violent_rate")![5])).toBe(true);
-    expect(Number.isNaN(a.values.get("property_rate")![5])).toBe(true);
   });
 
   it("lists must-have matches by population when nothing is weighted", () => {
@@ -295,14 +292,15 @@ describe("full audit rules (2026-10-04)", () => {
   });
 
   it("marks each part whose value is low confidence, by what the flag covers", () => {
-    expect([...flaggedColumns(a, 1)]).toEqual(["violent_rate", "property_rate"]);
+    // A small police agency's "crime" covers no scoring column: crime isn't scored (2026-11-13).
+    expect([...flaggedColumns(a, 1)]).toEqual(["crime"]);
     expect([...flaggedColumns(a, 2)]).toEqual(["median_home_value"]);
     expect([...flaggedColumns(a, 3)]).toEqual(["median_household_income"]);
-    const { criteria } = areaCriteria({ areaWeights: { violent_rate: 1, median_home_value: 1 }, areaDirections: {}, areaLimits: {} });
+    const { criteria } = areaCriteria({ areaWeights: { median_household_income: 1, median_home_value: 1 }, areaDirections: {}, areaLimits: {} });
     const flags = (i: number) => Object.fromEntries(explainArea(a, i, s({ criteria }), undefined).map((p) => [p.key, p.flagged]));
-    expect(flags(1)).toEqual({ violent_rate: true, median_home_value: false });
-    expect(flags(2)).toEqual({ violent_rate: false, median_home_value: true });
-    expect(flags(0)).toEqual({ violent_rate: false, median_home_value: false });
+    expect(flags(3)).toEqual({ median_household_income: true, median_home_value: false });
+    expect(flags(2)).toEqual({ median_household_income: false, median_home_value: true });
+    expect(flags(0)).toEqual({ median_household_income: false, median_home_value: false });
   });
 
   it("shows the Census income top-code as a floor", () => {
@@ -391,7 +389,7 @@ describe("results that don't mislead (Phase 10, 2026-10-12)", () => {
   });
 
   it("warns about what wasn't asked, never about what was", () => {
-    const { criteria } = areaCriteria({ areaWeights: { violent_rate: 3 }, areaDirections: {}, areaLimits: {} });
+    const { criteria } = areaCriteria({ areaWeights: { walkability: 3 }, areaDirections: {}, areaLimits: {} });
     const warn = areaWatchOuts(a, 19, s(criteria));
     expect(warn.map((w) => w.key)).toEqual(["median_home_value"]);
     expect(warn[0].text).toBe("Homes cost more than in 100% of US areas");

@@ -18,7 +18,8 @@ const GROUPS: { title: string; keys: string[] }[] = [
   { title: "Schools", keys: ["nearby_school_pctl", "nearby_hs_pctl"] },
   { title: "People", keys: ["per_capita_income", "kids_share", "density_per_sq_mi"] },
   { title: "Getting around", keys: ["walkability", "dist_downtown_mi", "dist_airport_mi"] },
-  { title: "Safety and hazards", keys: ["violent_rate", "hazard_risk"] },
+  // No crime (owner, 2026-11-13): sorting and shading rank areas on it (lib/tracts/crime.ts).
+  { title: "Hazards", keys: ["hazard_risk"] },
   { title: "Air and environment", keys: ["pm25", "smoke_days_thick", "pre1960_share", "radon_above4"] },
 ];
 

@@ -1213,7 +1213,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
       title: "Your best matches",
       body: areaMode
         ? "The best areas nationwide for your search, best first. #1 is open: each bar is one of your priorities, red to deep green — gold means top 1% in the US."
-        : "Counties ranked by your search, best first. Add a priority tagged “by area” (schools, safety, walkability…) to rank neighborhoods instead.",
+        : "Counties ranked by your search, best first. Add a priority tagged “by area” (schools, walkability…) to rank neighborhoods instead.",
       prepare: showSheet(2),
     },
     {

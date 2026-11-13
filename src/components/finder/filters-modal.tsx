@@ -38,7 +38,8 @@ import { budgetColumn, withHousehold, type Preferences } from "./preferences";
  * (min/max limits, policies, climate types).
  *
  * Each measure has one level (plan §9 Phase 8f): county-wide (climate, taxes,
- * cost of living…) or by area (home value, schools, safety, walkability…).
+ * cost of living…) or by area (home value, schools, walkability…). Crime is neither:
+ * it is shown on area pages, not ranked or ruled out on (owner, 2026-11-13).
  * Both sit in the same topic sections, tagged.
  */
 export type FiltersMode = "priorities" | "musts";
@@ -53,7 +54,6 @@ const SECTIONS: { id: SectionId; label: string; mustsOnly?: boolean; prioritiesO
   // grouped): what it costs to live here.
   { id: "housing", label: "Housing, costs & taxes" },
   { id: "schools", label: "Schools" },
-  { id: "safety", label: "Safety" },
   { id: "climate", label: "Climate" },
   { id: "hazards", label: "Natural hazards" },
   { id: "pollution", label: "Pollution" },
@@ -67,8 +67,6 @@ const SECTION_TIPS: Partial<Record<SectionId, string>> = {
     "All optional. A budget scores home value (or rent) by fit — full marks at or under it, none at 1.5× it — instead of “cheaper is better”. Income and filing set the Taxes estimate. Kept on this device only: links you share never include them.",
   hazards:
     "FEMA National Risk Index (Dec 2025): where an area ranks nationally on the share of its buildings, people and farms expected to be lost to each hazard in a typical year.",
-  safety:
-    "FBI crime rates for the city or town police covering each area. Where the only figure is a sheriff's for a whole county of farmland and suburbs, the area has no rate: it counts as average and is unknown for a must-have.",
   pollution:
     "Measured where people in each area live (2020 census blocks). Scored against fixed health benchmarks, not ranks, so differences smaller than the data's error don't move a score. Radon isn't here: its estimates are too uncertain to rank on — area pages show it.",
   states:

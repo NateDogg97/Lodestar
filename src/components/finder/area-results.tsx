@@ -333,7 +333,7 @@ function Flag({ on }: { on: boolean }) {
 
 /**
  * Beside a result's name when one of your priorities rests on a low-confidence value
- * (full audit, 2026-10-04): a wide Census margin, a small police agency. Tap for which.
+ * (full audit, 2026-10-04): a wide Census margin. Tap for which.
  */
 function PriorityCaution({ parts }: { parts: AreaPart[] }) {
   const flagged = parts.filter((p) => p.flagged);
@@ -351,8 +351,7 @@ function PriorityCaution({ parts }: { parts: AreaPart[] }) {
           ))}
         </ul>
         <p className="mt-2 text-caption text-neutral-500 dark:text-neutral-400">
-          A small area sampled by the Census (a wide margin of error), a small police agency, or a county
-          sheriff&rsquo;s one rate for farmland and suburbs alike. It still counts in the score.
+          Usually a small area sampled by the Census (a wide margin of error). It still counts in the score.
         </p>
       </InfoTip>
     </span>

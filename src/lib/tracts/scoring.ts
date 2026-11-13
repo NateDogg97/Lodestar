@@ -6,7 +6,7 @@
  *   unemployment… the same everywhere in a county (`@/lib/scoring` METRICS).
  * - Area level (`AREA_PRIORITIES`): home value, rent, income, schools — the
  *   nearest specific schools, never a county average —, hazards, distances,
- *   crime, walkability, downtown, families, density, commute.
+ *   walkability, downtown, families, density, commute. Not crime (see AREA_PRIORITIES).
  *
  * County priorities that used to stand in for an area measure (a county's
  * median home value, its average school grade level…) move to the area level
@@ -17,7 +17,7 @@
 
 import { MAX_WEIGHT, type Direction, type MetricGroup, type MetricKey } from "@/lib/scoring";
 
-export type AreaGroup = MetricGroup | "safety" | "pollution";
+export type AreaGroup = MetricGroup | "pollution";
 
 export interface AreaPriorityDef {
   key: string;
@@ -55,12 +55,9 @@ export const AREA_PRIORITIES: readonly AreaPriorityDef[] = [
   { key: "nearby_hs_pctl", label: "High schools", unit: "pctl", defaultDirection: "higher", group: "schools",
     note: "Access to college-prep courses (AP) at the high schools inside the area's district, national percentile.",
     badge: "Best high schools", topBadge: "Top 1% high schools in the US", good: "strong high schools", bad: "its high schools" },
-  { key: "violent_rate", label: "Violent crime", unit: "per 100k", defaultDirection: "lower", group: "safety",
-    note: "FBI, per 100,000 residents, for the city or town police covering the area. An area whose only figure is a sheriff's for a whole county has none.",
-    badge: "Safest", topBadge: "Top 1% safest in the US", good: "low violent crime", bad: "more violent crime" },
-  { key: "property_rate", label: "Property crime", unit: "per 100k", defaultDirection: "lower", group: "safety",
-    note: "FBI, per 100,000 residents, for the police agency covering the area.",
-    badge: "Least property crime", topBadge: "Top 1% least property crime in the US", good: "low property crime", bad: "more property crime" },
+  // Crime (violent_rate, property_rate) is no priority or must-have (owner, 2026-11-13): a
+  // rate is one police agency's for everything it polices, too coarse to rank or rule out
+  // areas by. Area pages still show it where the area or its city has a figure (./crime.ts).
   { key: "walkability", label: "Walkability", unit: "of 20", defaultDirection: "higher", group: "location",
     note: "EPA National Walkability Index, 1–20: street grid, transit, and shops near homes.",
     badge: "Most walkable", topBadge: "Top 1% walkability in the US", good: "walkable streets", bad: "less walkable streets" },

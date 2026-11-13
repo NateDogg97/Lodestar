@@ -68,12 +68,12 @@ const composite: Scenario[] = [
   },
   {
     name: "Young family, mid budget",
-    intent: "Strong nearby schools, low violent crime, lots of families, homes under $500k.",
-    expect: "Suburbs and small towns with 75th+ percentile schools and well under median crime; no mobile-home parks as 'cheap homes'; no unrated crime at the top.",
-    prefs: P({ area: { weights: { nearby_school_pctl: 5, violent_rate: 4, kids_share: 3, median_home_value: 3 }, limits: { median_home_value: { max: 500_000 } } } }),
+    // Crime left the filters (owner, 2026-11-13): this search used to weigh violent crime 4.
+    intent: "Strong nearby schools, lots of families, homes under $500k.",
+    expect: "Suburbs and small towns with 75th+ percentile schools; no mobile-home parks as 'cheap homes'.",
+    prefs: P({ area: { weights: { nearby_school_pctl: 5, kids_share: 3, median_home_value: 3 }, limits: { median_home_value: { max: 500_000 } } } }),
     checks: [
       allTop(20, "schools below the 65th percentile", (r, i) => r.value(i, "nearby_school_pctl") >= 65),
-      allTop(20, "violent crime above the US median", (r, i) => r.value(i, "violent_rate") < 248),
       allTop(50, "a mobile-home park", (r, i) => !r.areas.lowConfidence[i].includes("mobile_homes") || r.value(i, "median_home_value") > 100_000),
     ],
   },
@@ -86,11 +86,11 @@ const composite: Scenario[] = [
   },
   {
     name: "Retire somewhere warm and affordable",
-    intent: "Mild winters, low cost of living, low income tax; safe, low hazard risk, near an airport.",
+    intent: "Mild winters, low cost of living, low income tax; low hazard risk, near an airport.",
     expect: "Sun Belt, mostly no-income-tax states (TX, FL, TN); coldest month above 30°F; every result within 90 mi of an airport.",
     prefs: P({
       weights: { coldest_month_low_f: 4, rpp_all: 3, income_tax_top_rate: 2 },
-      area: { weights: { hazard_risk: 3, violent_rate: 3, median_home_value: 3 }, limits: { dist_airport_mi: { max: 90 } } },
+      area: { weights: { hazard_risk: 3, median_home_value: 3 }, limits: { dist_airport_mi: { max: 90 } } },
     }),
     // Phase 10a (2026-10-12): rural Appalachia now reads as cheap as it is (its own rents, not
     // its state's), so a 26°F east-Tennessee winter can trade against cost by #13. The top
@@ -110,11 +110,13 @@ const composite: Scenario[] = [
     checks: [allTop(20, "home over $150k", (r, i) => r.value(i, "median_home_value") <= 150_000), allTop(100, "metro over 120 mi", (r, i) => r.value(i, "dist_metro_mi") <= 120)],
   },
   {
-    name: "Safety above all",
-    intent: "Lowest violent and property crime.",
-    expect: "Real low-crime towns: every rate from an agency with enough coverage (no partial years inflated to zero), violent under 25 and property under 300 per 100k.",
-    prefs: P({ area: { weights: { violent_rate: 5, property_rate: 5 } } }),
-    checks: [allTop(100, "violent crime over 25", (r, i) => r.value(i, "violent_rate") <= 25), allTop(100, "property crime over 300", (r, i) => r.value(i, "property_rate") <= 300)],
+    // "Safety above all" ranked on crime; crime left the filters (owner, 2026-11-13). An old
+    // search that asked it now asks nothing by area: county results, no crime anywhere.
+    name: "Crime is not a filter",
+    intent: "An old search: violent and property crime 5, violent crime at most 200.",
+    expect: "Crime asks nothing: no area-level priority or must-have is left, so the results are counties, unranked by crime.",
+    prefs: P({ area: { weights: { violent_rate: 5, property_rate: 5 }, limits: { violent_rate: { max: 200 } } } }),
+    checks: [(r) => (r.areaMode || r.criteria.length > 0 || r.limits.length > 0 ? ["crime still asks something by area"] : [])],
   },
   {
     name: "Mild climate",
@@ -132,9 +134,9 @@ const composite: Scenario[] = [
   },
   {
     name: "Must-haves only (no priorities)",
-    intent: "Homes ≤ $300k, nearby schools ≥ 70th pctl, violent crime ≤ 200 — nothing weighted.",
+    intent: "Homes ≤ $300k, nearby schools ≥ 70th pctl, walkability ≥ 8 — nothing weighted.",
     expect: "A list by population, not a ranking: every result passes all three limits; scores are blank.",
-    prefs: P({ area: { limits: { median_home_value: { max: 300_000 }, nearby_school_pctl: { min: 70 }, violent_rate: { max: 200 } } } }),
+    prefs: P({ area: { limits: { median_home_value: { max: 300_000 }, nearby_school_pctl: { min: 70 }, walkability: { min: 8 } } } }),
     checks: [
       (r) => (r.ns && r.top.every((i) => Number.isNaN(r.ns!.score[i])) ? [] : ["a score was shown with nothing weighted"]),
       (r) => (r.top.every((i, k) => k === 0 || r.areas.population[i] <= r.areas.population[r.top[k - 1]]) ? [] : ["not ordered by population"]),
@@ -236,13 +238,13 @@ const composite: Scenario[] = [
     expect: "Schools in the top quarter (75th+) for the top 20 — the ten at 1 together outweigh the one at 5, so it leads but doesn't dictate; county-wide and area parts both present in every explanation.",
     prefs: P({
       weights: { rpp_all: 1, days_above_90f: 1, nights_below_32f: 1, unemployment_rate: 1, income_tax_top_rate: 1 },
-      area: { weights: { nearby_school_pctl: 5, violent_rate: 1, walkability: 1, median_home_value: 1, hazard_risk: 1, kids_share: 1 } },
+      area: { weights: { nearby_school_pctl: 5, dist_airport_mi: 1, walkability: 1, median_home_value: 1, hazard_risk: 1, kids_share: 1 } },
     }),
     checks: [allTop(20, "schools under the 75th percentile", (r, i) => r.value(i, "nearby_school_pctl") >= 75), (r) => (r.top.slice(0, 5).every((i) => r.parts(i).length === 11) ? [] : ["an explanation is missing parts"])],
   },
   {
     name: "Everything weighted",
-    intent: "All 22 area priorities at 3 and five county-wide ones at 3.",
+    intent: "Every area priority at 3 and five county-wide ones at 3.",
     expect: "Runs; no result rests mostly on missing data; a wide spread of states.",
     prefs: P({
       weights: { rpp_all: 3, days_above_90f: 3, nights_below_32f: 3, unemployment_rate: 3, income_tax_top_rate: 3 },
@@ -265,10 +267,10 @@ const composite: Scenario[] = [
     checks: [atLeast("Hawaii areas in the top 100", 20, (r) => r.top.filter((i) => r.stateOf(i) === "HI").length)],
   },
   {
-    name: "Vermont only, schools and safety",
-    intent: "States = VT; schools 4, violent crime 3.",
-    expect: "Only Vermont; small towns; crime rates from real agencies (Vermont State Police cover much of the state).",
-    prefs: P({ categories: { state: ["VT"] }, area: { weights: { nearby_school_pctl: 4, violent_rate: 3 } } }),
+    name: "Vermont only, schools and homes",
+    intent: "States = VT; schools 4, home value 3.",
+    expect: "Only Vermont; small towns.",
+    prefs: P({ categories: { state: ["VT"] }, area: { weights: { nearby_school_pctl: 4, median_home_value: 3 } } }),
     checks: [inStates(["VT"])],
   },
   {
@@ -294,9 +296,9 @@ const composite: Scenario[] = [
   },
   {
     name: "Must-haves only: three states, hard caps",
-    intent: "States CO/UT/ID; homes ≤ $450k; schools ≥ 60; violent ≤ 150. Nothing weighted.",
+    intent: "States CO/UT/ID; homes ≤ $450k; schools ≥ 60. Nothing weighted.",
     expect: "A population-ordered list, all in the three states, all passing.",
-    prefs: P({ categories: { state: ["CO", "UT", "ID"] }, area: { limits: { median_home_value: { max: 450_000 }, nearby_school_pctl: { min: 60 }, violent_rate: { max: 150 } } } }),
+    prefs: P({ categories: { state: ["CO", "UT", "ID"] }, area: { limits: { median_home_value: { max: 450_000 }, nearby_school_pctl: { min: 60 } } } }),
     checks: [inStates(["CO", "UT", "ID"])],
   },
   {
@@ -424,10 +426,10 @@ const outliers: Scenario[] = [
     ],
   },
   {
-    name: "Buying on a $400k budget, schools and safety",
-    intent: "Buy, budget $400k; nearby schools 4, violent crime 3 (home value turned on by the budget).",
+    name: "Buying on a $400k budget, schools",
+    intent: "Buy, budget $400k; nearby schools 4 (home value turned on by the budget).",
     expect: "Suburbs and towns whose typical home is near or under $400k with strong schools; no mobile-home parks or $30k homes winning on price.",
-    prefs: P({ household: { tenure: "buy", budget: 400_000 }, area: { weights: { median_home_value: 3, nearby_school_pctl: 4, violent_rate: 3 } } }),
+    prefs: P({ household: { tenure: "buy", budget: 400_000 }, area: { weights: { median_home_value: 3, nearby_school_pctl: 4 } } }),
     checks: [
       allTop(50, "typical home over 1.2× the budget", (r, i) => scoredAt(r.areas, "median_home_value", i) <= 480_000),
       allTop(50, "a mobile-home park", (r, i) => !r.areas.lowConfidence[i].includes("mobile_homes")),
@@ -477,15 +479,17 @@ const outliers: Scenario[] = [
   {
     name: "Cheapest homes, and what they don't say",
     intent: "Home value lower 5, nothing else.",
-    expect: "The cheapest areas — and every one with violent crime in the worst 5% of the US says so.",
+    // Was violent crime; crime is no watch-out since 2026-11-13 (it isn't compared across areas).
+    expect: "The cheapest areas — and every one with natural hazard risk in the worst 5% of the US says so; none warns about crime.",
     prefs: P({ area: { weights: { median_home_value: 5 } } }),
     checks: [
-      allTop(50, "worst-5% violent crime without a watch-out", (r, i) => {
-        const v = scoredAt(r.areas, "violent_rate", i);
-        const s = sortedResidential(r.areas, "violent_rate");
+      allTop(50, "worst-5% hazard risk without a watch-out", (r, i) => {
+        const v = scoredAt(r.areas, "hazard_risk", i);
+        const s = sortedResidential(r.areas, "hazard_risk");
         const worse = Number.isNaN(v) ? 0 : derive(s, v, "higher").beats ?? 0;
-        return worse < 95 || areaWatchOuts(r.areas, i, r.search).some((w) => w.key === "violent_rate");
+        return worse < 95 || areaWatchOuts(r.areas, i, r.search).some((w) => w.key === "hazard_risk");
       }),
+      allTop(50, "a crime watch-out", (r, i) => !areaWatchOuts(r.areas, i, r.search).some((w) => /crime/.test(w.key))),
     ],
   },
 ];

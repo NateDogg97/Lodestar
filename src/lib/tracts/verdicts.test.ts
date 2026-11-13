@@ -12,7 +12,13 @@ import {
   buyOrRentVerdict,
   diversityVerdict,
   incomeGapWord,
+  agencyCoverage,
+  agencyRates,
+  cityCrimeNote,
+  crimeLead,
+  wideCrimeNote,
 } from "./verdicts";
+import type { AgencyFigure } from "./crime";
 
 describe("area page verdicts", () => {
   it("say what stands out, in words", () => {
@@ -42,6 +48,58 @@ describe("area page verdicts", () => {
     expect(safetyVerdict(0)).toBe("Much safer than a typical US area");
     expect(safetyVerdict(248)).toBe("About as safe as a typical US area");
     expect(safetyVerdict(600)).toBe("Much more crime than a typical US area");
+  });
+
+  describe("crime, shown only where the area or its city has a figure (2026-11-13)", () => {
+    const fig = (over: Partial<AgencyFigure>): AgencyFigure => ({
+      agency: "Chicago", violent: 425, property: 3075, year: 2025, months: 12, people: 2715488, areas: 790,
+      countyAgency: false, violentCrimes: 11540, ...over,
+    });
+    const chicago = fig({});
+    const fairfax = fig({ agency: "Fairfax County (sheriff and State Police)", violent: 101, property: 1501,
+      people: null, areas: 261, countyAgency: true });
+    const sheriff = fig({ agency: "Washtenaw County (sheriff and State Police)", violent: 363, property: 658,
+      people: 162060, areas: 39, countyAgency: true, violentCrimes: 588 });
+    const chelsea = fig({ agency: "Chelsea", violent: 204, property: 781, people: 5379, areas: 2, violentCrimes: 11 });
+
+    it("compare only an area's own rate with the typical US area", () => {
+      expect(crimeLead({ kind: "own", figure: chelsea })).toBe("Safer than a typical US area");
+      expect(crimeLead({ kind: "city", figure: chicago })).toBe("One figure for all of Chicago");
+      expect(crimeLead({ kind: "city", figure: fairfax })).toBe(
+        "One figure for everywhere Fairfax County (sheriff and State Police) polices",
+      );
+      expect(crimeLead({ kind: "nearby", covering: sheriff, others: [] })).toBe("No crime figure for this area or its city");
+      expect(crimeLead({ kind: "none" })).toBe("No crime figures in this county");
+    });
+
+    it("say a big city's figure is the city's, with no ranking language", () => {
+      const note = cityCrimeNote(chicago);
+      expect(note).toBe(
+        "Chicago reports one rate for all 2,715,488 people it serves, so all 790 areas it polices in this county carry " +
+          "the same numbers. The FBI counts crime by police agency, not by neighborhood: this is the whole city’s " +
+          "figure, not this area’s, and its neighborhoods can differ a lot.",
+      );
+      expect(note).not.toMatch(/rank|shade|safer|safest/i);
+      expect(cityCrimeNote(fairfax)).toContain("one rate for everywhere it polices, so all 261 areas");
+      expect(cityCrimeNote(fairfax)).toContain("this is the figure for everywhere it polices, not this area’s");
+    });
+
+    it("say why a sheriff's county-wide rate isn't the area's", () => {
+      expect(wideCrimeNote(sheriff)).toBe(
+        "Washtenaw County (sheriff and State Police) polices this area and reports one rate for all 39 areas it covers " +
+          "in this county, from farmland to suburbs: the county’s figure, not this area’s.",
+      );
+    });
+
+    it("list each agency's rates and what they cover, with the count where crimes are few", () => {
+      expect(agencyRates(chicago)).toBe("425 violent · 3,075 property per 100,000 people a year");
+      expect(agencyRates(fig({ property: null }))).toBe("425 violent · — property per 100,000 people a year");
+      expect(agencyCoverage(chicago)).toBe("790 areas here · 2,715,488 people in all · 2025");
+      expect(agencyCoverage(chelsea)).toBe("2 areas here · 5,379 people in all · 2025 · only about 11 violent crimes reported");
+      expect(agencyCoverage(fig({ areas: 1, people: 1, months: 6, violentCrimes: 1 }))).toBe(
+        "1 area here · 1 person in all · 2025 (6 months, scaled to a year) · only about 1 violent crime reported",
+      );
+    });
   });
 
   it("word where a value stands so a tie is never claimed as a rarity", () => {
