@@ -8,6 +8,7 @@ import {
   peopleVerdict,
   safetyVerdict,
   schoolsVerdict,
+  sharedCrimeNote,
   standing,
   buyOrRentVerdict,
   diversityVerdict,
@@ -42,6 +43,28 @@ describe("area page verdicts", () => {
     expect(safetyVerdict(0)).toBe("Much safer than a typical US area");
     expect(safetyVerdict(248)).toBe("About as safe as a typical US area");
     expect(safetyVerdict(600)).toBe("Much more crime than a typical US area");
+  });
+
+  it("say whose one rate an area's crime figure is, never as the area's own", () => {
+    const base = { violent: "425 /100k", property: "3,075 /100k", people: 2715488, countyAgency: false };
+    // A big city's (2026-11-13).
+    expect(sharedCrimeNote({ ...base, scope: "city", agency: "Chicago", areas: 790 })).toBe(
+      "The only figure here is for Chicago: 425 /100k violent and 3,075 /100k property, one rate for all 2,715,488 " +
+        "people it serves (790 areas in this county). The FBI reports crime by police agency, so that is the whole " +
+        "city’s number, not this area’s: it isn’t ranked or shaded on the map.",
+    );
+    // A county police force over 100+ areas of suburbs, and one with no population on file.
+    const county = sharedCrimeNote({ ...base, scope: "city", agency: "Fairfax County (sheriff and State Police)",
+      areas: 261, people: null, countyAgency: true });
+    expect(county).toContain("one rate for everywhere it polices (261 areas in this county)");
+    expect(county).toContain("so that is one number for everywhere it polices, not this area’s");
+    // A sheriff's over farmland and suburbs (crime_wide, 2026-11-11): the wording as before.
+    expect(sharedCrimeNote({ ...base, scope: "county", agency: "Washtenaw County (sheriff and State Police)",
+      violent: "363 /100k", property: "658 /100k", areas: 40, countyAgency: true })).toBe(
+      "The only figure here is for Washtenaw County (sheriff and State Police): 363 /100k violent and 658 /100k " +
+        "property, one rate for all 40 areas it polices, from farmland to suburbs. The FBI reports crime by police " +
+        "agency, so that is the county’s number, not this area’s: it isn’t ranked or shaded on the map.",
+    );
   });
 
   it("word where a value stands so a tie is never claimed as a rarity", () => {

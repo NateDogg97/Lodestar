@@ -21,7 +21,7 @@ import {
   type MetricKey,
 } from "@/lib/scoring";
 
-import { AREA_PRIORITIES, COUNTY_METRICS_NOW_AREA, type AreaGroup } from "@/lib/tracts";
+import { AREA_PRIORITIES, CITY_WIDE_AREAS, COUNTY_METRICS_NOW_AREA, type AreaGroup } from "@/lib/tracts";
 
 import { InfoTip } from "@/components/ui/info-tip";
 import { Modal } from "@/components/ui/modal";
@@ -68,7 +68,7 @@ const SECTION_TIPS: Partial<Record<SectionId, string>> = {
   hazards:
     "FEMA National Risk Index (Dec 2025): where an area ranks nationally on the share of its buildings, people and farms expected to be lost to each hazard in a typical year.",
   safety:
-    "FBI crime rates for the city or town police covering each area. Where the only figure is a sheriff's for a whole county of farmland and suburbs, the area has no rate: it counts as average and is unknown for a must-have.",
+    `FBI crime rates for the city or town police covering each area. Where the only figure is a sheriff's for a whole county of farmland and suburbs, or a big city's one rate for ${CITY_WIDE_AREAS} or more areas, the area has no rate: it counts as average and is unknown for a must-have.`,
   pollution:
     "Measured where people in each area live (2020 census blocks). Scored against fixed health benchmarks, not ranks, so differences smaller than the data's error don't move a score. Radon isn't here: its estimates are too uncertain to rank on — area pages show it.",
   states:

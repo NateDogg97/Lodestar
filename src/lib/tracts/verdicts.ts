@@ -125,6 +125,32 @@ export function safetyVerdict(violent: number | null, note?: string | null): str
           : "Much more crime than a typical US area";
 }
 
+/**
+ * What the area page says when an area's only crime figure is one agency's rate for many
+ * areas, so it has none of its own (./crime.ts): `county` — a county agency's over
+ * farmland and suburbs ("crime_wide", 2026-11-11); `city` — one rate for 100+ areas of the
+ * county, a big city's (2026-11-13). `violent` and `property` are formatted; `areas` is
+ * how many areas of the county carry it; `people`, how many the agency serves in all.
+ */
+export function sharedCrimeNote(p: {
+  scope: "county" | "city";
+  agency: string;
+  violent: string;
+  property: string;
+  areas: number;
+  people: number | null;
+  countyAgency: boolean;
+}): string {
+  const figure = `The only figure here is for ${p.agency}: ${p.violent} violent and ${p.property} property`;
+  const tail = "not this area’s: it isn’t ranked or shaded on the map.";
+  if (p.scope === "county") {
+    return `${figure}, one rate for all ${p.areas > 0 ? p.areas : "the"} areas it polices, from farmland to suburbs. The FBI reports crime by police agency, so that is the county’s number, ${tail}`;
+  }
+  const whom = p.people ? `all ${p.people.toLocaleString()} people it serves` : "everywhere it polices";
+  const whose = p.countyAgency ? "one number for everywhere it polices" : "the whole city’s number";
+  return `${figure}, one rate for ${whom} (${p.areas.toLocaleString()} areas in this county). The FBI reports crime by police agency, so that is ${whose}, ${tail}`;
+}
+
 /** "Young, mostly renters, mostly apartments" — only what stands out. */
 export function peopleVerdict(v: {
   age: number | null;

@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   areaValue,
+  CITY_WIDE_AREAS,
+  cityWideCrime,
   countyWideCrime,
   FEW_CRIMES,
   formatArea,
@@ -79,6 +81,43 @@ describe("area data", () => {
     // A partial year's rate was scaled to a year: the count is what was reported.
     expect(reportedCrimes(annArbor, "violent_rate")).toBe(180);
     expect([near.schoolBasis, chelsea.schoolBasis, annArbor.schoolBasis]).toEqual(["district", "nearby", null]);
+  });
+
+  it(`gives no crime rate to an area on a big city's one rate for ${CITY_WIDE_AREAS}+ areas (2026-11-13)`, () => {
+    // Cook County: 100 areas on Chicago's rate (plus one of 20 people, not counted), one on
+    // Justice's, and a sheriff's county-wide rate over 120 areas (crime_wide wins).
+    const cols = ["geoid", "label", "population", "low_confidence", "crime_agency", "violent_rate", "property_rate",
+      "crime_population"];
+    const row = (k: number, people: number, flags: string, agency: string, v: number, p: number, pop: number) =>
+      [`17031${String(k).padStart(6, "0")}`, `Area ${k}`, people, flags, agency, v, p, pop];
+    const c = parseCountyAreas({
+      ...payload,
+      columns: cols,
+      rows: [
+        ...Array.from({ length: 100 }, (_, k) => row(k, 3500, "", "Chicago", 425, 3075, 2715488)),
+        row(100, 20, "", "Chicago", 425, 3075, 2715488),
+        row(101, 4000, "", "Justice", 33, 221, 12194),
+        ...Array.from({ length: 120 }, (_, k) => row(200 + k, 3000, "crime_wide", "Cook County (sheriff or county police)", 150, 700, 400000)),
+      ],
+    });
+    const chicago = c.areas[0];
+    const tiny = c.areas[100];
+    const justice = c.areas[101];
+    const sheriff = c.areas[102];
+    expect(chicago.crimeShared).toBe(100);
+    expect(cityWideCrime(chicago)).toBe(true);
+    expect(cityWideCrime(tiny)).toBe(true);
+    // Not ranked, sorted or shaded on it; the page can still say what the city's was.
+    expect(areaValue(chicago, "violent_rate")).toBeNull();
+    expect(areaValue(chicago, "property_rate")).toBeNull();
+    expect(formatAreaValue(chicago, "violent_rate")).toBe("—");
+    expect(publishedValue(chicago, "violent_rate")).toBe(425);
+    expect(areaValue(chicago, "population")).toBe(3500);
+    expect([cityWideCrime(justice), areaValue(justice, "violent_rate")]).toEqual([false, 33]);
+    expect([countyWideCrime(sheriff), cityWideCrime(sheriff), sheriff.crimeShared]).toEqual([true, false, 120]);
+    // One fewer and it's still the area's rate (with the "one rate for all 99" note).
+    const fewer = parseCountyAreas({ ...payload, columns: cols, rows: Array.from({ length: 99 }, (_, k) => row(k, 3500, "", "Chicago", 425, 3075, 2715488)) });
+    expect([cityWideCrime(fewer.areas[0]), areaValue(fewer.areas[0], "violent_rate")]).toEqual([false, 425]);
   });
 
   it("flags only headline values for the list's caution icon", () => {

@@ -17,6 +17,8 @@
 
 import { MAX_WEIGHT, type Direction, type MetricGroup, type MetricKey } from "@/lib/scoring";
 
+import { CITY_WIDE_AREAS } from "./crime";
+
 export type AreaGroup = MetricGroup | "safety" | "pollution";
 
 export interface AreaPriorityDef {
@@ -56,7 +58,7 @@ export const AREA_PRIORITIES: readonly AreaPriorityDef[] = [
     note: "Access to college-prep courses (AP) at the high schools inside the area's district, national percentile.",
     badge: "Best high schools", topBadge: "Top 1% high schools in the US", good: "strong high schools", bad: "its high schools" },
   { key: "violent_rate", label: "Violent crime", unit: "per 100k", defaultDirection: "lower", group: "safety",
-    note: "FBI, per 100,000 residents, for the city or town police covering the area. An area whose only figure is a sheriff's for a whole county has none.",
+    note: `FBI, per 100,000 residents, for the city or town police covering the area. An area whose only figure is a sheriff's for a whole county, or a big city's one rate for ${CITY_WIDE_AREAS} or more areas, has none.`,
     badge: "Safest", topBadge: "Top 1% safest in the US", good: "low violent crime", bad: "more violent crime" },
   { key: "property_rate", label: "Property crime", unit: "per 100k", defaultDirection: "lower", group: "safety",
     note: "FBI, per 100,000 residents, for the police agency covering the area.",

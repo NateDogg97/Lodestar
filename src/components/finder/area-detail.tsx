@@ -9,10 +9,13 @@ import {
   areaLimitResults,
   areaPriority,
   areaValue,
+  cityWideCrime,
   countyWideCrime,
   FEW_CRIMES,
+  isCountyAgency,
   publishedValue,
   reportedCrimes,
+  sharedCrimeNote,
   aroundVerdict,
   explainArea,
   formatArea,
@@ -631,7 +634,8 @@ export function AreaDetail({
 
   const schoolP = v("nearby_school_pctl");
   const district = r.district_name ? String(r.district_name).replace(/ Independent School District$/, " ISD") : null;
-  const wideCrime = countyWideCrime(area);
+  // An agency's one rate for many areas isn't this area's: shown as whose it is, never as the area's.
+  const sharedScope = countyWideCrime(area) ? "county" : cityWideCrime(area) ? "city" : null;
   const violentCount = reportedCrimes(area, "violent_rate");
   const owners = v("owner_share");
   const highrise = v("highrise_share");
@@ -712,10 +716,10 @@ export function AreaDetail({
         id="safety"
         icon="shield"
         title="Safety"
-        lead={wideCrime ? "No crime rate for this area alone" : safetyVerdict(v("violent_rate"), r.crime_note ? String(r.crime_note) : null)}
+        lead={sharedScope ? "No crime rate for this area alone" : safetyVerdict(v("violent_rate"), r.crime_note ? String(r.crime_note) : null)}
         details={
           <>
-            {!wideCrime && (
+            {!sharedScope && (
               <CompareBar
                 label="Property crime"
                 value={v("property_rate")}
@@ -740,13 +744,17 @@ export function AreaDetail({
           </>
         }
       >
-        {wideCrime ? (
+        {sharedScope ? (
           <Note>
-            The only figure here is for {String(r.crime_agency)}: {formatArea("violent_rate", publishedValue(area, "violent_rate"))}{" "}
-            violent and {formatArea("property_rate", publishedValue(area, "property_rate"))} property, one rate for all{" "}
-            {typeof r.crime_shared === "number" ? r.crime_shared : "the"} areas it polices, from farmland to suburbs. The FBI
-            reports crime by police agency, so that is the county&rsquo;s number, not this area&rsquo;s: it isn&rsquo;t ranked or
-            shaded on the map.
+            {sharedCrimeNote({
+              scope: sharedScope,
+              agency: String(r.crime_agency ?? "its police agency"),
+              violent: formatArea("violent_rate", publishedValue(area, "violent_rate")),
+              property: formatArea("property_rate", publishedValue(area, "property_rate")),
+              areas: area.crimeShared,
+              people: typeof r.crime_population === "number" ? r.crime_population : null,
+              countyAgency: isCountyAgency(String(r.crime_agency ?? "")),
+            })}
           </Note>
         ) : (
           <>

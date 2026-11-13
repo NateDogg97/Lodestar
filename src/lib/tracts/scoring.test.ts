@@ -23,6 +23,7 @@ import {
   UNKNOWN,
   type NationalSearch,
 } from "./national";
+import { CITY_WIDE_AREAS } from "./crime";
 import { formatArea } from "./index";
 import { areaCriteria, MOVED_TO_AREAS } from "./scoring";
 
@@ -172,6 +173,52 @@ describe("a county-wide crime rate isn't an area's (2026-11-11)", () => {
     expect([...sc.score].map(Math.round)).toEqual([100, 50, 0]);
     const gated = scoreNational(a, search({ criteria, limits }));
     expect([...gated.status]).toEqual([MATCH, UNKNOWN, EXCLUDED]);
+  });
+});
+
+describe("a big city's one crime rate isn't an area's (2026-11-13)", () => {
+  // County 48001: 100 areas on the city's rate (one with 30 people, not counted), 1 on a
+  // town's; county 48003: 99 areas on the same numbers (another agency, or the city's areas
+  // across the line: counted per county).
+  const city = Array.from({ length: 101 }, (_, i) => `48001${String(100 + i).padStart(6, "0")}`);
+  const other = Array.from({ length: 99 }, (_, i) => `48003${String(100 + i).padStart(6, "0")}`);
+  const geoid = [...city, "48001900000", ...other];
+  const n = geoid.length;
+  const at = (i: number) => (i < 101 ? 425 : i === 101 ? 120 : 425);
+  const a = parseNationalAreas({
+    format: "areas-v1",
+    n,
+    columns: {
+      geoid,
+      label: geoid,
+      low_confidence: geoid.map(() => ""),
+      population: geoid.map((_, i) => (i === 0 ? 30 : 4000)),
+      violent_rate: geoid.map((_, i) => at(i)),
+      violent_rate_eb: geoid.map((_, i) => at(i)),
+      property_rate: geoid.map((_, i) => (i === 101 ? 900 : 3075)),
+      property_rate_eb: geoid.map((_, i) => (i === 101 ? 900 : 3075)),
+    },
+  });
+  const counties = countyParts([county("48001", "match", null), county("48003", "match", null)]);
+
+  it(`has no rate on ${CITY_WIDE_AREAS}+ areas of a county: average on crime, unknown for a must-have`, () => {
+    for (const c of ["violent_rate", "violent_rate_eb", "property_rate", "property_rate_eb"]) {
+      const v = a.values.get(c)!;
+      expect(Number.isNaN(v[1])).toBe(true); // the city's
+      expect(Number.isNaN(v[0])).toBe(true); // even the area too small to count
+      expect(Number.isNaN(v[101])).toBe(false); // the town's
+      expect(Number.isNaN(v[150])).toBe(false); // 99 in the next county: under the line
+    }
+    const { criteria, limits } = areaCriteria({ areaWeights: { violent_rate: 1 }, areaDirections: {},
+      areaLimits: { violent_rate: { max: 300 } } });
+    const sc = scoreNational(a, { criteria, limits: [], counties });
+    expect(sc.score[1]).toBe(50);
+    expect(sc.score[101]).toBe(100);
+    const gated = scoreNational(a, { criteria, limits, counties });
+    expect([gated.status[1], gated.status[101], gated.status[150]]).toEqual([UNKNOWN, MATCH, EXCLUDED]);
+    expect(areaLimitResults(a, 1, limits)[0]).toMatchObject({ state: "unknown", value: null });
+    // The "why it ranks" part: no value, no points (counted as average).
+    expect(explainArea(a, 1, { criteria, limits: [], counties }, undefined)[0]).toMatchObject({ value: null, points: null });
   });
 });
 
