@@ -224,9 +224,10 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
   // Bumped by a pick in the list: the map zooms to that county every time.
-  // A linked county is zoomed to once the map is ready.
+  // A linked county is zoomed to once the map is ready. A linked area isn't: its county's
+  // zoom landed after (and over) the area's, so the link opened on the county.
   const [focus, setFocus] = useState<{ fips: string; n: number } | null>(
-    initial.place ? { fips: initial.place, n: 1 } : null,
+    initial.place && !initial.area ? { fips: initial.place, n: 1 } : null,
   );
 
   // Inside a county (plan §9 Phase 8b): its areas instead of its county view.
@@ -336,7 +337,8 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
   const [lookup, setLookup] = useState<Place | null>(null);
   // What the panel's heading and the back links call it: "Results in Austin", "← Austin".
   const lookupName = lookup ? (lookup.near ? `Near ${lookup.name}` : lookup.name) : null;
-  const [fit, setFit] = useState<{ bounds: [number, number, number, number] } | null>(null);
+  // A pick asks the map to go there; `mapFit` below waits for the place's shapes.
+  const [fit, setFit] = useState<{ bounds: [number, number, number, number] | null } | null>(null);
   const nationalState = useNationalAreas(hasAreaFilters || findUsed);
   const placeIndex = useMemo(() => {
     if (!findUsed) return [];
@@ -407,6 +409,13 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
         : null,
     [lookup, areasFile, lookupTopologies],
   );
+  // One camera move per pick: framed once its shapes are in (their full extent), not first
+  // on its areas' centres and again on the shapes. The centres only if no shape could be read.
+  const mapFit = useMemo(() => {
+    if (!fit || !lookup || !lookupTopologies) return null;
+    const bounds = lookupShapes?.bounds ?? fit.bounds;
+    return bounds ? { bounds } : null;
+  }, [fit, lookup, lookupTopologies, lookupShapes]);
   const [lookupHover, setLookupHover] = useState<string[]>([]);
   const baseLookupLayer = useMemo<Omit<LookupLayer, "highlight" | "showAreas"> | null>(() => {
     if (!lookup || !national || !lookupScores || !lookupAreas || !lookupShapes || !lookupCounties) return null;
@@ -796,7 +805,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     setSelectedFips(null);
     setLookupHover([]);
     setLookup(p);
-    if (p.bounds) setFit({ bounds: p.bounds });
+    setFit({ bounds: p.bounds });
     if (wide) setResultsOpen(true);
     else setSheetSnap(SHEET_START);
   };
@@ -1111,7 +1120,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
           ? { lat: national.lat[previewArea], lon: national.lon[previewArea], fly: previewFly }
           : null
       }
-      fit={fit}
+      fit={mapFit}
       lookup={lookupLayer}
       byBestArea={areaMode}
       marks={insideOpen || lookup ? null : resultMarks}
