@@ -1,0 +1,2 @@
+# Never upload locally built area data (git-ignored; ETL machines only, ~157 MB).
+data/tracts

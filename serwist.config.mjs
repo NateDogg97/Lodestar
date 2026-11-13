@@ -6,5 +6,6 @@ export default serwist({
   swDest: "public/sw.js",
   // Tract data (Phase 8) is ~85 MB nationally: never precached. A county's
   // files are cached when it's first explored (runtime rule in src/app/sw.ts).
-  globIgnores: ["public/data/tracts/**/*"],
+  // public/_headers is a host config file: never served, so precaching it would 404.
+  globIgnores: ["public/data/tracts/**/*", "public/_headers"],
 });

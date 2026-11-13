@@ -1,5 +1,8 @@
 import type { MetadataRoute } from "next";
 
+// Required for the static export (output: "export" in next.config.ts).
+export const dynamic = "force-static";
+
 // Lodestar brand kit (brand/nextjs): neutral-950 ground; the icons keep the
 // mark inside the maskable safe zone, so one file serves both purposes.
 export default function manifest(): MetadataRoute.Manifest {
