@@ -115,7 +115,8 @@ For ETL changes, also run `etl/.venv/bin/python -m etl.test_offline`. For law ch
   `rewrites()` in `next.config.ts`, server actions, middleware/proxy and `next/image`
   optimization won't build. Response headers go in `public/_headers`.
   Anything that needs a server goes in a Worker script on `/api/*` (`wrangler.jsonc`), not in
-  Next.js; the pages must keep working offline without it.
+  Next.js. The app keeps working offline; a feature that needs the server may be off or
+  limited offline and should say so.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

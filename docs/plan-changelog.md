@@ -3,6 +3,11 @@
 Dated decisions and progress for `Working Master Plan.md`, newest first. Add an entry here
 when a decision changes or a step lands; the plan itself holds the current state.
 
+- 2026-11-13 — **Phase 14 decisions** (owner): offline still works, with backend features off
+  or limited there; drive time from a routing service behind the Worker if a free tier
+  covers it, else county-to-county; the daily agents are a Claude Code cloud routine on
+  Opus, one normal and one emergency pull request a day, never auto-merged, email through
+  Cloudflare.
 - 2026-11-13 — **Owner's decisions after the Cloudflare move** (§9 Phase 14). **The "no
   backend" rule is revoked** (§2): server-side features are allowed, as a Worker script on
   `/api/*` beside the static export, with D1, KV, Workers AI and the rest open to use.
