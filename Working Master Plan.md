@@ -16,7 +16,8 @@
 >   Worker has fewer moving parts. Response headers move from `next.config.ts` to
 >   `public/_headers`; `NEXT_PUBLIC_DATA_URL` moves from a Vercel env var to the committed
 >   `.env.production`. The R2 bucket and both monthly workflows are unchanged. Cutover is
->   staged for zero downtime and instant rollback; none of it is done yet.
+>   staged for zero downtime and instant rollback. **Cut over 2026-11-13**: production is the
+>   Worker; the Vercel project stays for a week as the rollback (Phase 13 step 6).
 > - 2026-11-11 — **Schools by district; no crime rate from a county-wide sheriff** (owner agreed
 >   to both after the accuracy check in §11). **Schools:** an area's schools are only those
 >   standing inside its district boundary (elementary or unified for grades 3–8, secondary or
@@ -722,7 +723,7 @@ structured. Think SQL, not LLM.
 | Color scale | `d3-scale-chromatic` | |
 | Filter state | **URL query params** | Free shareable links, back/forward, and "saved searches" with no auth and no DB |
 | Shortlist | `localStorage` | |
-| Hosting | Cloudflare Worker with Static Assets (Next.js static export in `out/`); Vercel until the §9 Phase 13 cutover | Static files on a CDN. No Worker script and no OpenNext: nothing runs server-side. |
+| Hosting | Cloudflare Worker with Static Assets (Next.js static export in `out/`) (cut over from Vercel 2026-11-13, §9 Phase 13) | Static files on a CDN. No Worker script and no OpenNext: nothing runs server-side. |
 | Database | **None for v1** | If needed later: Neon (100 CU-hours + 0.5 GB free, fails soft by suspending compute). Note Supabase's free tier pauses projects after a week of inactivity, taking Auth and PostgREST down with it. |
 | ETL | **Python** (`pandas` + `geopandas`) | Cuts against the JS stack, but saves days on spatial joins, projections, and centroid math. Build-time only — never touches app runtime. |
 | PWA | Service worker + Serwist precache + manifest | Data is static files, so full offline support is nearly free |
@@ -2209,7 +2210,7 @@ limits are as published; a part ranked on an estimate ≥5% off says "ranked as 
 
 **Still open**
 - [ ] **Reach production.** This work was done in a fork (`zamays/Lodestar`); production
-      deploys from `NateDogg97/Lodestar` (Vercel until the Phase 13 cutover, then the Cloudflare Worker) and its R2 bucket. A merged PR ships the
+      deploys from `NateDogg97/Lodestar` (the Cloudflare Worker since the Phase 13 cutover) and its R2 bucket. A merged PR ships the
       code, `counties.json` and `laws.json`; the parent's `tracts-refresh` workflow (monthly,
       or run by hand) then publishes `areas.json` with the `*_eb` columns — or the owner runs
       `etl.tracts.upload` with the R2 keys. Until then areas rank on published values (the
@@ -2885,7 +2886,7 @@ Cutover (zero downtime, instant rollback):
       starts no other workflow). Cloudflare Workers Builds was tried first and would not
       connect to the repo (the owner has two Cloudflare accounts); needs the
       `CLOUDFLARE_API_TOKEN` repo secret.
-- [ ] 5. Cutover: the Worker route `www.lodestarmap.com/*` is in `wrangler.jsonc` (inert while
+- [x] 5. Cutover (done 2026-11-13, no gap): the Worker route `www.lodestarmap.com/*` is in `wrangler.jsonc` (inert while
       the www DNS record is "DNS only"); the bare domain has no route, a Cloudflare redirect
       rule sends it to www (Vercel 308-redirected it; the service worker and installed PWAs
       live on the www origin, so www stays canonical). Then switch the www and apex DNS
@@ -2893,6 +2894,14 @@ Cutover (zero downtime, instant rollback):
       Checked 2026-11-13 before the switch: the Action's first deploy matches production
       (data byte-identical, 31 precached URLs 200) and Cloudflare's certificate already covers
       `lodestarmap.com` and `*.lodestarmap.com`.
+      After the switch: www is served by the Worker (pages, service worker and data
+      byte-identical to the QA'd `workers.dev` build; 31 precached URLs 200). Two dashboard
+      settings were needed: **Always Use HTTPS** on (Vercel had redirected plain HTTP), and
+      the apex redirect rule rewritten as a custom expression (hostname equals
+      `lodestarmap.com`, dynamic target `concat("https://www.lodestarmap.com",
+      http.request.uri.path)`, 301, preserve query string): the wildcard-pattern template was
+      saved and enabled but never applied, so Vercel was still answering the bare domain.
+      SSL/TLS mode Full. Both live only in the Cloudflare dashboard, not in the repo.
 - [ ] 6. Watch for a week; then remove the Vercel project, `vercel.json` and `.vercelignore`,
       and replace the routes with Worker Custom Domains if desired.
 

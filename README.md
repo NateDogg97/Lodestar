@@ -80,8 +80,8 @@ API keys (Census, BEA, BLS, EIA) are read from the environment; `etl/.env.exampl
 - The site is a static export (`out/`) served by a Cloudflare Worker with static assets
   (`wrangler.jsonc`; headers in `public/_headers`). The host must **redeploy on every push to
   `main`** (`.github/workflows/deploy.yml`, secret `CLOUDFLARE_API_TOKEN`): the monthly laws refresh publishes new data by
-  committing to the repo. `npm run deploy` deploys by hand. Hosting is moving over from Vercel
-  (plan §9 Phase 13); until the cutover, Vercel still serves production.
+  committing to the repo. `npm run deploy` deploys by hand. Hosting moved from Vercel on
+  2026-11-13 (plan §9 Phase 13); the Vercel project stays briefly as the rollback.
 - Add `EIA_API_KEY` as a GitHub Actions secret (the refresh falls back to the EIA's shared
   demo key without it), plus the Census/BEA/BLS keys if the county ETL ever runs in CI.
 - The site URL for share cards is `SITE_URL` in `src/app/layout.tsx` (https://www.lodestarmap.com;
