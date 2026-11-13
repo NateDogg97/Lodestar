@@ -2885,12 +2885,14 @@ Cutover (zero downtime, instant rollback):
       starts no other workflow). Cloudflare Workers Builds was tried first and would not
       connect to the repo (the owner has two Cloudflare accounts); needs the
       `CLOUDFLARE_API_TOKEN` repo secret.
-- [ ] 5. Cutover: add Worker routes for `lodestarmap.com/*` and `www.lodestarmap.com/*` while
-      the DNS records are still "DNS only" (routes are inert until traffic is proxied), add an
-      apex-to-www redirect rule (today Vercel 308-redirects apex to www; the service worker and
-      installed PWAs live on the www origin, so www must stay canonical), then switch the two
-      DNS records to Proxied. Rollback = switch them back to DNS only (Vercel is still
-      deployed).
+- [ ] 5. Cutover: the Worker route `www.lodestarmap.com/*` is in `wrangler.jsonc` (inert while
+      the www DNS record is "DNS only"); the bare domain has no route, a Cloudflare redirect
+      rule sends it to www (Vercel 308-redirected it; the service worker and installed PWAs
+      live on the www origin, so www stays canonical). Then switch the www and apex DNS
+      records to Proxied. Rollback = switch them back to DNS only (Vercel is still deployed).
+      Checked 2026-11-13 before the switch: the Action's first deploy matches production
+      (data byte-identical, 31 precached URLs 200) and Cloudflare's certificate already covers
+      `lodestarmap.com` and `*.lodestarmap.com`.
 - [ ] 6. Watch for a week; then remove the Vercel project, `vercel.json` and `.vercelignore`,
       and replace the routes with Worker Custom Domains if desired.
 
