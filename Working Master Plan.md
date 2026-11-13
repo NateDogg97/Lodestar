@@ -2879,9 +2879,12 @@ Cutover (zero downtime, instant rollback):
       precached URLs 200; HSTS was missing and is now in `public/_headers`; range requests
       return the whole file, which nothing in the app uses), Vercel production vs `workers.dev`: status codes, headers,
       every precached URL.
-- [ ] 4. Merge to main (Vercel keeps serving; it builds static exports too). Connect the repo in
-      Cloudflare Workers Builds so pushes to main deploy the Worker (the monthly laws refresh
-      commits to main and must still redeploy the site).
+- [ ] 4. Merge to main (Vercel keeps serving; it builds static exports too). Merged 2026-11-13
+      (PR #6). Pushes to main deploy the Worker from `.github/workflows/deploy.yml`, which also
+      runs after the monthly laws refresh (its commit, pushed with the workflow's own token,
+      starts no other workflow). Cloudflare Workers Builds was tried first and would not
+      connect to the repo (the owner has two Cloudflare accounts); needs the
+      `CLOUDFLARE_API_TOKEN` repo secret.
 - [ ] 5. Cutover: add Worker routes for `lodestarmap.com/*` and `www.lodestarmap.com/*` while
       the DNS records are still "DNS only" (routes are inert until traffic is proxied), add an
       apex-to-www redirect rule (today Vercel 308-redirects apex to www; the service worker and
