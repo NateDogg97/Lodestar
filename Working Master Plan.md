@@ -2656,18 +2656,31 @@ The app keeps working offline; a feature that needs the backend may be off or li
 offline, and says so (owner, 2026-11-13). Each item is built by a subagent, reviewed in the
 main session, and checked by hand by the owner before merging.
 
-- [ ] **14a. No rank or shade on one city-wide crime rate.** An area whose crime rate is a
-      big city agency's single figure shared by 100+ areas (14% of areas, §11) is treated
-      like `crime_wide`: average on crime, unknown for a must-have, not shaded; the area
-      page shows the figure as the city's. Confirm the 100-area threshold against the
-      20+ group (30% of areas) when building.
+- [x] **14a. Crime: out of the filters; shown only where a figure exists.** Built 2026-11-13
+      (PR #13), app only, no upload. It began as "no rank or shade on one city-wide rate";
+      measured, that left about 40% of areas with no crime score, and the owner decided crime
+      reports aren't reliable enough to rank or rule out areas by. Violent and property crime
+      are no longer area priorities, must-haves, watch-outs or a "Sort and shade by" measure;
+      old searches and links load with the crime part dropped. The area page shows crime by
+      what exists (`crimeView`, `src/lib/tracts/crime.ts`): the area's own city or town
+      agency's rate as before; one agency's rate over `CITY_WIDE_AREAS` (100) or more areas
+      of the county as the whole city's figure (agency, people served, areas sharing it);
+      otherwise (a sheriff's county-wide `crime_wide` rate, or none) no rate, and a "Show
+      the nearest crime figures" button listing the agency that polices the area and every
+      other agency in the county, from the county file. County police forces over 100+ areas
+      count as city-wide. There was no county-level crime metric. Measured on all 82,648
+      residential areas: city agencies 16.8% at 100+ (32.9% at 20+, 22.0% at 50+), county
+      agencies 2.8% more. Open items are under §11.
 - [ ] **14b. Rural cost of living.** Derive a state non-metro RPP (the state's figure minus
       its metros, expenditure-weighted) for the ~62% of counties that carry the state's
       blended value, and label it in `rpp_geo_level`. Where it can't be derived, keep the
       state value and show a "state estimate" note in the results and on the county page.
-- [ ] **14c. Climate comparison on area pages.** The county panel's "Compare with…" climate
-      overlay, on the area page too, drawn from the area's county (there is no
-      area-level climate data); say so on the page.
+- [x] **14c. Climate comparison on area pages.** Built 2026-11-13 (PR #12). The area page's
+      Climate section shows the whole-county note, "Compare with another county…", the
+      climate type with the 8 key figures, and the temperature chart by default; the other
+      charts, the Chart/Table switch and the source line are behind "Show details". It
+      reuses `ClimateTab` through a `more` option; the comparison county is shared with the
+      county tab. There is no area-level climate data, and the section says so.
 - [ ] **14d. Climate like a place I know** (from §10): pick a county; score others by how
       close their monthly high, low and precipitation curves are.
 - [ ] **14e. Distance from a place you pick.** Two measures against an anchor the person
@@ -2676,7 +2689,16 @@ main session, and checked by hand by the owner before merging.
       **Drive-time source (owner, 2026-11-13):** a routing service behind the Worker, exact
       from the point the person picks, results kept in KV — only if a free API or free tier
       covers it. If none does, fall back to drive times between counties (a precomputed
-      table on R2, anchor snapped to its county). Research in progress.
+      table on R2, anchor snapped to its county). **Researched 2026-11-13:** no service
+      clearly qualifies. TravelTime's free key does one-to-all-counties in one request, but
+      caps at 4 hours' driving, is licensed for "research, development and evaluation", and
+      its coast-to-coast behaviour and caching terms are unconfirmed; OpenRouteService
+      (about 500 lookups a day) is undocumented at continental distance; Google, Mapbox,
+      HERE and the rest allow a handful of lookups a month or forbid storing results. A
+      county-to-county drive-time table already exists, free (Zenodo record 13906981,
+      CC-BY-4.0, OSRM car profile, October 2024, all 3,144 counties; not yet downloaded or
+      checked). **Plan:** build on that table first (certain, offline, needs a credit
+      line), then test TravelTime with a free key as an upgrade for exact addresses.
 - [ ] **14f. Crime: pool three years; murder and robbery apart** — the two open items under
       §11 "Crime: what the number can and can't claim".
 - [ ] **14g. Daily check and "this number looks wrong".** A report button on county and area
@@ -2776,7 +2798,19 @@ Not in MVP. Do not build these until the above ships.
             sentinels (`python -m etl.tracts.sentinels --crime`), then a full refresh.
       - [ ] **Murder and robbery apart from assault and rape** (the incident files have the
             offense codes): Chelsea would read "no murders or robberies in 3 years".
-      - [ ] *(Decided 2026-11-13: stop ranking and shading on it — §9 Phase 14a.)*
+      - [x] *(Decided and built 2026-11-13, §9 Phase 14a: crime is out of ranking and
+            filtering; shown where the area or its city has a figure, otherwise the nearest
+            figures on request.)* Still open: the 100-area count is within one county, so
+            about 140 areas of a city across a county line show its rate as their own
+            (Kansas City in Clay and Cass, Oklahoma City in Canadian and Cleveland, Dallas in
+            Collin and Denton, Houston in Fort Bend and Montgomery, Austin in Williamson,
+            Atlanta in DeKalb); the fix is an ETL count of `(state, crime_agency)` across a
+            state's county files, and an upload — do it with 14f. areas.json still carries
+            crime columns nothing reads. Data seen: Denver's rate differs between its own
+            county file (880/4,113) and Arapahoe's (876/4,103); "Bridgeport", CT shares one
+            rate across 4 planning regions. The results audit's "$400k budget, schools"
+            scenario now surfaces a mobile-home park (Near East Rochester, NY) once crime
+            isn't weighed: a budget-scoring weakness to look at. Before the decision:
             A big city's one rate over 100+ areas (14% of areas) is still ranked and shaded
             as each area's; the area page says it's one rate. No public national source is
             finer than the agency; city open-data incident feeds would be city by city.
