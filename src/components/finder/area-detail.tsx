@@ -1010,8 +1010,8 @@ function ClimateSection({ countyName, ...climate }: AreaClimateContext & { count
         more ? (
           <>
             <p className="text-label text-neutral-600 dark:text-neutral-400">
-              Weather stations are too sparse to measure climate area by area. This is the climate of the
-              whole county, so it applies to every area in it.
+              Lodestar has climate figures for whole counties only, taken from weather stations near
+              where most of the county&rsquo;s people live. Every area in the county shows the same climate.
             </p>
             <ClimateTab {...climate} />
           </>
