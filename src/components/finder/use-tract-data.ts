@@ -96,7 +96,10 @@ export function useCountyAreas(fips: string | null): CountyAreasState {
       cancelled = true;
     };
   }, [fips]);
-  return fips ? state : { status: "idle" };
+  if (!fips) return { status: "idle" };
+  // Until this county's own state is set, the last one is still held: never hand it out as
+  // this county's (the map would draw the old county's areas and zoom back to it first).
+  return state.status !== "idle" && state.fips === fips ? state : { status: "loading", fips };
 }
 
 const shapesPending = new Map<string, Promise<Topology>>();

@@ -161,7 +161,18 @@ const FILL_COLOR = [
   ["interpolate", ["linear"], ["feature-state", "rel"], ...SCORE_STOPS],
   UNKNOWN_COLOR,
 ] as unknown as ExpressionSpecification;
-const FILL_OPACITY: ExpressionSpecification = [
+
+/**
+ * How solid the score colors are — counties, areas inside a county, a looked-up place's
+ * areas: a wash, so roads and place names read through, as a measure's shading already
+ * was (owner, 2026-11-13; was 0.85 / 0.8 / 0.75). The dark basemap swallows more of a
+ * color, so it gets a little more. The legends draw their scale at the same opacity.
+ */
+const scoreOpacity = (dark: boolean) => (dark ? 0.6 : 0.5);
+/** A top county with no score: grey, lighter still (was 0.6). */
+const unscoredOpacity = (dark: boolean) => (dark ? 0.4 : 0.35);
+
+const fillOpacity = (dark: boolean): ExpressionSpecification => [
   "case",
   // The county you're inside: its areas are drawn instead, and the blank ones stay blank.
   ["boolean", ["feature-state", "inside"], false],
@@ -172,8 +183,8 @@ const FILL_OPACITY: ExpressionSpecification = [
   ["!", ["boolean", ["feature-state", "top"], false]],
   0,
   ["==", ["typeof", ["feature-state", "rel"]], "number"],
-  0.85,
-  0.6,
+  scoreOpacity(dark),
+  unscoredOpacity(dark),
 ];
 
 /**
@@ -202,7 +213,7 @@ export interface InsideLayer {
   onSelectArea: (geoid: string) => void;
 }
 
-/** How solid a measure's shading is (score colors stay at 0.8). */
+/** How solid a measure's shading is (owner, 2026-11-10; score colors: `scoreOpacity`). */
 const MEASURE_OPACITY = 0.45;
 const AREA_STOPS = [0, 0.2, 0.4, 0.6, 0.8, 1].flatMap((t) => [t, interpolateViridis(t)]);
 const AREA_FILL = [
@@ -424,7 +435,7 @@ export default function CountyMap({
           m.addSource("counties", { type: "geojson", data: shapes.counties, promoteId: "GEOID" });
           m.addSource("states", { type: "geojson", data: shapes.states });
           m.addLayer(
-            { id: "county-fill", type: "fill", source: "counties", paint: { "fill-color": FILL_COLOR, "fill-opacity": FILL_OPACITY } },
+            { id: "county-fill", type: "fill", source: "counties", paint: { "fill-color": FILL_COLOR, "fill-opacity": fillOpacity(dark) } },
             firstLabel,
           );
           m.addLayer(
@@ -613,7 +624,7 @@ export default function CountyMap({
     map.setFeatureState({ source: "counties", id: insideFips }, { inside: true });
     map.addSource("tracts", { type: "geojson", data: fc, promoteId: "GEOID" });
     map.addLayer({ id: "tract-fill", type: "fill", source: "tracts",
-      paint: { "fill-color": AREA_FILL, "fill-opacity": 0.8 } }, firstLabel);
+      paint: { "fill-color": AREA_FILL, "fill-opacity": scoreOpacity(dark) } }, firstLabel);
     map.addLayer({ id: "tract-line", type: "line", source: "tracts",
       paint: { "line-color": dark ? "#0a0a0a" : "#ffffff", "line-width": 0.6, "line-opacity": 0.8 } }, firstLabel);
     map.addLayer({ id: "tract-hover", type: "line", source: "tracts",
@@ -650,7 +661,7 @@ export default function CountyMap({
       insidePalette === "score" ? AREA_SCORE_FILL : insidePalette === "measure" ? AREA_FILL : "rgba(0,0,0,0)",
     );
     // A measure is a light wash, so streets and names read through it (owner, 2026-11-10).
-    map.setPaintProperty("tract-fill", "fill-opacity", insidePalette === "measure" ? MEASURE_OPACITY : 0.8);
+    map.setPaintProperty("tract-fill", "fill-opacity", insidePalette === "measure" ? MEASURE_OPACITY : scoreOpacity(dark));
     // Unshaded, the lines are the areas: drawn in ink, since there's no fill to cut through.
     const plain = insidePalette === "none";
     map.setPaintProperty("tract-line", "line-color", plain ? (dark ? "#e5e5e5" : "#262626") : dark ? "#0a0a0a" : "#ffffff");
@@ -690,11 +701,10 @@ export default function CountyMap({
     map.fitBounds([[w, s], [e, n]], { padding: { top: pad, left: pad, right: pad, bottom: inset + pad }, maxZoom: 13, duration: 600 });
   };
 
-  // A looked-up place: its areas and its outline, framed once per place.
+  // A looked-up place: its areas and its outline. The `fit` prop frames it, once per pick.
   const lookupKey = lookup?.key ?? null;
   const lookupShapes = lookup?.shapes ?? null;
   const lookupCounties = lookup?.counties ?? null;
-  const framedLookup = useRef<string | null>(null);
   useEffect(() => {
     const map = mapRef.current;
     if (!ready || !map || !lookupKey || !lookupShapes || !lookupCounties) return;
@@ -707,7 +717,7 @@ export default function CountyMap({
     map.addSource("lookup-areas", { type: "geojson", data: lookupShapes.areas, promoteId: "GEOID" });
     map.addSource("lookup-outline", { type: "geojson", data: lookupShapes.outline });
     map.addLayer({ id: "lookup-fill", type: "fill", source: "lookup-areas",
-      paint: { "fill-color": LOOKUP_FILL, "fill-opacity": 0.75 } }, firstLabel);
+      paint: { "fill-color": LOOKUP_FILL, "fill-opacity": scoreOpacity(dark) } }, firstLabel);
     map.addLayer({ id: "lookup-line", type: "line", source: "lookup-areas",
       paint: { "line-color": paper, "line-width": 0.6, "line-opacity": 0.8 } }, firstLabel);
     // The place's own edge, over everything: a light casing keeps it readable on any fill.
@@ -721,10 +731,6 @@ export default function CountyMap({
       paint: { "line-color": ink,
         "line-width": ["case",
           ["any", ["boolean", ["feature-state", "hover"], false], ["boolean", ["feature-state", "over"], false]], 3.5, 0] } });
-    if (framedLookup.current !== lookupKey) {
-      framedLookup.current = lookupKey;
-      frameLookup(map, lookupShapes.bounds);
-    }
     return () => {
       for (const id of ["lookup-hover", "lookup-outline", "lookup-outline-casing", "lookup-line", "lookup-fill"]) {
         if (map.getLayer(id)) map.removeLayer(id);
@@ -735,10 +741,6 @@ export default function CountyMap({
       }
     };
   }, [ready, lookupKey, lookupShapes, lookupCounties, dark]);
-  // No place: the next lookup of the same one frames it again.
-  useEffect(() => {
-    if (!lookupKey) framedLookup.current = null;
-  }, [lookupKey]);
 
   // Its areas show while its list does; with one of them open, only the outline stays.
   const lookupShowAreas = lookup?.showAreas ?? false;
@@ -936,17 +938,7 @@ export default function CountyMap({
     const map = mapRef.current;
     if (!ready || !map || !fit || fitted.current === fit) return;
     fitted.current = fit;
-    const [w, s, e, n] = fit.bounds;
-    const height = map.getContainer().clientHeight;
-    const inset = Math.min(latest.current.bottomInset, height * 0.6);
-    const pad = Math.max(16, Math.min(60, (height - inset) / 6));
-    map.fitBounds(
-      [
-        [w, s],
-        [e, n],
-      ],
-      { padding: { top: pad, left: pad, right: pad, bottom: inset + pad }, maxZoom: 12, duration: 600 },
-    );
+    frameLookup(map, fit.bounds);
   }, [ready, fit]);
 
   // Panels opening or closing change the map's size.
@@ -971,7 +963,7 @@ export default function CountyMap({
           {error}
         </p>
       )}
-      {ready && inside ? inside.legend && inside.palette !== "none" && <AreaLegend {...inside.legend} palette={inside.palette} /> : ready && lookup?.showAreas && lookup.legend ? <AreaLegend {...lookup.legend} palette="score" /> : ready && relative.size > 0 && <Legend count={relative.size} byBestArea={byBestArea} />}
+      {ready && inside ? inside.legend && inside.palette !== "none" && <AreaLegend {...inside.legend} palette={inside.palette} dark={dark} /> : ready && lookup?.showAreas && lookup.legend ? <AreaLegend {...lookup.legend} palette="score" dark={dark} /> : ready && relative.size > 0 && <Legend count={relative.size} byBestArea={byBestArea} dark={dark} />}
       {basemapOnline === false && (
         <p className="pointer-events-none absolute bottom-[calc(var(--map-inset)+0.5rem)] left-2 rounded bg-white/85 px-2 py-1 text-caption text-neutral-700 dark:bg-neutral-900/85 dark:text-neutral-300">
           Offline — showing county lines only
@@ -981,7 +973,9 @@ export default function CountyMap({
   );
 }
 
-function AreaLegend({ title, low, high, palette }: { title: string; low: string; high: string; palette: "score" | "measure" }) {
+// The legends' scale is drawn at the map's own opacity, on a card about the basemap's color,
+// so a swatch looks like what's on the map.
+function AreaLegend({ title, low, high, palette, dark }: { title: string; low: string; high: string; palette: "score" | "measure"; dark: boolean }) {
   const stops = palette === "score" ? SCORE_STOPS : AREA_STOPS;
   return (
     <div className="pointer-events-none absolute right-2 bottom-[calc(var(--map-inset)+2rem)] w-52 rounded-md bg-white/90 px-2.5 py-2 text-caption text-neutral-700 shadow-sm dark:bg-neutral-900/90 dark:text-neutral-300">
@@ -990,7 +984,7 @@ function AreaLegend({ title, low, high, palette }: { title: string; low: string;
         className="mt-1 h-2 rounded-sm"
         style={{
           background: `linear-gradient(to right, ${stops.filter((_, i) => i % 2 === 1).join(", ")})`,
-          opacity: palette === "measure" ? MEASURE_OPACITY + 0.25 : undefined,
+          opacity: palette === "measure" ? MEASURE_OPACITY : scoreOpacity(dark),
         }}
       />
       <div className="mt-0.5 flex justify-between text-neutral-500">
@@ -1001,13 +995,16 @@ function AreaLegend({ title, low, high, palette }: { title: string; low: string;
   );
 }
 
-function Legend({ count, byBestArea }: { count: number; byBestArea: boolean }) {
+function Legend({ count, byBestArea, dark }: { count: number; byBestArea: boolean; dark: boolean }) {
   return (
     <div className="pointer-events-none absolute right-2 bottom-[calc(var(--map-inset)+2rem)] w-48 rounded-md bg-white/90 px-2.5 py-2 text-caption text-neutral-700 shadow-sm dark:bg-neutral-900/90 dark:text-neutral-300">
       <p className="font-medium">{byBestArea ? `${count} counties, by their best area` : `Top ${count} results`}</p>
       <div
         className="mt-1 h-2 rounded-sm"
-        style={{ background: `linear-gradient(to right, ${SCORE_STOPS.filter((_, i) => i % 2 === 1).join(", ")})` }}
+        style={{
+          background: `linear-gradient(to right, ${SCORE_STOPS.filter((_, i) => i % 2 === 1).join(", ")})`,
+          opacity: scoreOpacity(dark),
+        }}
       />
       <div className="mt-0.5 flex justify-between text-neutral-500">
         <span>{byBestArea ? "weaker match" : "weakest of these"}</span>

@@ -52,6 +52,7 @@ import { WatchLine } from "./area-results";
 import type { AreaRankingView } from "./inside-view";
 import { usePollutionStatus } from "./use-tract-data";
 import { isGold, scoreColor, trackOverflow } from "./score-colors";
+import { typicalMark } from "./typical-mark";
 
 /**
  * An area's page below its name (owner, 2026-10-04, mockup round 3 "C"): every
@@ -269,7 +270,9 @@ function CompareBar({
   const better = lowerIsBetter ? r < 0.9 : r > 1.1;
   const worse = lowerIsBetter ? r > 1.1 : r < 0.9;
   const color = neutral ? "#94a3b8" : better ? scoreColor(92) : worse ? scoreColor(40) : scoreColor(72);
-  const mark = (100 * typical) / top;
+  const { at, showStart, showEnd } = typicalMark(typical, top, "0", maxText);
+  // The tick and the ▲ under it share one position, held half an arrow in from either end.
+  const markLeft = `clamp(0.3125rem, ${at}%, calc(100% - 0.3125rem))`;
   return (
     <div className="space-y-1.5">
       <div className="flex items-baseline justify-between gap-3 text-label">
@@ -285,14 +288,21 @@ function CompareBar({
             <span className="block h-full rounded-full" style={{ width: `${Math.max(2, (100 * value) / top)}%`, backgroundColor: color }} />
           )}
         </Track>
-        <span aria-hidden className="absolute -top-1 h-4 w-0.5 bg-neutral-900 dark:bg-neutral-100" style={{ left: `${mark}%` }} />
+        <span aria-hidden className="absolute -top-1 h-4 w-0.5 -translate-x-1/2 bg-neutral-900 dark:bg-neutral-100" style={{ left: markLeft }} />
       </span>
-      <span className="relative block h-4 text-caption text-neutral-500 dark:text-neutral-400">
-        <span className="absolute left-0">0</span>
-        <span className="absolute -translate-x-1/2 whitespace-nowrap" style={{ left: `${Math.min(80, Math.max(20, mark))}%` }}>
-          ▲ typical US area {typicalText}
+      {/* The ▲ under the tick between the scale's ends; the caption on its own line, centred
+          under the arrow but never past either end (cqw: this block's width). */}
+      <span className="@container block text-caption text-neutral-500 dark:text-neutral-400">
+        <span className="relative block h-4">
+          {showStart && <span className="absolute left-0">0</span>}
+          <span aria-hidden className="absolute w-2.5 -translate-x-1/2 text-center" style={{ left: markLeft }}>
+            ▲
+          </span>
+          {showEnd && <span className="absolute right-0">{maxText}</span>}
         </span>
-        <span className="absolute right-0">{maxText}</span>
+        <span className="block w-max max-w-full" style={{ translate: `clamp(0px, calc(${at}cqw - 50%), calc(100cqw - 100%))` }}>
+          typical US area {typicalText}
+        </span>
       </span>
     </div>
   );
