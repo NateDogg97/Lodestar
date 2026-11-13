@@ -79,7 +79,7 @@ API keys (Census, BEA, BLS, EIA) are read from the environment; `etl/.env.exampl
 
 - The site is a static export (`out/`) served by a Cloudflare Worker with static assets
   (`wrangler.jsonc`; headers in `public/_headers`). The host must **redeploy on every push to
-  `main`** (Cloudflare Workers Builds): the monthly laws refresh publishes new data by
+  `main`** (`.github/workflows/deploy.yml`, secret `CLOUDFLARE_API_TOKEN`): the monthly laws refresh publishes new data by
   committing to the repo. `npm run deploy` deploys by hand. Hosting is moving over from Vercel
   (plan §9 Phase 13); until the cutover, Vercel still serves production.
 - Add `EIA_API_KEY` as a GitHub Actions secret (the refresh falls back to the EIA's shared

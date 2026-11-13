@@ -1,0 +1,47 @@
+# Build the static export and deploy it to the Cloudflare Worker `lodestar`
+# (wrangler.jsonc) on every push to main.
+#
+# The monthly laws refresh pushes its commit with the workflow's own token, and
+# GitHub does not start other workflows from such a push, so this also runs
+# when that workflow finishes. Run it by hand from the Actions tab with
+# "Run workflow".
+#
+# Secrets: CLOUDFLARE_API_TOKEN (the "Edit Cloudflare Workers" template) and
+# R2_ACCOUNT_ID (the Cloudflare account, shared with the data workflows).
+
+name: Deploy site
+
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: ["Refresh law table"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-site
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Deploy
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
