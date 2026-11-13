@@ -5,7 +5,7 @@
 > If something here conflicts with what you actually built, the code is right and this file is
 > stale — fix the file.
 >
-> Last updated: 2026-11-12
+> Last updated: 2026-11-13
 >
 > **Changelog**
 > - 2026-11-12 — **Hosting moves from Vercel to a Cloudflare Worker** (§9 Phase 13; owner's
@@ -2872,7 +2872,7 @@ What changes in the repo:
 Cutover (zero downtime, instant rollback):
 - [x] 1. Branch `cloudflare-workers`: static export + Workers config; lint, typecheck, test,
       build pass; local `wrangler dev` parity check against production.
-- [ ] 2. First deploy to the `workers.dev` URL (done 2026-11-12:
+- [x] 2. (Owner QA passed 2026-11-13.) First deploy to the `workers.dev` URL (done 2026-11-12:
       https://lodestar.nathaniel-fe3.workers.dev; production domain untouched); owner QA on phone
       and desktop: map, filters, results, place search, an area page, install, offline.
 - [x] 3. Automated parity check (2026-11-12: no blockers; data files byte-identical, all 31
