@@ -2652,6 +2652,9 @@ Risks:
 
 Decided by the owner on 2026-11-13. Work the items in this order; each is its own pull
 request. "Backend" below means a Worker script on `/api/*` (§2, rule revoked).
+The app keeps working offline; a feature that needs the backend may be off or limited
+offline, and says so (owner, 2026-11-13). Each item is built by a subagent, reviewed in the
+main session, and checked by hand by the owner before merging.
 
 - [ ] **14a. No rank or shade on one city-wide crime rate.** An area whose crime rate is a
       big city agency's single figure shared by 100+ areas (14% of areas, §11) is treated
@@ -2670,10 +2673,10 @@ request. "Backend" below means a Worker script on `/api/*` (§2, rule revoked).
 - [ ] **14e. Distance from a place you pick.** Two measures against an anchor the person
       chooses ("my parents"): straight-line miles ("within 100 miles") and drive time
       ("within 2 hours"). Straight-line needs no new data (county and area centres).
-      **Open: the drive-time source** — a precomputed county-to-county table on R2 (built
-      once with a routing engine over OpenStreetMap; works offline, anchor snapped to its
-      county) or a routing API behind the Worker with results kept in KV (exact anchor,
-      online only, needs a key and has daily limits). Research both before building.
+      **Drive-time source (owner, 2026-11-13):** a routing service behind the Worker, exact
+      from the point the person picks, results kept in KV — only if a free API or free tier
+      covers it. If none does, fall back to drive times between counties (a precomputed
+      table on R2, anchor snapped to its county). Research in progress.
 - [ ] **14f. Crime: pool three years; murder and robbery apart** — the two open items under
       §11 "Crime: what the number can and can't claim".
 - [ ] **14g. Daily check and "this number looks wrong".** A report button on county and area
@@ -2681,9 +2684,11 @@ request. "Backend" below means a Worker script on `/api/*` (§2, rule revoked).
       scheduled run checks the app (pages and data files answer, the R2 data is fresh, the
       refresh workflows passed) and reads new reports; when something is wrong it starts AI
       agents that investigate and open a pull request with a fix, never merging it. The
-      owner gets an email for each pull request an agent opens. **Open:** what runs the
-      agents (a scheduled Claude Code cloud routine, or a GitHub Action calling the Claude
-      API with a key), how the email is sent, and a daily cap on runs and spend.
+      owner gets an email for each pull request an agent opens. **Decided (owner, 2026-11-13):** a scheduled
+      Claude Code cloud routine on the owner's Claude plan, running on Opus (Fable is kept
+      for manual sessions); it may start Opus and Sonnet subagents for a large problem. At
+      most one normal and one emergency pull request a day, never merged automatically.
+      Email goes out through Cloudflare's email sending.
 
 Candidates the owner has not decided (Cloudflare features to learn on): Web Analytics,
 a preview link per pull request, logs and tracing on the `/api` Worker, short share links
