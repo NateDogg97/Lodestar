@@ -30,6 +30,12 @@ interface Props {
   data: CountyDataset;
   compareFips: string | null;
   onCompare: (fips: string | null) => void;
+  /**
+   * The area page's compact layout: false shows the compare picker, climate type, key
+   * numbers and the temperature chart only; true adds the other charts, the Chart/Table
+   * switch and the source line. Leave unset for the county tab (everything).
+   */
+  more?: boolean;
 }
 
 const STATION_CAUTION_MI = 25;
@@ -59,7 +65,7 @@ const TILES: { key: keyof ClimateSummary; label: string; format: (v: number) => 
   { key: "snow", label: "Snowfall", format: (v) => `${v.toFixed(1)} in` },
 ];
 
-export function ClimateTab({ fips, data, compareFips, onCompare }: Props) {
+export function ClimateTab({ fips, data, compareFips, onCompare, more = true }: Props) {
   const state = useClimateData();
   const [view, setView] = useState<"chart" | "table">("chart");
 
@@ -100,6 +106,7 @@ export function ClimateTab({ fips, data, compareFips, onCompare }: Props) {
     <div className="viz-root space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <ComparePicker data={data} currentFips={fips} compareFips={other ? compareFips : null} name={name} onCompare={onCompare} />
+        {more && (
         <div role="group" aria-label="Show as" className="inline-flex rounded-md border border-neutral-300 text-xs dark:border-neutral-700">
           {(["chart", "table"] as const).map((v) => (
             <button
@@ -117,6 +124,7 @@ export function ClimateTab({ fips, data, compareFips, onCompare }: Props) {
             </button>
           ))}
         </div>
+        )}
       </div>
 
       {counties.length > 1 && (
@@ -157,9 +165,9 @@ export function ClimateTab({ fips, data, compareFips, onCompare }: Props) {
 
       <KeyNumbers counties={counties} />
 
-      {view === "chart" ? <Charts counties={counties} /> : <ClimateTable counties={counties} />}
+      {view === "table" && more ? <ClimateTable counties={counties} /> : <Charts counties={counties} part={more ? "all" : "first"} />}
 
-      <SourceLine climate={climate} fips={fips} compareFips={other ? compareFips : null} name={name} />
+      {more && <SourceLine climate={climate} fips={fips} compareFips={other ? compareFips : null} name={name} />}
     </div>
   );
 }
@@ -189,9 +197,9 @@ function KeyNumbers({ counties }: { counties: { name: string; color: string; c: 
   );
 }
 
-function Charts({ counties }: { counties: { name: string; color: string; c: CountyClimate }[] }) {
+function Charts({ counties, part }: { counties: { name: string; color: string; c: CountyClimate }[]; part: "all" | "first" }) {
   const none: string[] = [];
-  const charts = CHARTS.flatMap((ch) => {
+  const charts = (part === "first" ? CHARTS.slice(0, 1) : CHARTS).flatMap((ch) => {
     if (ch.key === "temp") {
       const series: ChartSeries[] = counties.map((c) => ({ name: c.name, color: c.color, values: c.c.tmax_f, low: c.c.tmin_f }));
       return [<MonthChart key="temp" title={ch.title} kind="range" series={series} format={ch.format} />];
@@ -207,7 +215,7 @@ function Charts({ counties }: { counties: { name: string; color: string; c: Coun
   return (
     <div className="space-y-4">
       {charts}
-      {none.length > 0 && (
+      {part === "all" && none.length > 0 && (
         <p className="text-xs text-neutral-500">
           None all year{counties.length > 1 ? " in either county" : ""}: {none.join(", ")}.
         </p>

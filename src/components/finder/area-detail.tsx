@@ -45,10 +45,11 @@ import {
   type PollutionStatus,
 } from "@/lib/tracts";
 import { formatDay } from "@/lib/laws";
-import { formatValue, TAXABLE_SPENDING_SHARE, type MetricKey } from "@/lib/scoring";
+import { formatValue, TAXABLE_SPENDING_SHARE, type CountyDataset, type MetricKey } from "@/lib/scoring";
 import { ordinal } from "@/lib/scoring/format";
 
 import { WatchLine } from "./area-results";
+import { ClimateTab } from "./climate-tab";
 import type { AreaRankingView } from "./inside-view";
 import { usePollutionStatus } from "./use-tract-data";
 import { isGold, scoreColor, trackOverflow } from "./score-colors";
@@ -124,6 +125,7 @@ const ICONS = {
   alert: "M12 4l9 16H3zM12 10v4M12 17h.01",
   people: "M16 20v-1a4 4 0 00-4-4H8a4 4 0 00-4 4v1M10 11a3 3 0 100-6 3 3 0 000 6M20 20v-1a3.5 3.5 0 00-2.5-3.4M15.5 5.3a3 3 0 010 5.4",
   air: "M3 8h11a3 3 0 10-3-3M3 12h15a3 3 0 11-3 3M3 16h7",
+  sun: "M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4",
   receipt: "M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3",
 } as const;
 
@@ -611,6 +613,7 @@ export function AreaDetail({
   ranking,
   countyEquality,
   taxes,
+  climate,
 }: {
   area: Area;
   county: CountyAreas;
@@ -620,6 +623,8 @@ export function AreaDetail({
   countyEquality?: PeopleEquality;
   /** For the area's own tax estimate (its county, the state's brackets, the household). */
   taxes?: AreaTaxContext;
+  /** The county's climate (no area-level climate data) and the comparison county. */
+  climate?: AreaClimateContext;
 }) {
   const v = (key: string) => areaValue(area, key);
   const flagged = new Set(area.lowConfidence);
@@ -972,7 +977,43 @@ export function AreaDetail({
             : null
         }
       />
+      {climate && <ClimateSection {...climate} countyName={countyName} />}
     </div>
+  );
+}
+
+export interface AreaClimateContext {
+  /** The area's county. */
+  fips: string;
+  data: CountyDataset;
+  compareFips: string | null;
+  onCompare: (fips: string | null) => void;
+}
+
+/**
+ * Climate (Phase 14c, 2026-11-13): the county's NOAA normals with the same "Compare with..."
+ * overlay as the county's Climate tab. There is no area-level climate data, so the section
+ * says it is the whole county's. The key figures and the temperature chart show at once; the other charts, the table and the source are behind "Show details".
+ */
+function ClimateSection({ countyName, ...climate }: AreaClimateContext & { countyName: string }) {
+  return (
+    <AreaSection
+      id="climate"
+      icon="sun"
+      title="Climate"
+      lead={`Measured for all of ${countyName}, not this area`}
+      expandable
+    >
+      {(more) => (
+        <>
+            <p className="text-label text-neutral-600 dark:text-neutral-400">
+              Lodestar has climate figures for whole counties only, taken from weather stations near
+              where most of the county&rsquo;s people live. Every area in the county shows the same climate.
+            </p>
+            <ClimateTab {...climate} more={more} />
+        </>
+      )}
+    </AreaSection>
   );
 }
 

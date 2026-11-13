@@ -1090,6 +1090,7 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
           household: deferred.household,
           rate: selectedAreaRate,
         },
+        climate: { fips: placeProps.score.fips, data: scoped, compareFips, onCompare: compareWith },
       }
     : null;
 
