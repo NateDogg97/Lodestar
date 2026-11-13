@@ -36,8 +36,9 @@ rather than leaving it stale. Record new decisions or open questions there, not 
   (Workers Static Assets, no Worker script). `wrangler.jsonc` is its config, `public/_headers`
   holds the response headers (a static export can't use `next.config.ts` `headers()`),
   `public/.assetsignore` keeps a locally built `data/tracts` out of a deploy, and the committed
-  `.env.production` sets `NEXT_PUBLIC_DATA_URL`. Until the cutover finishes, Vercel still
-  serves production (`vercel.json`).
+  `.env.production` sets `NEXT_PUBLIC_DATA_URL`. Pushes to main deploy it
+  (`.github/workflows/deploy.yml`). The apex-to-www redirect and "Always Use HTTPS" are
+  Cloudflare dashboard settings. Vercel (`vercel.json`) is only the rollback until removed.
 - `src/lib/scoring/` — the scoring engine (plan §6). Pure TS, no UI imports; tests beside it.
 - `src/components/finder/` — the UI: filters modal, results list, place view, and
   `county-map.tsx` (MapLibre).
