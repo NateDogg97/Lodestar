@@ -9,7 +9,8 @@ weights, gets a ranked list and a choropleth map. No accounts, no backend, no DB
 Before implementing anything, read it — in particular:
 
 - §2 *Core architectural decision* — this is an ETL problem; the browser does all scoring
-  client-side over two static files. Do not add a search backend or per-query APIs.
+  client-side over two static files. Server-side features are allowed since 2026-11-13
+  (a Worker script on `/api/*`), but scoring stays in the browser.
 - §5 *Phase 1 CSV schema* — the exact columns the ETL must produce; keep `fips` a string.
 - §6 *Scoring model* — percentile normalization, direction flags, weighted score, hard
   filters, score decomposition. This is the product; everything else is plumbing.
@@ -22,6 +23,7 @@ Before implementing anything, read it — in particular:
 The plan is a working document. When you finish a step, tick its checkbox. When the code
 diverges from the plan, the code is right — update the plan (and its `Last updated` date)
 rather than leaving it stale. Record new decisions or open questions there, not in chat.
+Dated history goes in `docs/plan-changelog.md` (newest first), not in the plan.
 
 ## Project layout
 
@@ -108,10 +110,12 @@ For ETL changes, also run `etl/.venv/bin/python -m etl.test_offline`. For law ch
 - TypeScript, App Router, Tailwind 4. Server Components by default; `"use client"` only
   where needed.
 - Scoring logic is a pure TS module with unit tests — no UI imports (plan §9, Phase 2).
-- Keep the app fully static; anything that needs a server is out of scope for v1. It is a
+- The app is a
   Next.js static export (`output: "export"`), so route handlers, `headers()`/`redirects()`/
   `rewrites()` in `next.config.ts`, server actions, middleware/proxy and `next/image`
   optimization won't build. Response headers go in `public/_headers`.
+  Anything that needs a server goes in a Worker script on `/api/*` (`wrangler.jsonc`), not in
+  Next.js; the pages must keep working offline without it.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
