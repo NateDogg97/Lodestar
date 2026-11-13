@@ -2,7 +2,12 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "lodestar",
   "compatibility_date": "2026-11-01",
-  // Assets-only Worker serving the Next.js static export. No routes/custom domains here.
+  // Assets-only Worker serving the Next.js static export.
+  // The route only takes effect while the www DNS record is Proxied (switching it back to
+  // "DNS only" sends traffic straight to the record's target again). The bare domain has no
+  // route: a Cloudflare redirect rule sends it to www. Keep the workers.dev address for testing.
+  "workers_dev": true,
+  "routes": [{ "pattern": "www.lodestarmap.com/*", "zone_name": "lodestarmap.com" }],
   "assets": {
     "directory": "./out",
     "html_handling": "auto-trailing-slash",
