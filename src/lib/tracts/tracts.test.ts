@@ -5,10 +5,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   areaValue,
+  cautionFlags,
   CITY_WIDE_AREAS,
   cityWideCrime,
   countyWideCrime,
   FEW_CRIMES,
+  flagLabel,
   formatArea,
   formatAreaValue,
   groupAreas,
@@ -69,7 +71,7 @@ describe("area data", () => {
     });
     const [near, chelsea, annArbor] = c.areas;
     expect(countyWideCrime(near)).toBe(true);
-    // Not ranked, sorted or shaded on it; the area page can still say what the county's was.
+    // Not the area's value anywhere; the area page can still say what the county's was.
     expect(areaValue(near, "violent_rate")).toBeNull();
     expect(areaValue(near, "property_rate")).toBeNull();
     expect(formatAreaValue(near, "violent_rate")).toBe("—");
@@ -107,7 +109,7 @@ describe("area data", () => {
     expect(chicago.crimeShared).toBe(100);
     expect(cityWideCrime(chicago)).toBe(true);
     expect(cityWideCrime(tiny)).toBe(true);
-    // Not ranked, sorted or shaded on it; the page can still say what the city's was.
+    // Not the area's own value; the page shows it as the city's (crimeView).
     expect(areaValue(chicago, "violent_rate")).toBeNull();
     expect(areaValue(chicago, "property_rate")).toBeNull();
     expect(formatAreaValue(chicago, "violent_rate")).toBe("—");
@@ -123,7 +125,24 @@ describe("area data", () => {
   it("flags only headline values for the list's caution icon", () => {
     const c = parseCountyAreas(payload);
     expect(headlineFlags(c.byGeoid.get("48453001309")!)).toEqual([]); // kids_share isn't headline
-    expect(headlineFlags(c.byGeoid.get("48453031500")!)).toEqual(["median_home_value", "crime"]);
+    // "crime" only where the area shows a crime rate of its own (this one has none).
+    expect(headlineFlags(c.byGeoid.get("48453031500")!)).toEqual(["median_home_value"]);
+  });
+
+  it("never lists \"crime wide\" as an uncertain value (2026-11-13)", () => {
+    const c = parseCountyAreas({
+      ...payload,
+      columns: ["geoid", "label", "population", "low_confidence", "violent_rate", "property_rate"],
+      rows: [
+        ["26161448000", "Near Chelsea · 48118", 4007, "crime;crime_wide;kids_share", 363, 658],
+        ["26161446400", "Chelsea · 48118", 3078, "crime", 204, 781],
+      ],
+    });
+    const [near, chelsea] = c.areas;
+    expect(cautionFlags(near)).toEqual(["kids_share"]);
+    expect(headlineFlags(near)).toEqual([]);
+    expect(cautionFlags(chelsea)).toEqual(["crime"]);
+    expect(flagLabel("crime")).toBe("Crime rate");
   });
 
   it("groups by place, biggest first", () => {

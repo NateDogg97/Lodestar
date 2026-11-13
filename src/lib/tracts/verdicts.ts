@@ -6,6 +6,8 @@
 import type { Direction } from "@/lib/scoring";
 import { ordinal } from "@/lib/scoring/format";
 
+import { FEW_CRIMES, type AgencyFigure, type CrimeView } from "./crime";
+
 /**
  * The typical US area: medians over all 84,119 areas (census tracts), computed
  * 2026-10-04 from the published area files and re-checked in the full audit the same
@@ -125,30 +127,57 @@ export function safetyVerdict(violent: number | null, note?: string | null): str
           : "Much more crime than a typical US area";
 }
 
-/**
- * What the area page says when an area's only crime figure is one agency's rate for many
- * areas, so it has none of its own (./crime.ts): `county` — a county agency's over
- * farmland and suburbs ("crime_wide", 2026-11-11); `city` — one rate for 100+ areas of the
- * county, a big city's (2026-11-13). `violent` and `property` are formatted; `areas` is
- * how many areas of the county carry it; `people`, how many the agency serves in all.
- */
-export function sharedCrimeNote(p: {
-  scope: "county" | "city";
-  agency: string;
-  violent: string;
-  property: string;
-  areas: number;
-  people: number | null;
-  countyAgency: boolean;
-}): string {
-  const figure = `The only figure here is for ${p.agency}: ${p.violent} violent and ${p.property} property`;
-  const tail = "not this area’s: it isn’t ranked or shaded on the map.";
-  if (p.scope === "county") {
-    return `${figure}, one rate for all ${p.areas > 0 ? p.areas : "the"} areas it polices, from farmland to suburbs. The FBI reports crime by police agency, so that is the county’s number, ${tail}`;
+// ---- Crime (./crime.ts): shown where the area or its city has a figure, never ranked ----
+
+const per100k = (v: number) => Math.round(v).toLocaleString();
+const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+
+/** The Safety section's one-line takeaway. Only an area's own rate is compared with the typical US area. */
+export function crimeLead(view: CrimeView): string {
+  switch (view.kind) {
+    case "own":
+      return safetyVerdict(view.figure.violent);
+    case "city":
+      return view.figure.countyAgency
+        ? `One figure for everywhere ${view.figure.agency} polices`
+        : `One figure for all of ${view.figure.agency}`;
+    case "nearby":
+      return "No crime figure for this area or its city";
+    case "none":
+      return "No crime figures in this county";
   }
-  const whom = p.people ? `all ${p.people.toLocaleString()} people it serves` : "everywhere it polices";
-  const whose = p.countyAgency ? "one number for everywhere it polices" : "the whole city’s number";
-  return `${figure}, one rate for ${whom} (${p.areas.toLocaleString()} areas in this county). The FBI reports crime by police agency, so that is ${whose}, ${tail}`;
+}
+
+/** "425 violent · 3,075 property per 100,000 people a year". */
+export function agencyRates(f: AgencyFigure): string {
+  return `${per100k(f.violent)} violent · ${f.property === null ? "—" : per100k(f.property)} property per 100,000 people a year`;
+}
+
+/**
+ * Who a figure covers and when: "790 areas here · 2,715,488 people in all · 2025", with
+ * the reported count where it rests on few crimes (`FEW_CRIMES`).
+ */
+export function agencyCoverage(f: AgencyFigure): string {
+  const bits = [
+    f.areas > 0 ? `${plural(f.areas, "area")} here` : null,
+    f.people !== null ? `${plural(f.people, "person", "people")} in all` : null,
+    f.year !== null ? `${f.year}${f.months !== null && f.months < 12 ? ` (${f.months} months, scaled to a year)` : ""}` : null,
+    f.violentCrimes !== null && f.violentCrimes < FEW_CRIMES ? `only about ${plural(f.violentCrimes, "violent crime")} reported` : null,
+  ];
+  return bits.filter(Boolean).join(" · ");
+}
+
+/** Under a big city's one figure: whose it is and why it's not the area's (owner, 2026-11-13). */
+export function cityCrimeNote(f: AgencyFigure): string {
+  const whom = f.people !== null ? `all ${plural(f.people, "person", "people")} it serves` : "everywhere it polices";
+  const whose = f.countyAgency ? "the figure for everywhere it polices" : "the whole city’s figure";
+  return `${f.agency} reports one rate for ${whom}, so all ${plural(f.areas, "area")} it polices in this county carry the same numbers. The FBI counts crime by police agency, not by neighborhood: this is ${whose}, not this area’s, and its neighborhoods can differ a lot.`;
+}
+
+/** Why an area on a sheriff's county-wide rate ("crime_wide") has no figure of its own. */
+export function wideCrimeNote(f: AgencyFigure): string {
+  const areas = f.areas > 0 ? `all ${plural(f.areas, "area")}` : "everywhere";
+  return `${f.agency} polices this area and reports one rate for ${areas} it covers in this county, from farmland to suburbs: the county’s figure, not this area’s.`;
 }
 
 /** "Young, mostly renters, mostly apartments" — only what stands out. */

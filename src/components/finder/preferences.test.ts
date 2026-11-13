@@ -31,8 +31,9 @@ describe("sanitizePreferences", () => {
       categories: { marijuana_status: ["medical"] },
       includeUnknown: true,
       includeStates: { AK: false, HI: true },
-      // Area-only priorities: only known area keys; a county metric isn't one.
-      area: { weights: { walkability: 5 }, directions: {}, limits: { violent_rate: { max: 300 } } },
+      // Area-only priorities: only known area keys; a county metric isn't one, nor crime
+      // since 2026-11-13 (an old search's crime direction and must-have are dropped).
+      area: { weights: { walkability: 5 }, directions: {}, limits: {} },
       household: {},
     });
   });
