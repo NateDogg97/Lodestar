@@ -57,7 +57,7 @@ import { ClimateTab } from "./climate-tab";
 import type { AreaRankingView } from "./inside-view";
 import { usePollutionStatus } from "./use-tract-data";
 import { isGold, scoreColor, trackOverflow } from "./score-colors";
-import { typicalMark } from "./typical-mark";
+import { meterMarks, TYPICAL_BAND } from "./meter-marks";
 
 /**
  * An area's page below its name (owner, 2026-10-04, mockup round 3 "C"): every
@@ -243,17 +243,26 @@ function PctRow({ label, sub, p, flagged }: { label: ReactNode; sub?: ReactNode;
   );
 }
 
+/** Diagonal hatching in the current text color: the typical band and its key. */
+const HATCH = "repeating-linear-gradient(135deg, currentColor 0 1.5px, transparent 1.5px 4px)";
+
+/** A whole number with thousands separators: a typical band's ends. */
+const rounded = (n: number) => Math.round(n).toLocaleString();
+
 /**
- * A value against the typical US area: a bar to the value, a mark at the typical area.
- * Green when better than typical, orange when worse, yellow when about the same;
- * grey when neither end is better (`neutral`).
+ * A value against the typical US area: a bar to the value, a ▼ pin above it with the value
+ * written underneath, and a hatched band where a typical US area falls (±10% of the US
+ * median; the key, top right, gives its range). Green when better than typical, orange
+ * when worse, yellow inside the band; grey when neither end is better (`neutral`).
+ * `format` writes the band's ends as bare numbers, and `unit` follows the range.
  */
 function CompareBar({
   label,
   value,
   text,
   typical,
-  typicalText,
+  format,
+  unit = "",
   max,
   maxText,
   lowerIsBetter = true,
@@ -264,7 +273,8 @@ function CompareBar({
   value: number | null;
   text: string;
   typical: number;
-  typicalText: string;
+  format: (n: number) => string;
+  unit?: string;
   max: number;
   maxText: string;
   lowerIsBetter?: boolean;
@@ -273,41 +283,71 @@ function CompareBar({
 }) {
   const top = Math.max(max, (value ?? 0) * 1.1);
   const r = value === null ? 1 : value / typical;
-  const better = lowerIsBetter ? r < 0.9 : r > 1.1;
-  const worse = lowerIsBetter ? r > 1.1 : r < 0.9;
+  const better = lowerIsBetter ? r < 1 - TYPICAL_BAND : r > 1 + TYPICAL_BAND;
+  const worse = lowerIsBetter ? r > 1 + TYPICAL_BAND : r < 1 - TYPICAL_BAND;
   const color = neutral ? "#94a3b8" : better ? scoreColor(92) : worse ? scoreColor(40) : scoreColor(72);
-  const { at, showStart, showEnd } = typicalMark(typical, top, "0", maxText);
-  // The tick and the ▲ under it share one position, held half an arrow in from either end.
-  const markLeft = `clamp(0.3125rem, ${at}%, calc(100% - 0.3125rem))`;
+  // The caution icon beside the value: h-3.5 plus its ml-1.
+  const { at, band, showStart, showEnd } = meterMarks({
+    value,
+    typical,
+    top,
+    valueText: text,
+    startText: "0",
+    endText: maxText,
+    extraPx: flagged ? 18 : 0,
+  });
+  const range = `${format(typical * (1 - TYPICAL_BAND))}–${format(typical * (1 + TYPICAL_BAND))}${unit}`;
+  const hatch = "text-neutral-900/35 dark:text-neutral-100/40";
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1">
       <div className="flex items-baseline justify-between gap-3 text-label">
         <span className="font-medium">{label}</span>
-        <span className="font-semibold tabular-nums">
-          {text}
-          <FlagMark on={flagged} />
+        <span className="inline-flex shrink-0 items-center gap-1.5 text-caption whitespace-nowrap text-neutral-500 tabular-nums dark:text-neutral-400">
+          <span aria-hidden className="inline-block h-2 w-3.5 rounded-sm bg-neutral-200 dark:bg-neutral-800">
+            <span className={`block h-full rounded-sm ${hatch}`} style={{ backgroundImage: HATCH }} />
+          </span>
+          US typical {range}
         </span>
       </div>
-      <span className="relative block">
-        <Track>
-          {value !== null && (
-            <span className="block h-full rounded-full" style={{ width: `${Math.max(2, (100 * value) / top)}%`, backgroundColor: color }} />
+      <span className="block">
+        {/* The ▼ at the value, held half an arrow in from either end. */}
+        <span aria-hidden className="relative block h-1.5">
+          {at !== null && (
+            <svg
+              viewBox="0 0 10 6"
+              className="absolute bottom-0 h-1.5 w-2.5 -translate-x-1/2 fill-neutral-900 dark:fill-neutral-100"
+              style={{ left: `clamp(0.3125rem, ${at}%, calc(100% - 0.3125rem))` }}
+            >
+              <path d="M0 0H10L5 6Z" />
+            </svg>
           )}
-        </Track>
-        <span aria-hidden className="absolute -top-1 h-4 w-0.5 -translate-x-1/2 bg-neutral-900 dark:bg-neutral-100" style={{ left: markLeft }} />
-      </span>
-      {/* The ▲ under the tick between the scale's ends; the caption on its own line, centred
-          under the arrow but never past either end (cqw: this block's width). */}
-      <span className="@container block text-caption text-neutral-500 dark:text-neutral-400">
-        <span className="relative block h-4">
-          {showStart && <span className="absolute left-0">0</span>}
-          <span aria-hidden className="absolute w-2.5 -translate-x-1/2 text-center" style={{ left: markLeft }}>
-            ▲
-          </span>
-          {showEnd && <span className="absolute right-0">{maxText}</span>}
         </span>
-        <span className="block w-max max-w-full" style={{ translate: `clamp(0px, calc(${at}cqw - 50%), calc(100cqw - 100%))` }}>
-          typical US area {typicalText}
+        <span className="mt-0.5 block">
+          <Track>
+            {value !== null && (
+              <span className="block h-full rounded-full" style={{ width: `${Math.max(2, (100 * value) / top)}%`, backgroundColor: color }} />
+            )}
+            <span
+              aria-hidden
+              className={`absolute inset-y-0 ${hatch}`}
+              style={{ left: `${band[0]}%`, width: `${band[1] - band[0]}%`, backgroundImage: HATCH }}
+            />
+          </Track>
+        </span>
+      </span>
+      {/* The value under the pin, centred but never past either end (cqw: this block's width);
+          the scale's ends beside it unless the value covers them. */}
+      <span className="@container relative block">
+        {showStart && <span className="absolute bottom-0 left-0 text-caption leading-5 text-neutral-500 dark:text-neutral-400">0</span>}
+        {showEnd && (
+          <span className="absolute right-0 bottom-0 text-caption leading-5 text-neutral-500 dark:text-neutral-400">{maxText}</span>
+        )}
+        <span
+          className="block w-max max-w-full text-label leading-5 font-semibold tabular-nums"
+          style={{ translate: `clamp(0px, calc(${at ?? 0}cqw - 50%), calc(100cqw - 100%))` }}
+        >
+          {text}
+          <FlagMark on={flagged} />
         </span>
       </span>
     </div>
@@ -826,7 +866,8 @@ export function AreaDetail({
               value={v("work_from_home_share")}
               text={pct(v("work_from_home_share"))}
               typical={US_TYPICAL.work_from_home_share}
-              typicalText={`${Math.round(US_TYPICAL.work_from_home_share)}%`}
+              format={rounded}
+              unit="%"
               max={30}
               maxText="30%+"
               neutral
@@ -858,7 +899,8 @@ export function AreaDetail({
           value={v("commute_minutes")}
           text={formatArea("commute_minutes", v("commute_minutes"))}
           typical={US_TYPICAL.commute_minutes}
-          typicalText={`${Math.round(US_TYPICAL.commute_minutes)} min`}
+          format={rounded}
+          unit=" min"
           max={60}
           maxText="60 min"
           flagged={flagged.has("commute_minutes")}
@@ -1328,7 +1370,7 @@ export function PollutionSection({
           value={pm25}
           text={`${one(pm25)} µg/m³`}
           typical={US_TYPICAL.pm25}
-          typicalText={`${US_TYPICAL.pm25}`}
+          format={(n) => n.toFixed(1)}
           max={15}
           maxText="15+"
           // A doubted value isn't shown as better or worse than typical: a monitor says it may be neither.
@@ -1361,7 +1403,7 @@ export function PollutionSection({
           value={smoke}
           text={`${Math.round(smoke)} a year`}
           typical={US_TYPICAL.smoke_days_thick}
-          typicalText={`${US_TYPICAL.smoke_days_thick}`}
+          format={rounded}
           max={35}
           maxText="35+"
         />
@@ -1540,7 +1582,7 @@ function SafetySection({ area, view }: { area: Area; view: CrimeView }) {
                 value={view.figure.property}
                 text={formatArea("property_rate", view.figure.property)}
                 typical={US_TYPICAL.property_rate}
-                typicalText={US_TYPICAL.property_rate.toLocaleString()}
+                format={rounded}
                 max={4000}
                 maxText="4,000+"
                 flagged={flagged}
@@ -1558,7 +1600,7 @@ function SafetySection({ area, view }: { area: Area; view: CrimeView }) {
             value={view.figure.violent}
             text={formatArea("violent_rate", view.figure.violent)}
             typical={US_TYPICAL.violent_rate}
-            typicalText={String(US_TYPICAL.violent_rate)}
+            format={rounded}
             max={800}
             maxText="800+"
             flagged={flagged}
@@ -1587,7 +1629,7 @@ function SafetySection({ area, view }: { area: Area; view: CrimeView }) {
             value={view.figure.violent}
             text={formatArea("violent_rate", view.figure.violent)}
             typical={US_TYPICAL.violent_rate}
-            typicalText={String(US_TYPICAL.violent_rate)}
+            format={rounded}
             max={800}
             maxText="800+"
             neutral
@@ -1597,7 +1639,7 @@ function SafetySection({ area, view }: { area: Area; view: CrimeView }) {
             value={view.figure.property}
             text={formatArea("property_rate", view.figure.property)}
             typical={US_TYPICAL.property_rate}
-            typicalText={US_TYPICAL.property_rate.toLocaleString()}
+            format={rounded}
             max={4000}
             maxText="4,000+"
             neutral
