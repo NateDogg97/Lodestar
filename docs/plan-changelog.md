@@ -3,6 +3,11 @@
 Dated decisions and progress for `Working Master Plan.md`, newest first. Add an entry here
 when a decision changes or a step lands; the plan itself holds the current state.
 
+- 2026-11-13 — **Meters pin the value; typical is a band** (owner, replaces the ▲ marker
+  below). On every `CompareBar` meter a ▼ above the bar points at the value, written under
+  the bar beneath it; a typical US area is a hatched band, ±10% of the US median (where the
+  bar turns yellow), keyed top right with its range. End labels give way to the value
+  (`meter-marks.ts`, was `typical-mark.ts`).
 - 2026-11-13 — **Crime out of the filters; shown only where a figure exists** (§9 Phase 14a,
   owner; PR #13). Violent and property crime are no longer priorities, must-haves,
   watch-outs or a shade-by measure (saved searches and links drop them). The area page
