@@ -76,7 +76,7 @@ export const METRICS = [
   { key: "school_achievement", label: "School achievement", unit: "grades", group: "schools", defaultDirection: "higher" },
 
   // climate (NOAA 1991–2020 normals). The year is described by its two ends
-  // plus how long the extremes last — see Working Master Plan §6 "Climate
+  // plus how long the extremes last — see docs/plan-archive.md §6 "Climate
   // preferences". The 3-month summer/winter averages stay in the data for
   // display but are not offered here: the hottest/coldest month is the real
   // peak and trough, and is right even where the peak isn't in Jun–Aug.

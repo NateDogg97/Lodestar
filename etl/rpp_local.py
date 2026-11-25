@@ -12,7 +12,7 @@ WHY (plan §9 Phase 10a, 2026-10-12)
     US areas, because Wyoming as a whole is cheap. Non-metro counties averaged
     95.3 against BEA's own national non-metro figure of 88.7.
 
-THE METHOD (Working Master Plan §4 "Making cost of living work below metro level")
+THE METHOD (docs/plan-archive.md §4 "Making cost of living work below metro level")
     Housing rents are the part that varies within a metro or state, and the part
     we can see by county: BEA builds its rents index from ACS rents.
 

@@ -24,8 +24,10 @@ accounts, no backend. It installs to a phone or desktop home screen and works of
 - Light and dark themes (light by default), Alaska and Hawaii as opt-in toggles, an
   "update available" notice after each deploy.
 
-Decisions, build order and open questions live in
-[`Working Master Plan.md`](Working%20Master%20Plan.md); state-law sourcing rules in
+How the project works and the decisions already made live in [`AGENTS.md`](AGENTS.md);
+open work, build order and open questions in
+[`Working Master Plan.md`](Working%20Master%20Plan.md); the history of finished phases in
+[`docs/plan-archive.md`](docs/plan-archive.md); state-law sourcing rules in
 [`LAWS.md`](LAWS.md).
 
 ## How it's built
