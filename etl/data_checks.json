@@ -93,7 +93,7 @@
     {
       "id": "source-review",
       "name": "Better or new data sources",
-      "where": "Working Master Plan.md data source tables (§3 and Phase 8)",
+      "where": "docs/plan-archive.md data source tables (§4 and §9 Phase 8); AGENTS.md rules; record decisions in Working Master Plan.md",
       "every_days": 90,
       "last_checked": null,
       "how": "For each measure the app shows, look for a newer, more reliable or finer-grained free source than the one used, and for sources being retired or changing terms. Report candidates with trade-offs (coverage, update frequency, licence, effort) and record decisions or open questions in the plan."

@@ -1,29 +1,30 @@
-# New Home Finder — agent guide
+# Lodestar — agent guide
 
-A personal-use PWA for finding US counties to move to: the user sets criteria and
-weights, gets a ranked list and a choropleth map. No accounts, no backend, no DB.
+A PWA for choosing where to move in the US, live at www.lodestarmap.com. The person sets
+priorities (ranked) and must-haves (rule out), and gets ranked **areas** (2020 census tracts,
+~84,000) and counties, a map, and a page per county and area explaining the result. It started
+as a personal tool. Monetization is proposed (plan Phase 15) but not decided. No accounts and
+no database. Server features are allowed as a Worker script on `/api/*`, but scoring stays in
+the browser.
 
-## Read the master plan first
+## Where things are written down
 
-**`Working Master Plan.md` is the source of truth for what to build and in what order.**
-Before implementing anything, read it — in particular:
+- **`Working Master Plan.md`**: open work only (what to build next, in order), plus what's
+  deferred and the open questions. Read it before starting work. Work the earliest open item
+  unless the owner reorders. Items under *Explicitly deferred* are not built, even if asked
+  in passing; point back to the plan. When you finish a step, tick it. When it's a whole
+  phase, cut the phase to one line in the plan's "Built so far" table, move any durable rule
+  into this file, and add the history to the changelog.
+- **This file**: how the project works and the rules learned building it (below). If the code
+  and this file disagree, the code is right: fix this file.
+- **`docs/plan-changelog.md`**: dated decisions and progress, newest first.
+- **`docs/plan-archive.md`**: the full plan as of 2026-11-25, with every finished phase's
+  design, measurements and reasoning. It is historical and never edited. Code comments that
+  cite "plan §N" or "§9 Phase N" point there. Read the relevant section before changing
+  something a phase built (e.g. crime matching, pollution, tract ETL).
+- **`LAWS.md`**: the state-laws design.
 
-- §2 *Core architectural decision* — this is an ETL problem; the browser does all scoring
-  client-side over two static files. Server-side features are allowed since 2026-11-13
-  (a Worker script on `/api/*`), but scoring stays in the browser.
-- §5 *Phase 1 CSV schema* — the exact columns the ETL must produce; keep `fips` a string.
-- §6 *Scoring model* — percentile normalization, direction flags, weighted score, hard
-  filters, score decomposition. This is the product; everything else is plumbing.
-- §8 *Stack* — MapLibre (not Mapbox), URL params for filter state, Python for ETL only.
-- §9 *Build order* — **strictly sequential**. Work the earliest phase with unchecked
-  items. Do not start the map before the scoring engine works.
-- §10 *Explicitly deferred* — do not build these, even if asked in passing; point back
-  to the plan instead.
-
-The plan is a working document. When you finish a step, tick its checkbox. When the code
-diverges from the plan, the code is right — update the plan (and its `Last updated` date)
-rather than leaving it stale. Record new decisions or open questions there, not in chat.
-Dated history goes in `docs/plan-changelog.md` (newest first), not in the plan.
+Record new decisions and open questions in the plan, not in chat.
 
 ## Project layout
 
@@ -41,7 +42,7 @@ Dated history goes in `docs/plan-changelog.md` (newest first), not in the plan.
   `.env.production` sets `NEXT_PUBLIC_DATA_URL`. Pushes to main deploy it
   (`.github/workflows/deploy.yml`). The apex-to-www redirect and "Always Use HTTPS" are
   Cloudflare dashboard settings. Vercel (`vercel.json`) is only the rollback until removed.
-- `src/lib/scoring/` — the scoring engine (plan §6). Pure TS, no UI imports; tests beside it.
+- `src/lib/scoring/` — the scoring engine (see *Scoring* below). Pure TS, no UI imports; tests beside it.
 - `src/components/finder/` — the UI: filters modal, results list, place view, and
   `county-map.tsx` (MapLibre).
 - Place search ("Find a place", plan §9 Phase 12): `src/lib/tracts/places.ts` builds the index
@@ -58,7 +59,7 @@ Dated history goes in `docs/plan-changelog.md` (newest first), not in the plan.
   interim caches (a fresh clone), `python -m etl.patch <source…>` refreshes some sources'
   columns in the published file (zillow_county, newbuyer, nri, edges). Keep counties.json
   under 2 MB — the service worker won't precache it past that (a test checks).
-- ETL pipeline (Python, `pandas`) lives in `etl/`, outside the app runtime — see plan §2/§8.
+- ETL pipeline (Python, `pandas`) lives in `etl/`, outside the app runtime (see *Architecture* below).
 - Area data inside counties (plan §9 Phase 8, `etl/tracts/`) is **never in git**: production
   reads it from Cloudflare R2 (`data.lodestarmap.com`, `NEXT_PUBLIC_DATA_URL`), rebuilt monthly
   by `.github/workflows/tracts-refresh.yml`. `next dev` reads the same host (`.env.development`, committed);
@@ -77,6 +78,106 @@ Dated history goes in `docs/plan-changelog.md` (newest first), not in the plan.
   `python -m etl.laws.refresh`, which parses each cited source; never hand-edit values.
   The refresh runs monthly in `.github/workflows/laws-refresh.yml` and publishes
   `public/data/laws.json`, which the county card's "Laws & taxes" section reads.
+
+## Rules that came out of finished work
+
+These are the decisions earlier phases settled. Each has its history in
+`docs/plan-archive.md`. Don't undo one without the owner.
+
+**Architecture**
+- This is an ETL problem, not an API problem. Python builds static files from federal
+  sources, and the browser downloads them and does all filtering and scoring locally
+  (re-scoring is sub-millisecond). Nothing in the request path calls a data API.
+- Geography: county FIPS is the join key. Keep it a **string** everywhere (leading zeros),
+  and pandas will eat them if you don't. All 3,144 counties are in the data. Connecticut uses
+  its 9 planning regions (`09110`–`09190`); sources still on 2020 codes are translated
+  (`geo.current_geoids`). Alaska and Hawaii are opt-in (Settings), off by default. When off,
+  they're removed **before** percentiles are computed (`subsetDataset`), so the default scope
+  is the lower 48 + DC (3,109 counties).
+- Areas are 2020 census tracts, one file per county on R2 (`tracts/{fips}.json` +
+  `.topo.json`), plus `tracts/areas.json` with every area's scoring columns, loaded only when
+  a search needs area-level scoring. Block groups are too noisy; street or parcel data needs
+  paid vendors and is out of scope. MLS data is out (licence forbids republishing); GreatSchools
+  is out (licensed).
+- Map: MapLibre (never Mapbox: no spending cap) on OpenFreeMap. Offline, it draws county and
+  state lines on a plain background. Search state lives in URL params, so links are shareable.
+  Saved and recent searches and preferences use `localStorage`.
+
+**Scoring** (`src/lib/scoring/`, `src/lib/tracts/national.ts`)
+- Normalize to **percentiles**, never min-max (outliers flatten min-max). Percentiles are
+  **national** (all counties, or all residential US areas), never just the ones left after
+  filtering, so tightening a filter never changes a visible score.
+- Each priority has a direction: higher, lower, or **average** (the median, scored
+  `100 − 2·|p − 50|`). The person can flip any of them. Importance is Off/1–5. Score =
+  weighted mean of points.
+- Ties count as wins (`percentileBounds`), so the best possible value scores 100. Rarity
+  claims (gold bars, "Top 1% in the US" badges) use `beats` (share strictly worse), so a
+  value most places share is never gold.
+- **Missing data is never imputed.** A weighted priority with no value counts as 50 points at
+  full weight and is shown as "No data". A missing value under a must-have is *unknown*: not
+  passed and not ruled out. Verified matches rank ahead of unknowns.
+- Must-haves rule out. They never lower a score.
+- **One level per filter, automatic.** County-wide measures (climate, laws and taxes, cost of
+  living, unemployment) score at the county's national percentile and give every area in the
+  county the same share. Area measures score at the area's national percentile among areas.
+  Results are the top N areas (100/250/500), and counties rank by their best area.
+- Not results (still in the data): areas with ≤ 50 residents (`MIN_RESIDENTS`), and areas
+  that are mostly group quarters (bases, dorms, prisons). They are also left out of the
+  percentile population.
+- Fixed anchors instead of percentiles where percentiles would mislead: budget fit
+  (`budgetPoints`: 100 at or under budget, 0 at 1.5×), **Taxes** ($/yr, lower only; property
+  tax on the county's typical home, `taxes.ts`), and pollution (`pollution.ts`).
+- Explanations come from score decomposition (the priorities that moved the score most),
+  not from an LLM. A noisy value ranked on its shrunk estimate (`*_eb` columns, Fay–Herriot or
+  Poisson–gamma) says "ranked as ≈ X". Pollution never gets an `_eb` twin.
+- The map colours results relative to each other (top results only, span at least
+  `MIN_COLOR_SPAN` points). Score colours run deep red → yellow (~75) → deep green. Gold is
+  only for bars and badges, never the map or score numbers. Results are numbered 1, 2, 3, with
+  no "=2" tie marks (owner).
+- "Watch out" lines flag a result in the worst 5% of a measure the person didn't weight. They
+  never change the ranking.
+
+**Data**
+- Measure from where people live: population centers for counties and tracts (climate,
+  distances), and 2020 blocks for pollution. Never use a geographic middle, a polygon mean, or
+  a neighbour's value (no nearest-monitor or IDW in our code).
+- Never silently blend two sources in one column. Record the source per value.
+- Store physical values with units in the ETL. Scoring transforms live in TS.
+- Low confidence = a yellow caution icon listing each flagged value and why (ACS CV > 40%,
+  share MOE > 15 pts, partial-year crime, …). Show it, don't hide the value.
+- Cost of living: BEA publishes RPP for states and metros only, not counties or a state
+  non-metro portion. `etl/rpp_local.py` localizes the rents component with ACS rent
+  (fitted b, g). Don't hard-code BEA expenditure weights.
+- FEMA hazards rank on the expected annual loss **rate** (`*_ALR_NPCTL`), not `RISK_SCORE`
+  (which tracks county size). FEMA's own rating words are shown beside it.
+- Home value and rent are at today's prices (Census × the ZIP's Zillow/Census ratio). Where
+  most owned homes are mobile homes, or the Census value is top-coded, the area uses Zillow's
+  ZIP value. Census income caps show as "$250,000+".
+- Crime is shown, never ranked or filtered (Phase 14a). Agency matching rules (towns, county
+  police, State Police, contract cities, partial years via `CRIME_MIN_MONTHS` /
+  `CRIME_MIN_EXPOSURE`) are in `etl/tracts/crime.py`, and their history is in the archive's
+  Phase 8c.
+- "Coast" is Natural Earth's coastline, which follows tidal rivers. The filter says so. The
+  Great Lakes have their own distance. Distance to a metro means to the edge of its largest
+  urban area.
+- Schools: an area's score is its own district's, and only schools inside that district are
+  listed (big districts keep a nearby-schools score). SEDA covers grades 3–8. High schools rank
+  on college-prep access (CRDC).
+- Only rarely-changing inputs may be mirrored to the private bucket (`inputs.MIRRORED`, e.g.
+  FEMA's NRI table, which 403s GitHub runners). A monthly source that refuses CI needs another
+  route, never a stale copy.
+- New state or shared tract-ETL change: build the state, read its coverage CSV, fix what it
+  shows, run `python -m etl.tracts.sentinels` (ten reference counties that each once broke),
+  then `publish` + `upload --state ST`. `etl/tracts/check.py` is the CI quality gate.
+- Don't use a source commercially without checking its licence (Zillow ToS, and the PM2.5
+  biomass product has none).
+
+**UI**
+- The ranked list, map and place pages are the main UI. Settings, explanations and sources
+  stay one tap away ("i" popovers, Settings), not in the reading path (owner).
+- Phones use a bottom sheet over a full-screen map (snaps 25/50/80/100%).
+- Automated browsers run hidden, and MapLibre doesn't render there: the map has to be checked
+  by eye, or on localhost in a visible window.
 
 ## Data checks
 
@@ -99,9 +200,11 @@ npm run deploy     # build, then wrangler deploy (the Worker)
 npm run lint
 npm run typecheck
 npm test           # Vitest: scoring engine unit + real-data tests
+npm run audit:results  # ~80 realistic searches over the real data, each with an expectation
 ```
 
-Run `lint`, `typecheck`, `test`, and `build` before considering a change done.
+Run `lint`, `typecheck`, `test`, and `build` before considering a change done. After any
+scoring or data change, also run `npm run audit:results` and read `scripts/audit/report.md`.
 For ETL changes, also run `etl/.venv/bin/python -m etl.test_offline`. For law changes, run
 `etl/.venv/bin/python -m etl.laws.test_sources` and `-m etl.laws.test_verify`.
 
@@ -109,7 +212,7 @@ For ETL changes, also run `etl/.venv/bin/python -m etl.test_offline`. For law ch
 
 - TypeScript, App Router, Tailwind 4. Server Components by default; `"use client"` only
   where needed.
-- Scoring logic is a pure TS module with unit tests — no UI imports (plan §9, Phase 2).
+- Scoring logic is a pure TS module with unit tests — no UI imports.
 - The app is a
   Next.js static export (`output: "export"`), so route handlers, `headers()`/`redirects()`/
   `rewrites()` in `next.config.ts`, server actions, middleware/proxy and `next/image`
