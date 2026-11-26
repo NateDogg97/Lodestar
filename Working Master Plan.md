@@ -200,6 +200,15 @@ Smaller open items. Pick them up when convenient, or when a queue item touches t
 - [ ] Maybe: quick-start chips on the tour's welcome card ("What matters most?"); a tiny US
       map on each climate-type card; active-filter chips above the results (skipped
       2026-09-28).
+- [ ] **Buying or renting should shape Housing, costs & taxes** (owner, 2026-11-25). Today
+      the choice under *What I'm looking for* only picks which measure a budget applies to
+      (`budgetMetric` in `preferences.ts`) and how Taxes counts property tax. Someone renting
+      can still weight or limit **Home value**, which skews their results. Wanted: with
+      Renting chosen, Home value is disabled (or hidden); with Buying, Rent is; with no choice,
+      both stay active. Suggested: grey it out with a one-line reason ("You're renting, so home
+      value isn't scored"), and have scoring ignore that measure's weight and limits while the
+      choice stands, without deleting them, so switching back restores them. Check shared
+      links and saved searches that carry both (`search-url.ts`, `sanitizePreferences`).
 - [ ] "$400k budget, schools" surfaces a mobile-home park (Near East Rochester, NY) now
       that crime isn't weighed: a budget-scoring weakness to look at.
 
