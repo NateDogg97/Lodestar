@@ -35,17 +35,18 @@ Record new decisions and open questions in the plan, not in chat.
 - `src/components/pwa-provider.tsx` — registers the service worker on the client.
 - `serwist.config.mjs` — builds `public/sw.js` after `next build` (generated, git-ignored);
   `scripts/copy-sw-to-out.mjs` then copies it into `out/`.
-- Hosting (plan §9 Phase 13): a Cloudflare Worker serving the static export in `out/`
+- Hosting (archive §9 Phase 13): a Cloudflare Worker serving the static export in `out/`
   (Workers Static Assets, no Worker script). `wrangler.jsonc` is its config, `public/_headers`
   holds the response headers (a static export can't use `next.config.ts` `headers()`),
   `public/.assetsignore` keeps a locally built `data/tracts` out of a deploy, and the committed
   `.env.production` sets `NEXT_PUBLIC_DATA_URL`. Pushes to main deploy it
   (`.github/workflows/deploy.yml`). The apex-to-www redirect and "Always Use HTTPS" are
-  Cloudflare dashboard settings. Vercel (`vercel.json`) is only the rollback until removed.
+  Cloudflare dashboard settings. Each pull request gets a preview: `.github/workflows/preview.yml`
+  uploads a Worker version (not deployed) and comments its `pr-<n>-lodestar…workers.dev` link.
 - `src/lib/scoring/` — the scoring engine (see *Scoring* below). Pure TS, no UI imports; tests beside it.
 - `src/components/finder/` — the UI: filters modal, results list, place view, and
   `county-map.tsx` (MapLibre).
-- Place search ("Find a place", plan §9 Phase 12): `src/lib/tracts/places.ts` builds the index
+- Place search ("Find a place", archive §9 Phase 12): `src/lib/tracts/places.ts` builds the index
   from county names and the area labels in `areas.json`; `place-search.tsx` is the dialog and
   the looked-up place's list; the map draws the place from its counties' tract shapes
   (`place-shapes.ts`, the `lookup` layer in `county-map.tsx`). No new data file, no geocoder.
@@ -60,12 +61,12 @@ Record new decisions and open questions in the plan, not in chat.
   columns in the published file (zillow_county, newbuyer, nri, edges). Keep counties.json
   under 2 MB — the service worker won't precache it past that (a test checks).
 - ETL pipeline (Python, `pandas`) lives in `etl/`, outside the app runtime (see *Architecture* below).
-- Area data inside counties (plan §9 Phase 8, `etl/tracts/`) is **never in git**: production
+- Area data inside counties (archive §9 Phase 8, `etl/tracts/`) is **never in git**: production
   reads it from Cloudflare R2 (`data.lodestarmap.com`, `NEXT_PUBLIC_DATA_URL`), rebuilt monthly
   by `.github/workflows/tracts-refresh.yml`. `next dev` reads the same host (`.env.development`, committed);
   to use files you built yourself, set `NEXT_PUBLIC_DATA_URL=/data` in `.env.local`. Hand-downloaded sources (SEDA) live in a private
   R2 bucket: `python -m etl.inputs pull` after cloning. Don't commit data files under `etl/data/raw/`.
-- Pollution (plan §9 Phase 11, `etl/pollution/`): measured at every 2020 census block where
+- Pollution (archive §9 Phase 11, `etl/pollution/`): measured at every 2020 census block where
   people live and population-weighted — never a county source or a neighbour's value. CI runs
   `python -m etl.pollution published` and `python -m etl.tracts.backfill --pollution` after
   publishing area files (a monthly rebuild without them drops the columns); counties.json
@@ -117,16 +118,20 @@ These are the decisions earlier phases settled. Each has its history in
   full weight and is shown as "No data". A missing value under a must-have is *unknown*: not
   passed and not ruled out. Verified matches rank ahead of unknowns.
 - Must-haves rule out. They never lower a score.
-- **One level per filter, automatic.** County-wide measures (climate, laws and taxes, cost of
+- **One level per filter, automatic.** County-wide measures (climate, state laws, cost of
   living, unemployment) score at the county's national percentile and give every area in the
   county the same share. Area measures score at the area's national percentile among areas.
   Results are the top N areas (100/250/500), and counties rank by their best area.
+- **Taxes** is the household's $/yr (property tax on the budget, else the county's typical
+  home, plus sales and income tax), ranked as a national percentile, lower only
+  (`fixedDirection`). When areas are the results it is scored per area, on the area's own
+  property tax rate (`areaTaxSearch`, `src/lib/tracts/taxes.ts`); ranking counties uses the
+  county's rate.
 - Not results (still in the data): areas with ≤ 50 residents (`MIN_RESIDENTS`), and areas
   that are mostly group quarters (bases, dorms, prisons). They are also left out of the
   percentile population.
 - Fixed anchors instead of percentiles where percentiles would mislead: budget fit
-  (`budgetPoints`: 100 at or under budget, 0 at 1.5×), **Taxes** ($/yr, lower only; property
-  tax on the county's typical home, `taxes.ts`), and pollution (`pollution.ts`).
+  (`budgetPoints`: 100 at or under budget, 0 at 1.5×) and pollution (`pollution.ts`).
 - Explanations come from score decomposition (the priorities that moved the score most),
   not from an LLM. A noisy value ranked on its shrunk estimate (`*_eb` columns, Fay–Herriot or
   Poisson–gamma) says "ranked as ≈ X". Pollution never gets an `_eb` twin.

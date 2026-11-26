@@ -41,7 +41,7 @@ no-monetization line stands.
 | 11 (Tier 1) | Pollution: PM2.5 (anchored bands plus monitor doubt), smoke days, older housing; radon shown only | 2026-10-13 |
 | Tuning | Washtenaw source check: today's home value, new-buyer tax rate, FEMA rating words, borderline Köppen, metro edges, Great Lakes | 2026-10-13 |
 | 12 | Find a place by name (counties, cities, neighborhoods, ZIPs) with its outline on the map | 2026-11-10 |
-| 13 (steps 1–5) | Hosting moved from Vercel to a Cloudflare Worker | 2026-11-13 |
+| 13 | Hosting moved from Vercel to a Cloudflare Worker (2026-11-13); Vercel removed, PR previews on workers.dev | 2026-11-25 |
 | 14a, 14c | Crime out of ranking and filters; climate on area pages | 2026-11-13 |
 
 Details of each are in `docs/plan-archive.md` §9 under the same phase number.
@@ -51,13 +51,6 @@ Details of each are in `docs/plan-archive.md` §9 under the same phase number.
 ## 3. Build order: open work
 
 Work top to bottom unless the owner reorders. Each item is its own pull request.
-
-### Phase 13 — finish the hosting move
-
-- [ ] **Step 6 (the week of watching ended 2026-11-20).** Remove the Vercel project,
-      `vercel.json` and `.vercelignore`, and the "Vercel is the rollback" lines in `AGENTS.md`.
-      Optionally replace the `www.lodestarmap.com/*` route with a Worker Custom Domain. The
-      owner has two Cloudflare accounts: confirm which one before touching the dashboard.
 
 ### Phase 14 — owner's queue after the Cloudflare move (decided 2026-11-13)
 
@@ -179,6 +172,12 @@ indexable, give people reasons to come back and share, and only then add ads.
 ### Loose ends from finished phases
 
 Smaller open items. Pick them up when convenient, or when a queue item touches the same code.
+
+**Hosting (owner, dashboard)**
+- [ ] Delete the Vercel project, and disconnect its GitHub integration so pull requests stop
+      showing Vercel checks. Production no longer touches it (removed from the repo 2026-11-25).
+- [ ] Maybe: replace the `www.lodestarmap.com/*` route with a Worker Custom Domain. The owner
+      has two Cloudflare accounts: Lodestar's is the one whose ID starts `fe39`.
 
 **Checks by hand**
 - [ ] A real-phone pass: overall layout and light mode (Phase 7), the first-run tour

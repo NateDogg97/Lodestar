@@ -1,0 +1,64 @@
+# A preview of each pull request on the Cloudflare Worker `lodestar` (replaces the
+# Vercel preview deploys, removed 2026-11-25).
+#
+# `wrangler versions upload` uploads a new version of the Worker WITHOUT deploying
+# it, so production (www.lodestarmap.com) keeps serving what's on main. The
+# version gets a stable alias URL, pr-<number>-lodestar.<account>.workers.dev,
+# that later pushes to the same pull request update. The workflow posts it as a
+# comment on the pull request and edits that comment afterwards.
+#
+# Needs workers_dev on in wrangler.jsonc (preview URLs live on workers.dev) and
+# the same secrets as deploy.yml. Pull requests from forks get no secrets, so
+# they're skipped.
+
+name: Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Upload preview version
+        id: upload
+        run: |
+          npx wrangler versions upload --preview-alias "pr-${PR}" --message "PR #${PR} @ ${SHA:0:7}" | tee upload.log
+          url=$(grep -oE 'https://pr-[0-9]+-[a-z0-9.-]+\.workers\.dev' upload.log | head -n1)
+          if [ -z "$url" ]; then echo "No preview alias URL in wrangler's output" >&2; exit 1; fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      - name: Comment the preview link
+        run: |
+          body="**Preview:** ${URL}
+
+          Built from ${SHA:0:7}. Production is unchanged until this merges."
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --edit-last --create-if-none --body "$body"
+          echo "Preview: ${URL}" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          URL: ${{ steps.upload.outputs.url }}

@@ -3,6 +3,12 @@
 Dated decisions and progress for `Working Master Plan.md`, newest first. Add an entry here
 when a decision changes or a step lands; the plan itself holds the current state.
 
+- 2026-11-25 — **Vercel removed** (§9 Phase 13 step 6, owner). `vercel.json` and
+  `.vercelignore` are gone; the site has been served only by the Cloudflare Worker since
+  2026-11-13. Pull-request previews, which came from Vercel, now come from
+  `.github/workflows/preview.yml`: it uploads a Worker version without deploying it and
+  comments its `pr-<n>-lodestar…workers.dev` link. Left for the owner in the dashboard:
+  delete the Vercel project and its GitHub integration.
 - 2026-11-25 — **Plan cut down to open work; Phase 15 proposed** (owner). The full plan as of
   today is frozen in `docs/plan-archive.md` (code comments citing "plan §N" point there).
   Durable rules from finished phases moved to `AGENTS.md` ("Rules that came out of finished
