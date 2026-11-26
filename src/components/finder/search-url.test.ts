@@ -100,4 +100,14 @@ describe("search URLs", () => {
       }),
     ).toBe("Schools, Cost of living +1 · 2 must-haves");
   });
+
+  it("leave the housing measure that renting or buying sets aside out of a search's name", () => {
+    const area = {
+      weights: { median_home_value: 4, nearby_school_pctl: 2 },
+      directions: {},
+      limits: { median_home_value: { max: 500_000 } },
+    };
+    expect(summarizeSearch({ ...EMPTY_PREFERENCES, area })).toBe("Home value, Schools · 1 must-have");
+    expect(summarizeSearch({ ...EMPTY_PREFERENCES, area, household: { tenure: "rent" } })).toBe("Schools");
+  });
 });

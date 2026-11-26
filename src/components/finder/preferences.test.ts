@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_PREFERENCES, EMPTY_PREFERENCES, sanitizePreferences, withHousehold } from "./preferences";
+import {
+  DEFAULT_PREFERENCES,
+  EMPTY_PREFERENCES,
+  sanitizePreferences,
+  setAsideByTenure,
+  toAreaSearch,
+  withHousehold,
+  type Preferences,
+} from "./preferences";
 
 describe("sanitizePreferences", () => {
   it("round-trips a valid saved search", () => {
@@ -110,5 +118,48 @@ describe("sanitizePreferences", () => {
     expect(sanitizePreferences(null)).toBeNull();
     expect(sanitizePreferences([1, 2])).toBeNull();
     expect(sanitizePreferences("x")).toBeNull();
+  });
+});
+
+describe("buying or renting sets the other housing measure aside", () => {
+  const both: Preferences = {
+    ...EMPTY_PREFERENCES,
+    area: {
+      weights: { median_home_value: 4, median_gross_rent: 2, nearby_school_pctl: 3 },
+      directions: { median_home_value: "middle", median_gross_rent: "lower" },
+      limits: { median_home_value: { max: 500_000 }, median_gross_rent: { max: 2500 } },
+    },
+  };
+
+  it("names the measure that doesn't apply", () => {
+    expect(setAsideByTenure({})).toBeNull();
+    expect(setAsideByTenure({ tenure: "buy" })).toBe("median_gross_rent");
+    expect(setAsideByTenure({ tenure: "rent" })).toBe("median_home_value");
+  });
+
+  it("keeps both when there's no choice", () => {
+    const s = toAreaSearch(both);
+    expect(s.areaWeights).toEqual(both.area.weights);
+    expect(s.areaLimits).toEqual(both.area.limits);
+  });
+
+  it("renting: home value neither ranks nor rules out, rent and the rest still do", () => {
+    const s = toAreaSearch({ ...both, household: { tenure: "rent" } });
+    expect(s.areaWeights).toEqual({ median_gross_rent: 2, nearby_school_pctl: 3 });
+    expect(s.areaDirections).toEqual({ median_gross_rent: "lower" });
+    expect(s.areaLimits).toEqual({ median_gross_rent: { max: 2500 } });
+  });
+
+  it("buying: rent is set aside, home value scores against the budget", () => {
+    const s = toAreaSearch({ ...both, household: { tenure: "buy", budget: 450_000 } });
+    expect(s.areaWeights).toEqual({ median_home_value: 4, nearby_school_pctl: 3 });
+    expect(s.areaLimits).toEqual({ median_home_value: { max: 500_000 } });
+    expect(s.budgets).toEqual({ median_home_value: 450_000 });
+  });
+
+  it("keeps the set-aside settings, so switching back restores them", () => {
+    const renting = withHousehold(both, { tenure: "rent" });
+    expect(renting.area).toEqual(both.area);
+    expect(toAreaSearch(withHousehold(renting, {})).areaWeights).toEqual(both.area.weights);
   });
 });

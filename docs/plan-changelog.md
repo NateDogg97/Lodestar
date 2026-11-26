@@ -3,6 +3,20 @@
 Dated decisions and progress for `Working Master Plan.md`, newest first. Add an entry here
 when a decision changes or a step lands; the plan itself holds the current state.
 
+- 2026-11-25 — **Must-haves can't pass on a disputed value** (owner; replaces Phase 10e's
+  "limits are as published"). A must-have on home value, rent or income passes only when
+  the published value and its estimate both pass; when they disagree the area is unsure
+  ("Can't confirm" on the area page and in the list) and ranks with the unknowns. Found by
+  the results audit: Chelsea, Manhattan (published $10,700, estimate ≈ $183k) was the one
+  verified match for "homes ≤ $50k, schools ≥ 95". Testing the estimate alone was tried
+  and rejected: it passed Upper Kirby, Houston ($858k published, ≈ $633k estimate) under
+  "≤ $700k". The audit's leak check now tests both values.
+- 2026-11-25 — **Buying or renting shapes the housing filters** (owner). Choosing Renting
+  sets Home value aside; Buying sets Rent aside; no choice keeps both. A set-aside measure's
+  weight and limits stay in the preferences but never reach scoring (`setAsideByTenure`,
+  `toAreaSearch`), so a renter's results aren't ranked or ruled out by home prices, and
+  switching back restores them. In the filters the card is dimmed with the reason, it isn't
+  counted as active, and results get no "Watch out" line for it.
 - 2026-11-25 — **Vercel removed** (§9 Phase 13 step 6, owner). `vercel.json` and
   `.vercelignore` are gone; the site has been served only by the Cloudflare Worker since
   2026-11-13. Pull-request previews, which came from Vercel, now come from

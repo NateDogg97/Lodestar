@@ -6,7 +6,7 @@
  * `hard` findings fail the audit; `warn` findings are listed for a person to judge.
  */
 import { formatValue, getMetric, isCategoryKey, type Direction, type MetricKey } from "@/lib/scoring";
-import { areaPriority, formatArea, notResidential, tradeOff, type NationalAreas } from "@/lib/tracts";
+import { areaPriority, formatArea, notResidential, SCORED_AS, tradeOff, type NationalAreas } from "@/lib/tracts";
 import { isGap } from "@/lib/laws";
 
 import type { RunResult } from "./run";
@@ -138,12 +138,19 @@ export function automaticChecks(r: RunResult): Findings {
   const weighted = criteria.length + r.countyCriteria.length;
 
   // 1. Every result is a place to move to, passes every must-have it has data for.
+  // A verified match passes on the published value AND on the estimate it's ranked by; one
+  // that passes on only one of them is unsure, never a match (owner, 2026-11-25).
+  const isOutside = (l: { min?: number; max?: number }, v: number) =>
+    !Number.isNaN(v) && ((l.min !== undefined && v < l.min) || (l.max !== undefined && v > l.max));
   for (const i of top) {
     if (notResidential(areas, i)) f.hard.push(`not residential in results: ${areas.name[i]} (pop ${areas.population[i]})`);
     for (const l of limits) {
       const v = r.value(i, l.column);
-      if (!Number.isNaN(v) && ((l.min !== undefined && v < l.min) || (l.max !== undefined && v > l.max))) {
+      const e = SCORED_AS[l.column] ? r.value(i, SCORED_AS[l.column]!) : NaN;
+      if (isOutside(l, v) && (Number.isNaN(e) || isOutside(l, e))) {
         f.hard.push(`must-have leak: ${areas.name[i]} ${l.column}=${v} outside ${l.min ?? ""}~${l.max ?? ""}`);
+      } else if (ns.status[i] === 0 && (isOutside(l, v) || isOutside(l, e))) {
+        f.hard.push(`unsure must-have counted as a match: ${areas.name[i]} ${l.column}=${v} (estimate ${e})`);
       }
     }
   }

@@ -33,7 +33,11 @@
  * Results that don't mislead (Phase 10, 2026-10-12):
  * - Home value, rent and income rank by their empirical-Bayes estimate (`*_eb`,
  *   etl/tracts/shrink.py) where the file has one: a noisy small-sample value is weighed
- *   toward its county's typical area. Shown values and must-have limits are as published.
+ *   toward its county's typical area. Shown values are as published. A must-have limit
+ *   passes only when the published value and the estimate both pass; when they fall on
+ *   either side of it the area is unsure, ranked with the unknowns (`limitState`, owner
+ *   2026-11-25): a $10,700 Manhattan sample ranked as ≈ $183k passed "homes ≤ $50k", and
+ *   the estimate alone would pass an $858k Houston enclave under "≤ $700k".
  * - With a budget, home value (or rent) scores fit to it (`budgetPoints`), not "cheaper
  *   is better" — so the cheapest extremes stop winning.
  * - `areaWatchOuts`: what a result is worst at among measures nobody asked about.
@@ -216,6 +220,22 @@ function rankedColumn(areas: NationalAreas, column: string): Float64Array {
   return v;
 }
 
+const outside = (l: { min?: number; max?: number }, v: number) =>
+  (l.min !== undefined && v < l.min) || (l.max !== undefined && v > l.max);
+
+/**
+ * A must-have limit on one area (owner, 2026-11-25). "unknown": no published value.
+ * "unsure": a `SCORED_AS` measure whose published value and estimate fall on either side
+ * of the limit, so the data can't say; ranked with the unknowns, never as a pass or a
+ * fail. Otherwise "pass" or "fail". `pub` and `est` are the area's two values (NaN if none).
+ */
+export function limitState(l: { min?: number; max?: number }, pub: number, est: number): "pass" | "fail" | "unknown" | "unsure" {
+  if (Number.isNaN(pub)) return "unknown";
+  const out = outside(l, pub);
+  if (Number.isFinite(est) && outside(l, est) !== out) return "unsure";
+  return out ? "fail" : "pass";
+}
+
 /** The value an area is ranked on (its estimate, for `SCORED_AS` measures); NaN if none. */
 export function scoredValue(areas: NationalAreas, column: string, i: number): number {
   return rankedColumn(areas, column)[i];
@@ -320,7 +340,11 @@ export interface NationalScores {
 }
 
 export function scoreNational(areas: NationalAreas, s: NationalSearch): NationalScores {
-  const limitValues = s.limits.map((l) => areas.values.get(l.column));
+  // Each limit's published column and its estimate (`limitState`), looked up once.
+  const limitValues = s.limits.map((l) => ({
+    v: areas.values.get(l.column),
+    est: SCORED_AS[l.column] ? areas.values.get(SCORED_AS[l.column]!) : undefined,
+  }));
   const score = new Float64Array(areas.n).fill(NaN);
   const status = new Uint8Array(areas.n);
   for (let i = 0; i < areas.n; i++) {
@@ -335,13 +359,13 @@ export function scoreNational(areas: NationalAreas, s: NationalSearch): National
     }
     let st = cp.status === "unknown" ? UNKNOWN : MATCH;
     for (let k = 0; k < s.limits.length; k++) {
-      const v = limitValues[k]?.[i] ?? NaN;
-      const l = s.limits[k];
-      if (Number.isNaN(v)) st = UNKNOWN;
-      else if ((l.min !== undefined && v < l.min) || (l.max !== undefined && v > l.max)) {
+      const { v: col, est } = limitValues[k];
+      const ls = limitState(s.limits[k], col?.[i] ?? NaN, est?.[i] ?? NaN);
+      if (ls === "fail") {
         st = EXCLUDED;
         break;
       }
+      if (ls !== "pass") st = UNKNOWN;
     }
     status[i] = st;
     if (st === EXCLUDED) continue;
@@ -500,19 +524,21 @@ export function explainArea(
 }
 
 export interface AreaLimitResult extends AreaLimit {
+  /** As published (what's shown). */
   value: number | null;
-  state: "pass" | "fail" | "unknown";
+  /** "unsure": the estimate, which falls on the other side of the limit (`limitState`). */
+  estimate?: number;
+  state: "pass" | "fail" | "unknown" | "unsure";
 }
 
 export function areaLimitResults(areas: NationalAreas, i: number, limits: AreaLimit[]): AreaLimitResult[] {
   return limits.map((l) => {
     const v = areas.values.get(l.column)?.[i] ?? NaN;
-    const state = Number.isNaN(v)
-      ? "unknown"
-      : (l.min !== undefined && v < l.min) || (l.max !== undefined && v > l.max)
-        ? "fail"
-        : "pass";
-    return { ...l, value: Number.isNaN(v) ? null : v, state };
+    const e = SCORED_AS[l.column] ? (areas.values.get(SCORED_AS[l.column]!)?.[i] ?? NaN) : NaN;
+    const state = limitState(l, v, e);
+    const out: AreaLimitResult = { ...l, value: Number.isNaN(v) ? null : v, state };
+    if (state === "unsure") out.estimate = e;
+    return out;
   });
 }
 

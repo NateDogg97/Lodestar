@@ -117,6 +117,11 @@ These are the decisions earlier phases settled. Each has its history in
 - **Missing data is never imputed.** A weighted priority with no value counts as 50 points at
   full weight and is shown as "No data". A missing value under a must-have is *unknown*: not
   passed and not ruled out. Verified matches rank ahead of unknowns.
+- A must-have on a measure ranked by its estimate (home value, rent, income: `SCORED_AS`)
+  passes only when the published value and the estimate both pass. When they fall on
+  either side of the limit the area is *unsure* ("Can't confirm"), ranked with the unknowns
+  (`limitState`). The estimate alone let an $858k Houston enclave under "≤ $700k"; the
+  published value alone passed a $10,700 Manhattan sample under "≤ $50k".
 - Must-haves rule out. They never lower a score.
 - **One level per filter, automatic.** County-wide measures (climate, state laws, cost of
   living, unemployment) score at the county's national percentile and give every area in the

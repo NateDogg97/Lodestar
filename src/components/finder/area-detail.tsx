@@ -531,12 +531,17 @@ function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRa
   const byEffect = [...parts].sort((a, b) => Math.abs(b.impact ?? 0) - Math.abs(a.impact ?? 0));
   const failed = limits.filter((l) => l.state === "fail").length;
   const unknown = limits.filter((l) => l.state === "unknown").length;
+  const unsure = limits.filter((l) => l.state === "unsure").length;
   const rest = Math.max(0, byEffect.length - 3);
   const where = notResidential(ranking.areas, i)
     ? "Not a place to move to (few residents, or mostly a base, campus or prison), so it isn't ranked"
     : place >= 0
       ? `${ordinal(place + 1)} of ${ranking.matches.length} matching areas in ${countyName}`
-      : "Doesn't pass your must-haves";
+      : failed
+        ? "Doesn't pass your must-haves"
+        : unsure
+          ? "Can't confirm your must-haves, so it isn't listed with the matches"
+          : "No data for some of your must-haves, so it isn't listed with the matches";
   return (
     <AreaSection
       id="why"
@@ -577,16 +582,18 @@ function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRa
                 className={`grid h-5 w-5 place-items-center rounded-full text-caption font-bold ${
                   failed
                     ? "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
-                    : unknown
+                    : unknown || unsure
                       ? "bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
                       : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
                 }`}
               >
-                {failed ? "✕" : unknown ? "?" : "✓"}
+                {failed ? "✕" : unknown || unsure ? "?" : "✓"}
               </span>
               {failed
                 ? `Fails ${failed} of your must-haves`
-                : unknown
+                : unsure
+                  ? `Can’t confirm ${unknown + unsure} of your must-haves`
+                  : unknown
                   ? `No data for ${unknown} of your must-haves`
                   : limits.length === 1
                     ? "Passes your must-have"
@@ -605,6 +612,12 @@ function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRa
                     {l.label}
                     {SCORED_ON_CENSUS.has(l.column) && <span className="text-caption text-neutral-500"> · today&rsquo;s prices</span>}
                     <span className="block text-caption text-neutral-500">Yours: {bound(l)}</span>
+                    {l.estimate !== undefined && (
+                      <span className="block text-caption text-neutral-500">
+                        Can&rsquo;t confirm: the estimate weighed toward what&rsquo;s typical nearby (≈{" "}
+                        {formatArea(l.column, l.estimate)}) falls on the other side of your limit.
+                      </span>
+                    )}
                   </span>
                   <span className={`shrink-0 font-medium tabular-nums ${l.state === "fail" ? "text-rose-700 dark:text-rose-400" : ""}`}>
                     {l.value === null ? "No data" : formatArea(l.column, l.value)}

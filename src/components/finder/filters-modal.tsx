@@ -30,7 +30,7 @@ import { Icon } from "@/components/ui/icons";
 
 import { ClimateIcon } from "./climate-icons";
 import { SavedSearches } from "./saved-searches";
-import { budgetColumn, withHousehold, type Preferences } from "./preferences";
+import { budgetColumn, setAsideByTenure, withHousehold, type Preferences } from "./preferences";
 
 /**
  * The two halves of a search (plan §9 Phase 7a): Priorities rank places
@@ -125,6 +125,15 @@ function sectionCategories(id: SectionId): (typeof CATEGORIES)[number][] {
   return [];
 }
 
+/** Why a housing measure is greyed out: the Buying / Renting choice sets it aside. */
+function setAsideNote(prefs: Preferences, key: string): string | undefined {
+  if (setAsideByTenure(prefs.household) !== key) return undefined;
+  const renting = prefs.household.tenure === "rent";
+  return `Not used while you’re ${renting ? "renting" : "buying"} (What I’m looking for, under Priorities). ${
+    renting ? "Rent" : "Home value"
+  } is the one that counts. Your setting here is kept if you switch.`;
+}
+
 /** How many filters in a section are doing something, in one mode. */
 function sectionCount(prefs: Preferences, mode: FiltersMode, id: SectionId): number {
   if (id === "you") {
@@ -132,7 +141,8 @@ function sectionCount(prefs: Preferences, mode: FiltersMode, id: SectionId): num
     return mode === "priorities" ? [h.tenure, h.budget, h.income].filter((v) => v !== undefined).length : 0;
   }
   const metrics = countyMetrics(id, mode);
-  const areas = areaMeasures(id);
+  const aside = setAsideByTenure(prefs.household);
+  const areas = areaMeasures(id).filter((d) => d.key !== aside);
   if (mode === "priorities") {
     return (
       metrics.filter((m) => (prefs.weights[m.key] ?? 0) > 0).length +
@@ -482,6 +492,7 @@ export function FiltersModal({
                       direction={prefs.area.directions[d.key] ?? d.defaultDirection}
                       typical="Aiming for the typical US area"
                       budget={budgetColumn(prefs.household) === d.key ? prefs.household.budget : undefined}
+                      setAside={setAsideNote(prefs, d.key)}
                       onWeight={(w) => onChange({ ...prefs, area: { ...prefs.area, weights: { ...prefs.area.weights, [d.key]: w } } })}
                       onDirection={(dir) =>
                         onChange({ ...prefs, area: { ...prefs.area, directions: { ...prefs.area.directions, [d.key]: dir } } })
@@ -496,6 +507,7 @@ export function FiltersModal({
                       note={d.note}
                       unit={d.unit}
                       limit={prefs.area.limits[d.key]}
+                      setAside={setAsideNote(prefs, d.key)}
                       onLimit={(bound, v) =>
                         onChange({
                           ...prefs,
@@ -755,11 +767,13 @@ function Badge({ n }: { n: number }) {
   );
 }
 
-function Card({ active, children }: { active: boolean; children: ReactNode }) {
+function Card({ active, muted, children }: { active: boolean; muted?: boolean; children: ReactNode }) {
   return (
     <div
       className={`rounded-xl border p-4 transition-colors ${
-        active
+        muted
+          ? "border-dashed border-neutral-300 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900/40"
+          : active
           ? "border-emerald-600/40 bg-emerald-50/60 dark:border-emerald-500/30 dark:bg-emerald-950/30"
           : "border-neutral-200 dark:border-neutral-800"
       }`}
@@ -881,6 +895,7 @@ function PriorityCard({
   source,
   fixed,
   budget,
+  setAside,
   onWeight,
   onDirection,
 }: {
@@ -897,11 +912,21 @@ function PriorityCard({
   fixed?: boolean;
   /** Scored against this budget (Phase 10c): replaces the direction control. */
   budget?: number;
+  /** Why this measure is greyed out and left out of scoring (`setAsideByTenure`). */
+  setAside?: string;
   source?: LawSourceSummary;
   onWeight: (w: number) => void;
   onDirection: (d: Direction) => void;
 }) {
   const titleId = `prio-${id}`;
+  if (setAside) {
+    return (
+      <Card active={false} muted>
+        <CardTitle id={titleId} label={label} level={level} source={source} note={note} />
+        <SetAsideNote text={setAside} />
+      </Card>
+    );
+  }
   return (
     <Card active={weight > 0}>
       <CardTitle id={titleId} label={label} level={level} source={source} note={note} />
@@ -962,6 +987,7 @@ function LimitCard({
   limit,
   placeholders,
   source,
+  setAside,
   onLimit,
 }: {
   id: string;
@@ -973,8 +999,18 @@ function LimitCard({
   /** [min, max] hints: the national range, in the units you type. */
   placeholders?: [string, string];
   source?: LawSourceSummary;
+  /** Why this measure is greyed out and left out of scoring (`setAsideByTenure`). */
+  setAside?: string;
   onLimit: (bound: "min" | "max", v: number | undefined) => void;
 }) {
+  if (setAside) {
+    return (
+      <Card active={false} muted>
+        <CardTitle label={label} level={level} source={source} note={note} />
+        <SetAsideNote text={setAside} />
+      </Card>
+    );
+  }
   return (
     <Card active={hasLimit(limit)}>
       <CardTitle label={label} level={level} source={source} note={note} />
@@ -998,6 +1034,10 @@ function LimitCard({
       </div>
     </Card>
   );
+}
+
+function SetAsideNote({ text }: { text: string }) {
+  return <p className="mt-3 text-caption text-neutral-600 dark:text-neutral-400">{text}</p>;
 }
 
 /**

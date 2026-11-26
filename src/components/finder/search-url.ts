@@ -1,7 +1,7 @@
 import { getMetric, METRICS, type MetricKey } from "@/lib/scoring";
 import { AREA_PRIORITIES, areaPriority } from "@/lib/tracts";
 
-import { OPTIONAL_STATES, sanitizePreferences, type Preferences } from "./preferences";
+import { OPTIONAL_STATES, sanitizePreferences, setAsideByTenure, type Preferences } from "./preferences";
 
 /**
  * A search as a readable, shareable query string (plan §9 Phase 7b):
@@ -148,10 +148,13 @@ export function decodeSearch(params: URLSearchParams): SharedSearch | null {
  * priorities, then how many must-haves. "Cost of living, Schools +2 · 1 must-have"
  */
 export function summarizeSearch(prefs: Preferences): string {
+  // Buying or renting sets the other housing measure aside: don't count it (as the Filters badge doesn't).
+  const aside = setAsideByTenure(prefs.household);
+  const kept = <T,>(record: Partial<Record<string, T>>) => Object.entries(record).filter(([k]) => k !== aside);
   // County-wide and by-area priorities together, most important first (Phase 8f).
   const weighted: [string, number][] = [
     ...(Object.entries(prefs.weights) as [MetricKey, number][]).map(([k, w]): [string, number] => [getMetric(k).label, w]),
-    ...Object.entries(prefs.area.weights).map(([k, w]): [string, number] => [areaPriority(k)?.label ?? k, w ?? 0]),
+    ...kept(prefs.area.weights).map(([k, w]): [string, number] => [areaPriority(k)?.label ?? k, w ?? 0]),
   ]
     .filter(([, w]) => w > 0)
     .sort((a, b) => b[1] - a[1]);
@@ -160,7 +163,7 @@ export function summarizeSearch(prefs: Preferences): string {
   const isLimit = (l: { min?: number; max?: number } | undefined) => l && (l.min !== undefined || l.max !== undefined);
   const musts =
     Object.values(prefs.limits).filter(isLimit).length +
-    Object.values(prefs.area.limits).filter(isLimit).length +
+    kept(prefs.area.limits).filter(([, l]) => isLimit(l)).length +
     Object.values(prefs.categories).filter((a) => a !== undefined).length;
 
   const head = names.length ? `${names.join(", ")}${more > 0 ? ` +${more}` : ""}` : "No priorities";
