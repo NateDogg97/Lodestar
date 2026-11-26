@@ -3,6 +3,12 @@
 Dated decisions and progress for `Working Master Plan.md`, newest first. Add an entry here
 when a decision changes or a step lands; the plan itself holds the current state.
 
+- 2026-11-25 — **Buying or renting shapes the housing filters** (owner). Choosing Renting
+  sets Home value aside; Buying sets Rent aside; no choice keeps both. A set-aside measure's
+  weight and limits stay in the preferences but never reach scoring (`setAsideByTenure`,
+  `toAreaSearch`), so a renter's results aren't ranked or ruled out by home prices, and
+  switching back restores them. In the filters the card is dimmed with the reason, it isn't
+  counted as active, and results get no "Watch out" line for it.
 - 2026-11-25 — **Vercel removed** (§9 Phase 13 step 6, owner). `vercel.json` and
   `.vercelignore` are gone; the site has been served only by the Cloudflare Worker since
   2026-11-13. Pull-request previews, which came from Vercel, now come from
