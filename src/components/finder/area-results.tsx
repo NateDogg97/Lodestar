@@ -403,7 +403,7 @@ function Summary({ i, parts, common }: { i: number; parts: AreaPart[]; common: C
         <p className="flex items-center gap-1.5 text-caption text-neutral-600 dark:text-neutral-400">
           <span aria-hidden className={failedLimits.length ? "text-neutral-400" : "text-emerald-600"}>{failedLimits.length ? "?" : "✓"}</span>
           {failedLimits.length
-            ? `No data for: ${failedLimits.map((l) => l.label).join(", ")}`
+            ? `${failedLimits.some((l) => l.state === "unsure") ? "Can’t confirm" : "No data for"}: ${failedLimits.map((l) => l.label).join(", ")}`
             : `Passes ${limits.length === 1 ? "your must-have" : `all ${limits.length} must-haves`}`}
         </p>
       )}

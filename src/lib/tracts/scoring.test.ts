@@ -372,6 +372,27 @@ describe("results that don't mislead (Phase 10, 2026-10-12)", () => {
     expect(part.scored).toBe(260_000);
   });
 
+  it("passes a must-have only when the published value and the estimate agree (owner, 2026-11-25)", () => {
+    const counties = countyParts([county("48001", "match", null)]);
+    const run = (l: { min?: number; max?: number }) =>
+      scoreNational(a, { criteria: [], limits: [{ column: "median_home_value", label: "Home value", ...l }], counties }).status;
+    // Area 0: a $20k sample ranked as ≈ $260k. "At most $100k": $20k passes, $260k doesn't.
+    expect(run({ max: 100_000 })[0]).toBe(UNKNOWN);
+    // "At least $200k": the other way round, also unsure.
+    expect(run({ min: 200_000 })[0]).toBe(UNKNOWN);
+    // Both sides agree: a pass, or a fail.
+    expect(run({ max: 300_000 })[0]).toBe(MATCH);
+    expect(run({ max: 10_000 })[0]).toBe(EXCLUDED);
+    // An area whose estimate is its published value is never unsure.
+    expect(run({ max: 200_000 })[1]).toBe(MATCH); // $175k both ways
+
+    const [r] = areaLimitResults(a, 0, [{ column: "median_home_value", label: "Home value", max: 100_000 }]);
+    expect(r).toMatchObject({ state: "unsure", value: 20_000, estimate: 260_000 });
+    const [ok] = areaLimitResults(a, 0, [{ column: "median_home_value", label: "Home value", max: 300_000 }]);
+    expect(ok.state).toBe("pass");
+    expect(ok.estimate).toBeUndefined();
+  });
+
   it("scores fit to a budget, not cheaper-is-better", () => {
     expect(budgetPoints(300_000, 400_000)).toBe(100);
     expect(budgetPoints(400_000, 400_000)).toBe(100);
