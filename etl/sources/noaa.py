@@ -9,7 +9,7 @@ WHAT THIS PRODUCES
     climate_station_id, climate_station_dist_mi, climate_station_count
 
     The hottest/coldest-month and day-count columns implement the climate
-    preference model in Working Master Plan.md §6 "Climate preferences":
+    preference model in docs/plan-archive.md §6 "Climate preferences":
     describe the year by its two ends plus how long the extremes last.
 
     Plus a SEPARATE wide file, data/interim/noaa_monthly.csv, holding all 12

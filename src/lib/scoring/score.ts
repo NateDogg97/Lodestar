@@ -1,5 +1,5 @@
 /**
- * The scoring model (Working Master Plan §6).
+ * The scoring model (docs/plan-archive.md §6; current rules in AGENTS.md).
  *
  *   score = Σ(weight × percentile) / Σ(weight)
  *

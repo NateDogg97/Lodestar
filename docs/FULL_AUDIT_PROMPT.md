@@ -1,8 +1,9 @@
 # Full audit of Lodestar — prompt for an AI agent
 
 *Written 2026-10-04 for a fresh session (intended: Claude Fable 5.1). Read this whole file,
-then `AGENTS.md`, then `Working Master Plan.md` (§2, §6, §9 Phase 8f and the "Results audit"
-section, §10) before touching anything.*
+then `AGENTS.md`, then `docs/plan-archive.md` (§2, §6, §9 Phase 8f and the "Results audit"
+section) and `Working Master Plan.md` (open work; §4 *Explicitly deferred*) before touching
+anything.*
 
 ---
 
@@ -159,7 +160,7 @@ shipping it — the owner decides design direction.
 - Follow `Working Master Plan.md`. Record decisions, findings and open questions **there**, tick
   what you finish, update its "Last updated" date. When the code and the plan disagree, the code
   is right — fix the plan.
-- Don't build anything in plan §10 *Explicitly deferred*. No backend, no accounts.
+- Don't build anything in the plan's §4 *Explicitly deferred*. No backend, no accounts.
 - Never hand-edit generated data (`public/data/*`, `etl/data/law_*.csv`). Change the ETL and
   rebuild.
 - Never print or commit secrets (`etl/.env`: Census, EIA, R2 keys). Don't commit `.claude/`.

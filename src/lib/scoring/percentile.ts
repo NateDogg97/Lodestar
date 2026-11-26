@@ -3,7 +3,7 @@
  *
  * Percentile rather than min–max: one county with a $1.4M median home value
  * would otherwise squash every other county into the bottom sliver of the
- * range (Working Master Plan §6).
+ * range (docs/plan-archive.md §6).
  *
  * - The lowest value gets 0, the highest 100; `rank / (count - 1) * 100`.
  * - Ties share the average of their ranks, so equal values score equally.

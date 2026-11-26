@@ -5,7 +5,7 @@
 > fix the file.
 >
 > Last updated: 2026-09-27
-> Companion to: `Working Master Plan.md` (project context), `etl/README.md` (the county pipeline)
+> Companion to: `AGENTS.md` (project context), `Working Master Plan.md` (open work), `etl/README.md` (the county pipeline)
 >
 > **Files:** the table is `etl/data/law_definitions.csv` + `etl/data/law_values.csv`
 > (committed). The code is in `etl/laws/`: `refresh.py` (re-fetches every source and rewrites
@@ -531,7 +531,7 @@ areas, and development has been blocked on exactly that).
 
 ## 14. For another agent picking this up
 
-Read `Working Master Plan.md`, then this file, then `law_definitions.csv` — the rubrics there
+Read `AGENTS.md`, then this file, then `law_definitions.csv` — the rubrics there
 are the specification for what each value means — then `etl/laws/refresh.py`.
 
 **Rules that matter:**

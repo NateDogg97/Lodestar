@@ -3,6 +3,15 @@
 Dated decisions and progress for `Working Master Plan.md`, newest first. Add an entry here
 when a decision changes or a step lands; the plan itself holds the current state.
 
+- 2026-11-25 — **Plan cut down to open work; Phase 15 proposed** (owner). The full plan as of
+  today is frozen in `docs/plan-archive.md` (code comments citing "plan §N" point there).
+  Durable rules from finished phases moved to `AGENTS.md` ("Rules that came out of finished
+  work"). `Working Master Plan.md` now holds only open work: Phase 13 step 6, Phase 14
+  (b, d, e, f, g), the new **Phase 15 — Reach and revenue** (analytics, a licence check for
+  commercial use, indexable county and state pages, shortlist/compare/share links, then ads
+  or affiliate links only on the owner's decision), and loose ends gathered from finished
+  phases. Dropped as done: the Phase 10 and Washtenaw "reach production" items (the area
+  refreshes of 2026-10-15 and 2026-11-03 published them) and the Phase 8c bucket setup.
 - 2026-11-13 — **Meters pin the value; typical is a band** (owner, replaces the ▲ marker
   below). On every `CompareBar` meter a ▼ above the bar points at the value, written under
   the bar beneath it; a typical US area is a hatched band, ±10% of the US median (where the

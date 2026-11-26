@@ -13,7 +13,7 @@
 Builds one CSV — one row per US county — by joining four federal/academic
 data sources onto a common geographic key.
 
-This is Phase 1 of the project described in `Working Master Plan.md` at the repo root. Read
+This is Phase 1 of the project described in `AGENTS.md` at the repo root. Read
 that first for the why; this document covers the how.
 
 ---
@@ -530,7 +530,7 @@ Deliberate Phase 1 omissions, not oversights:
   needs BEA's expenditure weights. Tracked in `Working Master Plan.md`.
 - **Nulls stay null — by design.** The ETL never imputes. Decided
   2026-09-22: the app treats a missing value as *unknown* — grey on the map,
-  with a toggle to show or hide unknown results (`Working Master Plan.md` §6).
+  with a toggle to show or hide unknown results (`AGENTS.md`, *Scoring*).
   So a null is always better than a guessed number here.
 - **Snowfall is the weakest climate column.** Fewer stations report it than
   temperature or rain. It is a low-priority metric; remaining nulls are
@@ -565,7 +565,8 @@ Deliberate Phase 1 omissions, not oversights:
 
 Read in this order:
 
-1. `Working Master Plan.md` at repo root — project context and the decisions already made
+1. `AGENTS.md` at repo root — project context and the decisions already made
+   (`Working Master Plan.md` is the open work; `docs/plan-archive.md` the history)
 2. This file
 3. `config.py` — every tunable in one place
 4. The docstring of whichever `sources/*.py` you're touching — each explains
@@ -580,12 +581,11 @@ Read in this order:
   `config.PLAUSIBLE_RANGES`.
 - Uncertain API constants get **discovered and logged**, not hardcoded. See
   `bea.discover_line_codes` for the pattern.
-- `Working Master Plan.md` says: *if this file and the code disagree, the code is right and
-  the doc is stale.* Same rule here.
+- The project rule: *if a doc and the code disagree, the code is right and the doc is
+  stale.* Same rule here.
 
-**If you change a derived formula**, update it in three places or the
-validator will catch you: `join.add_derived_columns`, the table in this file,
-and `Working Master Plan.md` §5.
+**If you change a derived formula**, update it in both places or the
+validator will catch you: `join.add_derived_columns` and the table in this file.
 
 
 ---
