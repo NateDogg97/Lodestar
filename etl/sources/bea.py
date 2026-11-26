@@ -17,36 +17,32 @@ THE CENTRAL PROBLEM THIS MODULE SOLVES
     produced internally as part of BEA's methodology but withheld pending
     reliability work.)
 
-    It ALSO does not publish a per-state non-metro portion, despite the
-    interactive tables suggesting otherwise. Verified 2026-09-20 against both
-    the Regional API (GetParameterValuesFiltered on GeoFips for SARPP and
-    MARPP) and the bulk downloads (apps.bea.gov/regional/zip/{SARPP,MARPP}.zip):
-    the only portion row anywhere is "00999 United States (Nonmetropolitan
-    Portion)" — national, not per state.
+    It DOES publish each state's metropolitan and non-metropolitan portions,
+    in a third table, PARPP ("Regional price parities by portion", GeoFips
+    {state}998 / {state}999, the same five components). The 2026-09-20 check
+    looked only at SARPP and MARPP and concluded there were none; PARPP was
+    found 2026-11-25 (plan 14b). BEA reports 0 for a portion that does not
+    exist (DE, DC, NJ, RI have no non-metro counties), which is read as missing.
 
-    So every county inherits a value by one of two rules:
-      1. County is in a METROPOLITAN CBSA -> that CBSA's RPP      (metro)
-      2. Otherwise                        -> the statewide RPP    (state)
+    So every county inherits a value by one of three rules:
+      1. County is in a METROPOLITAN CBSA -> that CBSA's RPP          (metro)
+      2. Otherwise -> its state's non-metropolitan portion (PARPP)    (nonmetro)
+      3. No portion for its state -> the statewide RPP               (state)
+
+    Rule 3 is rare: a county our crosswalk calls non-metro in a state BEA
+    counts as all-metro (Sussex, DE, in 2024), shown as a "state estimate".
 
     Which rule fired is recorded per county in `rpp_geo_level`, and the
     specific source geography in `rpp_source_geo`. Do not drop these columns:
     they are how you answer "why does this rural county have the same cost of
     living as that one?" without re-deriving the whole pipeline.
 
-    KNOWN PRECISION LOSS, TWO WAYS:
-      - Every county in a metro shares one number. Travis and Williamson both
-        get Austin's RPP.
-      - Every non-metro county gets its state's blended RPP, which includes
-        that state's metros and so runs somewhat HIGH for rural areas — most
-        in states dominated by one expensive metro (CA, WA, CO, NY, MA).
-        Roughly 62% of counties are on this rule.
-    Both are the reason for the component split below. A true state
-    non-metro value would need to be derived (statewide minus its metros,
-    by BEA's expenditure weights) — deferred, see Working Master Plan.md.
-
-    If BEA ever starts publishing per-state portions, _classify_state_rows
-    still detects them by name and they take precedence over rule 2 as level
-    "nonmetro". Nothing else needs to change.
+    KNOWN PRECISION LOSS: every county in a metro shares one number (Travis and
+    Williamson both get Austin's), and every non-metro county in a state shares
+    its portion's. etl/rpp_local.py moves the rents part by each county's own
+    ACS rent. Deriving a non-metro value from the state minus its metros was
+    tried before PARPP turned up and rejected: the subtraction amplifies
+    weighting error about tenfold (docs/plan-changelog.md, 2026-11-25).
 
 WHY FIVE COLUMNS AND NOT ONE
     BEA estimates RPPs for four subcategories — goods, housing rents,
@@ -77,9 +73,9 @@ EXPENDITURE WEIGHTS ARE NOT HARDCODED
     methodology release rather than inventing them.
 
 LINE CODES AND GEOFIPS ARE DISCOVERED, NOT ASSUMED
-    BEA identifies each RPP component by a numeric LineCode within the SARPP
-    and MARPP tables, and identifies the non-metro portions by special GeoFips
-    values. Both have changed across methodology revisions and neither is
+    BEA identifies each RPP component by a numeric LineCode within the SARPP,
+    MARPP and PARPP tables, and identifies the non-metro portions by special
+    GeoFips values ({state}999, listed by GetParameterValuesFiltered). Both have changed across methodology revisions and neither is
     reliably documented in a stable place.
 
     Rather than hardcode values that may be wrong, this module calls BEA's
@@ -294,8 +290,8 @@ def fetch_rpp_tables(year: int | None = None) -> tuple[pd.DataFrame, pd.DataFram
     """
     Fetch state-level (SARPP) and metro-level (MARPP) RPP.
 
-    SARPP contains statewide values AND the metro/non-metro portion rows we
-    need for rule 2. MARPP contains one row per CBSA.
+    SARPP contains statewide values only; MARPP one row per CBSA. The state
+    non-metro portions are in PARPP (`fetch_nonmetro_portions`).
 
     Returns (state_df, metro_df, year_used).
     """
@@ -419,44 +415,38 @@ def load_cbsa_crosswalk(year: int | None = None) -> pd.DataFrame:
     return out
 
 
-def _classify_state_rows(state_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def fetch_nonmetro_portions(year: int) -> pd.DataFrame:
     """
-    Split SARPP rows into statewide values and (if any) non-metro-portion values.
+    Each state's non-metropolitan portion from PARPP: state_fips + components.
 
-    As of the 2026-02 release BEA publishes NO per-state portions through the
-    API or the bulk files, so `nonmetro` comes back empty and every non-metro
-    county takes the statewide value. The detection is kept, by GeoName, so
-    that if BEA ever adds "Alabama (Nonmetropolitan Portion)" rows they are
-    picked up automatically and logged.
+    PARPP's GeoFips are {state}998 (metro portion) and {state}999 (non-metro
+    portion), and the API takes no "all portions" keyword, so the list is asked
+    for and passed explicitly. A state with no non-metro counties comes back as
+    0 in every column: dropped here, so its counties fall to the statewide rule.
     """
-    name = state_df["GeoName"].astype(str)
+    listed = _bea_request({
+        "method": "GetParameterValuesFiltered",
+        "datasetname": "Regional",
+        "TargetParameter": "GeoFips",
+        "TableName": "PARPP",
+    }).get("ParamValue", [])
+    geos = sorted(str(v["Key"]) for v in listed
+                  if str(v.get("Key", "")).endswith("999") and str(v["Key"]) != "00999")
+    if not geos:
+        raise RuntimeError(f"BEA lists no state non-metro portions in PARPP: {listed[:5]}")
 
-    is_nonmetro = name.str.contains("nonmetropolitan", case=False, na=False)
-    is_metro_portion = name.str.contains("metropolitan portion", case=False, na=False) & ~is_nonmetro
-
-    statewide = state_df[~is_nonmetro & ~is_metro_portion].copy()
-    nonmetro = state_df[is_nonmetro].copy()
-
-    # Derive a 2-char state FIPS. BEA state GeoFips are 5 chars like "01000".
-    statewide["state_fips"] = statewide["GeoFips"].str[:2]
-    nonmetro["state_fips"] = nonmetro["GeoFips"].str[:2]
-
-    log.info("SARPP: %d statewide rows, %d non-metro portion rows, %d metro portion rows",
-             len(statewide), len(nonmetro), int(is_metro_portion.sum()))
-
-    if nonmetro.empty:
-        log.info(
-            "No per-state non-metro portion rows in SARPP (expected: BEA does not "
-            "publish them). Non-metro counties take the statewide RPP, level 'state'."
-        )
-    else:
-        log.warning(
-            "BEA now publishes per-state non-metro portions (%d rows). They will "
-            "be used as level 'nonmetro'. Re-check validate.py thresholds.",
-            len(nonmetro),
-        )
-
-    return statewide, nonmetro
+    codes = discover_line_codes("PARPP")
+    df = _fetch_table("PARPP", ",".join(geos), year, codes)
+    component_cols = list(codes)
+    df[component_cols] = df[component_cols].where(df[component_cols] > 0)
+    absent = df[df[component_cols].isna().all(axis=1)]
+    if len(absent):
+        log.info("PARPP: no non-metro portion for %s (all-metro states)",
+                 ", ".join(absent["GeoName"].str.replace(r"\s*\(.*", "", regex=True)))
+    df = df.drop(absent.index)
+    df["state_fips"] = df["GeoFips"].str[:2]
+    log.info("PARPP %d: %d state non-metro portions", year, len(df))
+    return df
 
 
 def fetch(year: int | None = None) -> pd.DataFrame:
@@ -465,7 +455,8 @@ def fetch(year: int | None = None) -> pd.DataFrame:
     state_df, metro_df, year_used = fetch_rpp_tables(year)
     crosswalk = load_cbsa_crosswalk()
 
-    statewide, nonmetro = _classify_state_rows(state_df)
+    statewide = state_df.assign(state_fips=state_df["GeoFips"].str[:2])
+    nonmetro = fetch_nonmetro_portions(year_used)
 
     component_cols = [col for col, _ in COMPONENT_PATTERNS]
 
@@ -494,8 +485,7 @@ def fetch(year: int | None = None) -> pd.DataFrame:
     joined.loc[has_metro, "rpp_source_geo"] = joined.loc[has_metro, "cbsa_name"]
 
     # A county the crosswalk calls METROPOLITAN but whose CBSA code is absent
-    # from MARPP will fall through to the non-metro rule below and get tagged
-    # "nonmetro". That is usually a delineation-vintage mismatch (OMB renamed
+    # from MARPP will fall through to the non-metro rules below. That is usually a delineation-vintage mismatch (OMB renamed
     # or renumbered the CBSA). Report it loudly so it is not mistaken for a
     # genuinely rural county.
     in_metro_cbsa = joined["cbsa"].notna() & ~is_micro
@@ -518,7 +508,7 @@ def fetch(year: int | None = None) -> pd.DataFrame:
     else:
         log.info("every crosswalk-metropolitan county matched a MARPP row")
 
-    # --- Rule 2a (only if BEA ever publishes them): state non-metro portion --
+    # --- Rule 2: the state's non-metropolitan portion (PARPP) ---------------
     nonmetro_lookup = nonmetro.set_index("state_fips")
     need = ~has_metro
     if not nonmetro_lookup.empty:
@@ -531,12 +521,10 @@ def fetch(year: int | None = None) -> pd.DataFrame:
             )
         filled = need & joined[component_cols].notna().any(axis=1)
         joined.loc[filled, "rpp_geo_level"] = "nonmetro"
-        joined.loc[filled, "rpp_source_geo"] = (
-            joined.loc[filled, "state"] + " (nonmetro portion)"
-        )
+        joined.loc[filled, "rpp_source_geo"] = joined.loc[filled, "state"] + " non-metro"
 
-    # --- Rule 2: everything else takes the statewide RPP --------------------
-    # This is the designed path for ~62% of counties, not an error fallback.
+    # --- Rule 3: no portion for the state -> the statewide RPP -------------
+    # Rare (Sussex, DE in 2024): validate.py fails the build if it isn't.
     statewide_lookup = statewide.set_index("state_fips")
     still_need = joined[component_cols].isna().all(axis=1)
     if still_need.any() and not statewide_lookup.empty:

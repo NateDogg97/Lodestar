@@ -16,7 +16,7 @@
       "every_days": 365,
       "last_checked": "2026-09-20",
       "next": "2026-12-11",
-      "how": "BEA's next release was scheduled for 2026-12-10 (adds 2025). Check bea.gov's release schedule; if out, bump BEA_YEAR and rebuild counties.json."
+      "how": "BEA's next release was scheduled for 2026-12-10 (adds 2025). Check bea.gov's release schedule; if out, bump BEA_YEAR and run `python -m etl.patch bea` (metro, state non-metro and state values, re-localized)."
     },
     {
       "id": "counties-json",

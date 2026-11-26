@@ -5,6 +5,7 @@ Refresh some sources' columns in the published county file, without a full rebui
     python -m etl.patch zillow_county newbuyer nri
     python -m etl.patch --dry-run nri            # validate and report; write nothing
     python -m etl.patch pollution                # after etl.pollution.{pm25,smoke,radon} all
+    python -m etl.patch bea                      # BEA cost of living, re-localized (etl/rpp_local.py)
 
 A full build (`python -m etl.build`) needs every source's interim file — NOAA's
 thousands of station files, the hand-downloaded SEDA tables — and a fresh clone has
@@ -13,8 +14,8 @@ their columns in public/data/counties.json, re-derives what depends on them, val
 the result with the build's own checks, and publishes it the build's way
 (`to_app_payload`). The published file is the base, so nothing else changes.
 
-Sources that read the county spine (FEMA NRI, the new-buyer ratio) get one written
-from the published file when data/interim/ has none.
+Sources that read the county spine (FEMA NRI, the new-buyer ratio, BEA) get one
+written from the published file when data/interim/ has none.
 """
 
 from __future__ import annotations
@@ -36,6 +37,8 @@ SOURCES = {
     "zillow_county": "etl.sources.zillow_county",
     "newbuyer": "etl.sources.newbuyer",
     "nri": "etl.sources.nri",
+    # Cost of living (plan 14b): BEA's metro, state non-metro and state values.
+    "bea": "etl.sources.bea",
     "edges": "etl.edges",
     # Phase 11: from the national block runs and the county ACS (etl/pollution/county.py).
     "pollution": "etl.pollution.county",
@@ -59,9 +62,16 @@ def _decode_ratings(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def derive(df: pd.DataFrame) -> pd.DataFrame:
+def derive(df: pd.DataFrame, sources: list[str]) -> pd.DataFrame:
     """What depends on the patched columns (the same steps `join.build` runs)."""
     from .sources.zillow_county import today_values
+
+    if "bea" in sources:
+        # New published values: the old parents would otherwise be kept as the base
+        # (localize() reuses them so it can run twice), so drop them and re-localize.
+        from .rpp_local import localize
+
+        df = localize(df.drop(columns=["rpp_all_parent", "rpp_rents_parent"], errors="ignore"))
 
     # Only with Zillow's county values in hand (they're kept out of the published file):
     # recomputing without them would replace Zillow's value with the Census fallback.
@@ -87,7 +97,10 @@ def main() -> int:
         df = df.drop(columns=[c for c in new if c in df.columns]).merge(frame, on="fips", how="left")
         log.info("%s: %d columns, %d of %d counties covered", name, len(new),
                  int(df[new].notna().any(axis=1).sum()), len(df))
-    df = derive(df)
+    df = derive(df, args.sources)
+    # The published file's column order, so a patch's diff shows only what changed.
+    order = [c for c in payload["columns"] if c in df.columns]
+    df = df[order + [c for c in df.columns if c not in order]]
 
     findings, passed = validate.validate(df)
     validate.print_report(findings, df)

@@ -25,7 +25,7 @@ Four agencies describe American geography four different ways:
 | Agency | Organizes by | Publishes RPP/data at |
 |---|---|---|
 | Census | Counties, tracts, places | County and below |
-| BEA | Metro areas (CBSAs) | State, metro, non-metro portion |
+| BEA | Metro areas (CBSAs) | Metro, state non-metro portion (PARPP), state |
 | Stanford (SEDA) | School districts | District, county, metro, state |
 | NOAA | Weather stations | Point locations (lat/lon) |
 
@@ -266,17 +266,19 @@ is written to the output as `acs_vintage` — surface it in the UI.
 
 This is the most intricate module. Read its docstring before editing.
 
-**BEA does not publish county-level RPP**, and — despite what its interactive
-tables imply — **it does not publish a per-state non-metro portion either.**
-Verified 2026-09-20 against the Regional API's GeoFips lists for SARPP and
-MARPP *and* the bulk downloads (`apps.bea.gov/regional/zip/{SARPP,MARPP}.zip`):
-the only portion row anywhere is `00999 United States (Nonmetropolitan
-Portion)`, national. So every county inherits a value by one of two rules:
+**BEA does not publish county-level RPP.** It does publish each state's
+metropolitan and non-metropolitan portions, in the Regional table `PARPP`
+(GeoFips `{state}998` / `{state}999`). A 2026-09-20 check looked only at `SARPP`
+and `MARPP` and concluded there were none; `PARPP` was found 2026-11-25 (plan
+14b). So every county inherits a value by one of three rules:
 
 1. County is in a **metropolitan** CBSA → that CBSA's RPP (`metro`, ~38%)
-2. Otherwise → the **statewide** RPP (`state`, ~62%)
+2. Otherwise → its state's **non-metro portion** (`nonmetro`, ~62%)
+3. No portion for its state → the **statewide** RPP (`state`; 1 county in
+   2024, Sussex DE, since BEA counts all of Delaware as metro)
 
-Which rule fired is recorded per county in `rpp_geo_level`.
+Which rule fired is recorded per county in `rpp_geo_level`. BEA returns 0 for
+a portion that doesn't exist (DE, DC, NJ, RI); it is read as missing.
 
 > Micropolitan CBSAs appear in the Census delineation file but BEA does **not**
 > publish RPP for them (its footnote: "Nonmetropolitan portion includes
@@ -284,19 +286,11 @@ Which rule fired is recorded per county in `rpp_geo_level`.
 > MARPP uses OMB bulletin 23-01 delineations — the same 2023 vintage as our
 > crosswalk, which is why every metro county matched on the first run.
 
-**Two precision losses, both known and recorded:** every county in a metro
-shares one number (Travis and Williamson both get Austin's), and every
-non-metro county gets its state's *blend* — which includes that state's
-metros and so runs somewhat high for rural areas, most in states dominated
-by one expensive metro (CA, WA, CO, NY, MA). For relative ranking this is a
-loss of resolution, not a wrong ordering; rural counties in a state tie with
-each other as they would under any state-level rule. `rpp_geo_level` lets
-the UI say so. Both are why we store components. A derived state non-metro
-value (statewide minus its metros, by BEA's expenditure weights) is deferred.
-
-If BEA ever adds per-state portions, `_classify_state_rows` still detects
-them by GeoName and they take precedence as level `nonmetro`; `validate.py`'s
-bound would then need revisiting.
+Every county in a metro shares one number, and every non-metro county in a
+state shares its portion's; `etl/rpp_local.py` then moves the rents part by
+each county's own ACS rent (plan Phase 10a). `validate.py` fails the build if
+the share outside a metro passes 66% (crosswalk and MARPP out of line) or the
+share on the statewide value passes 1% (PARPP didn't load).
 
 > ⚠️ **Line codes and GeoFips are discovered at runtime, not hardcoded.** Both
 > have changed across BEA methodology revisions and neither is reliably
@@ -536,10 +530,6 @@ Deliberate Phase 1 omissions, not oversights:
   temperature or rain. It is a low-priority metric; remaining nulls are
   accepted and shown as unknown.
 - **No boundaries.** Phase 4 pulls TIGER and simplifies with `mapshaper`.
-- **No state-level non-metro cost of living.** BEA publishes none (API or
-  bulk — verified 2026-09-20), so ~62% of counties carry their state's blended
-  RPP, which runs somewhat high for rural areas. See the BEA section. A derived
-  value is possible but deferred.
 - ~~San Francisco's climate comes from the wrong stations.~~ **Fixed
   2026-09-26** along with the wider problem it was an instance of: climate
   was measured at each county's geographic middle, which for big western

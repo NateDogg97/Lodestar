@@ -43,6 +43,7 @@ no-monetization line stands.
 | 12 | Find a place by name (counties, cities, neighborhoods, ZIPs) with its outline on the map | 2026-11-10 |
 | 13 | Hosting moved from Vercel to a Cloudflare Worker (2026-11-13); Vercel removed, PR previews on workers.dev | 2026-11-25 |
 | 14a, 14c | Crime out of ranking and filters; climate on area pages | 2026-11-13 |
+| 14b | Rural cost of living from BEA's state non-metro figures (`PARPP`), not the state blend | 2026-11-25 |
 
 Details of each are in `docs/plan-archive.md` §9 under the same phase number.
 
@@ -58,13 +59,6 @@ Each item is built by a subagent, reviewed in the main session, and checked by h
 owner before merging. "Backend" means a Worker script on `/api/*`. The app keeps working
 offline, and a backend feature may be off or limited offline and says so.
 
-- [ ] **14b. Rural cost of living.** Derive a state non-metro RPP (the state's figure minus
-      its metros, expenditure-weighted) for the ~62% of counties whose parent is the state's
-      blended value, and label it in `rpp_geo_level`. Where it can't be derived, keep the
-      state value and show a "state estimate" note in results and on the county page.
-      *Check first:* Phase 10a (`etl/rpp_local.py`) already localises rents against that
-      parent, and non-metro counties now average 89.1 vs BEA's national non-metro 88.7. Measure
-      what 14b changes before building it, and tell the owner if it's small.
 - [ ] **14d. Climate like a place I know.** Pick a county, and score others by how close their
       monthly high, low and precipitation curves are (`climate.json` already has every
       county's 12 months).
@@ -266,7 +260,6 @@ Don't build these unless the owner moves them into the build order.
 - [ ] **Default search clustering** and **score colours as text** (under Loose ends).
 - [ ] **Place profile source:** a static dataset, a live fetch on select (online only), or
       both. Decide before building the deferred place profile.
-- [ ] **14b's scope** after measuring what it adds on top of Phase 10a.
 
 ---
 
