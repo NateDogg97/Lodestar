@@ -62,10 +62,11 @@ const EMPTY_AREA: AreaPrefs = { weights: {}, directions: {}, limits: {} };
 /** The search, for ranking areas inside a county (lib/tracts/scoring). */
 export function toAreaSearch(prefs: Preferences): AreaSearch {
   const col = budgetColumn(prefs.household);
+  const aside = setAsideByTenure(prefs.household);
   return {
-    areaWeights: prefs.area.weights,
-    areaDirections: prefs.area.directions,
-    areaLimits: prefs.area.limits,
+    areaWeights: without(prefs.area.weights, aside),
+    areaDirections: without(prefs.area.directions, aside),
+    areaLimits: without(prefs.area.limits, aside),
     budgets: col ? { [col]: prefs.household.budget! } : {},
   };
 }
@@ -106,6 +107,24 @@ export const EMPTY_PREFERENCES: Preferences = {
 export function budgetColumn(household: Household): string | null {
   if (!(household.budget && household.budget > 0)) return null;
   return household.tenure === "buy" ? "median_home_value" : household.tenure === "rent" ? "median_gross_rent" : null;
+}
+
+/**
+ * The housing measure that doesn't apply to this household (owner, 2026-11-25): buying sets
+ * Rent aside, renting sets Home value aside, no choice sets nothing aside. A set-aside
+ * measure's weight and limits are kept in the preferences, so switching back restores them,
+ * but they never reach scoring (`toAreaSearch`): a renter's results aren't ranked or ruled
+ * out by home prices.
+ */
+export function setAsideByTenure(household: Household): string | null {
+  return household.tenure === "buy" ? "median_gross_rent" : household.tenure === "rent" ? "median_home_value" : null;
+}
+
+function without<T>(record: Partial<Record<string, T>>, key: string | null): Partial<Record<string, T>> {
+  if (!key || !(key in record)) return record;
+  const rest = { ...record };
+  delete rest[key];
+  return rest;
 }
 
 /**

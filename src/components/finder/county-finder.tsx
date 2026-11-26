@@ -37,6 +37,7 @@ import {
   EMPTY_PREFERENCES,
   excludedStates,
   savePreferences,
+  setAsideByTenure,
   toAreaSearch,
   toScoringInput,
   type Preferences,
@@ -469,11 +470,17 @@ function Finder({ data, laws }: { data: CountyDataset; laws: LawData | null }) {
     [national, topIdx, nationalSearch],
   );
   // "Watch out" on results (Phase 10d): an area's own measures, its taxes included.
+  // The housing measure Buying / Renting sets aside gets no caution either: a renter isn't
+  // warned about home prices.
+  const aside = setAsideByTenure(deferred.household);
   const areaWatch = useCallback(
-    (i: number) => (national ? areaWatchOuts(national, i, nationalSearch) : []),
-    [national, nationalSearch],
+    (i: number) => (national ? areaWatchOuts(national, i, nationalSearch).filter((w) => w.key !== aside) : []),
+    [national, nationalSearch, aside],
   );
-  const countyWatch = useCallback((i: number) => countyWatchOuts(prepared, i, scoringInput), [prepared, scoringInput]);
+  const countyWatch = useCallback(
+    (i: number) => countyWatchOuts(prepared, i, scoringInput).filter((w) => w.key !== aside),
+    [prepared, scoringInput, aside],
+  );
   const [viewChoice, setViewChoice] = useState<"areas" | "counties" | null>(null);
   const resultsView = viewChoice ?? (hasAreaFilters ? "areas" : "counties");
   // The map in area mode: the counties holding your top areas, colored by their best area.
