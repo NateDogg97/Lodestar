@@ -366,6 +366,8 @@ function Summary({ i, parts, common }: { i: number; parts: AreaPart[]; common: C
   const rest = parts.filter((p) => !top.includes(p));
   const limits = areaLimitResults(common.areas, i, common.search.limits);
   const failedLimits = limits.filter((l) => l.state !== "pass");
+  const unsureLabels = failedLimits.filter((l) => l.state === "unsure").map((l) => l.label);
+  const noDataLabels = failedLimits.filter((l) => l.state !== "unsure").map((l) => l.label);
   const name = common.areas.label[i].split(" · ")[0];
   const bars = (list: AreaPart[]) =>
     list.map((p) => (
@@ -403,7 +405,12 @@ function Summary({ i, parts, common }: { i: number; parts: AreaPart[]; common: C
         <p className="flex items-center gap-1.5 text-caption text-neutral-600 dark:text-neutral-400">
           <span aria-hidden className={failedLimits.length ? "text-neutral-400" : "text-emerald-600"}>{failedLimits.length ? "?" : "✓"}</span>
           {failedLimits.length
-            ? `${failedLimits.some((l) => l.state === "unsure") ? "Can’t confirm" : "No data for"}: ${failedLimits.map((l) => l.label).join(", ")}`
+            ? [
+                unsureLabels.length ? `Can’t confirm: ${unsureLabels.join(", ")}` : "",
+                noDataLabels.length ? `No data for: ${noDataLabels.join(", ")}` : "",
+              ]
+                .filter(Boolean)
+                .join(" · ")
             : `Passes ${limits.length === 1 ? "your must-have" : `all ${limits.length} must-haves`}`}
         </p>
       )}

@@ -25,8 +25,11 @@ CRIME RATES (per agency) — Poisson–gamma (Clayton & Kaldor 1987)
     m = Σy / ΣE;  v = weighted variance of y/E − m / mean(E), floored;
     alpha = m² / v, beta = m / v;  rate_eb = (y + alpha) / (E + beta).
 
-These are scoring columns only (`*_eb` in areas.json). What people see, and what a
-must-have limit tests, is the published estimate.
+These are scoring columns (`*_eb` in areas.json); what people see is the published
+estimate. A must-have limit on one of these measures passes only when the published
+value and the `*_eb` estimate both pass; when they disagree the area is "unsure"
+(`limitState` in src/lib/tracts/national.ts), so changing the shrinkage can move
+must-have results too.
 """
 
 from __future__ import annotations

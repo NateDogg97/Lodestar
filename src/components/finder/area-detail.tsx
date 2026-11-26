@@ -537,7 +537,11 @@ function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRa
     ? "Not a place to move to (few residents, or mostly a base, campus or prison), so it isn't ranked"
     : place >= 0
       ? `${ordinal(place + 1)} of ${ranking.matches.length} matching areas in ${countyName}`
-      : "Doesn't pass your must-haves";
+      : failed
+        ? "Doesn't pass your must-haves"
+        : unsure
+          ? "Can't confirm your must-haves, so it isn't listed with the matches"
+          : "No data for some of your must-haves, so it isn't listed with the matches";
   return (
     <AreaSection
       id="why"
@@ -610,8 +614,8 @@ function WhyItRanks({ area, ranking, countyName }: { area: Area; ranking: AreaRa
                     <span className="block text-caption text-neutral-500">Yours: {bound(l)}</span>
                     {l.estimate !== undefined && (
                       <span className="block text-caption text-neutral-500">
-                        Can&rsquo;t confirm: a small sample here, and the estimate weighed toward what&rsquo;s typical
-                        nearby (≈ {formatArea(l.column, l.estimate)}) falls on the other side of your limit.
+                        Can&rsquo;t confirm: the estimate weighed toward what&rsquo;s typical nearby (≈{" "}
+                        {formatArea(l.column, l.estimate)}) falls on the other side of your limit.
                       </span>
                     )}
                   </span>
