@@ -3,6 +3,15 @@
 Dated decisions and progress for `Working Master Plan.md`, newest first. Add an entry here
 when a decision changes or a step lands; the plan itself holds the current state.
 
+- 2026-11-25 — **14b built: non-metro counties use their state's non-metro figure.**
+  `etl/sources/bea.py` fetches `PARPP` (`{st}999`; BEA's 0 for DE, DC, NJ, RI is read as
+  missing) and gives 1,957 counties level `nonmetro`. `etl/rpp_local.py` measures their rent
+  against their state's other non-metro counties, not the whole state. Sussex, DE is the one
+  county left on the state value (BEA counts all of Delaware as metro); its county page says
+  "State estimate". `validate.py` now fails if more than 1% of counties are on the statewide
+  value (PARPP didn't load). `python -m etl.patch bea` refreshes it and keeps the file's
+  column order. Results audit: the three searches that already failed still fail, the same
+  way; cheap rural searches now lean more to Missouri, Minnesota and Iowa.
 - 2026-11-25 — **14b measured: BEA publishes state non-metro cost of living.** Regional
   table `PARPP` has every state's non-metro portion (`{state}999`); the 2026-09-20 check
   that said otherwise looked only at `SARPP`/`MARPP`. Using it changes non-metro counties by

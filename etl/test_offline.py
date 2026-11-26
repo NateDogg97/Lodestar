@@ -387,9 +387,9 @@ def _make_synthetic() -> dict[str, pd.DataFrame]:
         }),
         "bea": pd.DataFrame({
             "fips": spine["fips"],
-            # Real-world mix: ~38% metro, ~62% statewide (no per-state
-            # non-metro portion exists — see sources/bea.py).
-            "rpp_geo_level": rng.choice(["metro", "state"], n, p=[.38, .62]),
+            # Real-world mix: ~38% metro, ~62% their state's non-metro portion
+            # (PARPP — see sources/bea.py); the statewide value is rare.
+            "rpp_geo_level": rng.choice(["metro", "nonmetro"], n, p=[.38, .62]),
             "rpp_source_geo": "synthetic",
             "rpp_all": 85 + rng.random(n) * 30,
             "rpp_rents": 55 + rng.random(n) * 100,
@@ -542,21 +542,23 @@ def test_zero_join_is_fail_even_for_optional_source(fixtures: dict[str, pd.DataF
 def test_rpp_state_share_is_bounded(fixtures: dict[str, pd.DataFrame]) -> None:
     """
     Simulate the CBSA crosswalk and MARPP no longer lining up: metro counties
-    silently take the statewide value. The "state" share balloons past the
-    geography-derived bound and the metro share collapses — both must FAIL.
+    silently take the non-metro value. The share outside a metro balloons past
+    the geography-derived bound and the metro share collapses — both must FAIL.
+    And if PARPP's portions don't load, rural counties fall to the statewide
+    blend: that must FAIL too.
     """
     print("\nintegration: metro counties silently treated as rural is a FAIL")
     _write(fixtures)
     bad = fixtures["bea"].copy()
-    bad.loc[bad["rpp_geo_level"] == "metro", "rpp_geo_level"] = "state"
+    bad.loc[bad["rpp_geo_level"] == "metro", "rpp_geo_level"] = "nonmetro"
     bad.to_csv(config.INTERIM_DIR / "bea.csv", index=False)
 
     out = join.build()
     findings, passed = validate.validate(out)
-    state_hits = [f for f in findings if f.severity == "FAIL" and "'state'" in f.message]
+    outside_hits = [f for f in findings if f.severity == "FAIL" and "outside a metro" in f.message]
     metro_hits = [f for f in findings if f.severity == "FAIL" and "metro RPP" in f.message]
     check(not passed, "build is marked failed")
-    check(bool(state_hits), "a FAIL names the 'state' share bound")
+    check(bool(outside_hits), "a FAIL names the outside-metro share bound")
     check(bool(metro_hits), "a FAIL names the collapsed metro share")
 
     # A modest overshoot (a few dozen metro counties without a MARPP row, as
@@ -564,17 +566,27 @@ def test_rpp_state_share_is_bounded(fixtures: dict[str, pd.DataFrame]) -> None:
     _write(fixtures)
     drift = fixtures["bea"].copy()
     metro_idx = drift.index[drift["rpp_geo_level"] == "metro"][:60]
-    drift.loc[metro_idx, "rpp_geo_level"] = "state"
+    drift.loc[metro_idx, "rpp_geo_level"] = "nonmetro"
     drift.to_csv(config.INTERIM_DIR / "bea.csv", index=False)
     out = join.build()
     _, passed = validate.validate(out)
-    check(passed, "60 drifted metro counties (≈64% state) still passes")
+    check(passed, "60 drifted metro counties (≈64% outside) still passes")
+
+    print("integration: rural counties on the statewide blend (PARPP missing) is a FAIL")
+    _write(fixtures)
+    blend = fixtures["bea"].copy()
+    blend.loc[blend["rpp_geo_level"] == "nonmetro", "rpp_geo_level"] = "state"
+    blend.to_csv(config.INTERIM_DIR / "bea.csv", index=False)
+    out = join.build()
+    findings, passed = validate.validate(out)
+    check(not passed and any(f.severity == "FAIL" and "'state'" in f.message for f in findings),
+          "a FAIL names the statewide share")
 
     # And the healthy 38/62 mix passes.
     _write(fixtures)
     out = join.build()
     _, passed = validate.validate(out)
-    check(passed, "healthy metro/state mix passes")
+    check(passed, "healthy metro/non-metro mix passes")
 
 
 def test_missing_source_degrades(fixtures: dict[str, pd.DataFrame]) -> None:
@@ -604,12 +616,24 @@ def test_rpp_local() -> None:
                          "rpp_source_geo": f"Metro {k}", "rpp_all": total, "rpp_rents": rents,
                          "median_gross_rent": rent, "population": 100_000,
                          "median_household_income": 70_000})
-    # A state's non-metro counties: a resort town, a poor one, and one with no rent.
+    # A state's non-metro counties on its non-metro portion: a resort town, a poor one, and
+    # one with no rent. The state also has a pricey metro county, which mustn't count
+    # toward the non-metro counties' reference rent.
     for j, rent in enumerate((2400.0, 500.0, None)):
-        rows.append({"fips": f"9900{j}", "state": "BB", "rpp_geo_level": "state",
-                     "rpp_source_geo": "BB", "rpp_all": 92.0, "rpp_rents": 70.0,
+        rows.append({"fips": f"9900{j}", "state": "BB", "rpp_geo_level": "nonmetro",
+                     "rpp_source_geo": "BB non-metro", "rpp_all": 92.0, "rpp_rents": 70.0,
                      "median_gross_rent": rent, "population": 20_000,
                      "median_household_income": 60_000})
+    rows.append({"fips": "99010", "state": "BB", "rpp_geo_level": "metro", "rpp_source_geo": "Metro 5",
+                 "rpp_all": 100 * ((2300 / 1200) ** 1.2) ** 0.2, "rpp_rents": 100 * (2300 / 1200) ** 1.2,
+                 "median_gross_rent": 3000.0, "population": 500_000, "median_household_income": 90_000})
+    # A state BEA has no non-metro portion for: its county is measured against the whole state.
+    for j, (level, rent) in enumerate((("state", 1000.0), ("metro", 1600.0))):
+        rows.append({"fips": f"9800{j}", "state": "CC", "rpp_geo_level": level,
+                     "rpp_source_geo": "CC" if level == "state" else "Metro 4",
+                     "rpp_all": 99.0 if level == "state" else 100 * ((1800 / 1200) ** 1.2) ** 0.2,
+                     "rpp_rents": 95.0 if level == "state" else 100 * (1800 / 1200) ** 1.2,
+                     "median_gross_rent": rent, "population": 50_000, "median_household_income": 70_000})
     df = pd.DataFrame(rows)
     out = rpp_local.localize(df)
     by = out.set_index("fips")
@@ -617,9 +641,16 @@ def test_rpp_local() -> None:
     check(abs(metro0["rpp_all"].mean() - metro0["rpp_all_parent"].iloc[0]) < 0.5,
           f"a metro's counties average back to its published value ({metro0['rpp_all'].mean():.2f})")
     check(by.loc["99000", "rpp_all"] > 92.0 > by.loc["99001", "rpp_all"],
-          f"resort county above its state, poor county below "
+          f"resort county above its portion, poor county below "
           f"({by.loc['99000', 'rpp_all']:.1f} / {by.loc['99001', 'rpp_all']:.1f})")
-    check(by.loc["99002", "rpp_all"] == 92.0, "no ACS rent keeps the state's value")
+    # Equal populations: the two with rent sit either side of the portion's rents index
+    # symmetrically in logs, which only happens if the metro county is left out.
+    gm = float(np.sqrt(by.loc["99000", "rpp_rents"] * by.loc["99001", "rpp_rents"]))
+    check(abs(gm - 70.0) < 1e-6, f"non-metro counties average back to their portion ({gm:.2f}), metro left out")
+    check(by.loc["99002", "rpp_all"] == 92.0, "no ACS rent keeps the portion's value")
+    check(by.loc["98000", "rpp_all"] < 99.0,
+          f"a statewide county is measured against the whole state, metro included "
+          f"({by.loc['98000', 'rpp_all']:.1f})")
     again = rpp_local.localize(out)
     check(bool((again["rpp_all"] - out["rpp_all"]).abs().max() < 1e-9), "running it twice changes nothing")
     check(abs(by.loc["99000", "real_income"] - 60_000 / (by.loc["99000", "rpp_all"] / 100)) < 1e-6,

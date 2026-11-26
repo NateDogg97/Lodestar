@@ -246,11 +246,12 @@ def _check_rpp_assignment(df: pd.DataFrame) -> list[Finding]:
     """
     Assert the BEA inheritance rules fired in a plausible mix.
 
-    About 60% of counties sit outside a metropolitan CBSA and take the
-    statewide RPP by design. If the "state" share climbs well past that, or
-    the "metro" share collapses, the CBSA crosswalk and MARPP have stopped
+    About 60% of counties sit outside a metropolitan CBSA and take their
+    state's non-metro portion by design. If that share climbs well past it,
+    or the "metro" share collapses, the CBSA crosswalk and MARPP have stopped
     lining up and metro counties are being treated as rural — which looks
-    like perfectly good data. FAIL on either.
+    like perfectly good data. If more than a handful take the statewide
+    value, PARPP's portions didn't load. FAIL on any of them.
     """
     findings: list[Finding] = []
     if "rpp_geo_level" not in df.columns:
@@ -272,13 +273,22 @@ def _check_rpp_assignment(df: pd.DataFrame) -> list[Finding]:
         f"state {share_state:.0%} ({counts})"
     ))
 
+    outside = share_state + share_nonmetro
+    if outside > config.RPP_OUTSIDE_METRO_MAX_SHARE:
+        findings.append(Finding(
+            "FAIL",
+            f"{outside:.0%} of counties are outside a metro RPP "
+            f"(bound {config.RPP_OUTSIDE_METRO_MAX_SHARE:.0%}, derived from the share of "
+            f"counties outside a metropolitan CBSA). Metro counties are being treated "
+            f"as rural — the CBSA crosswalk and MARPP GeoFips are not lining up."
+        ))
+
     if share_state > config.RPP_STATE_LEVEL_MAX_SHARE:
         findings.append(Finding(
             "FAIL",
-            f"{share_state:.0%} of counties have rpp_geo_level == 'state' "
-            f"(bound {config.RPP_STATE_LEVEL_MAX_SHARE:.0%}, derived from the share of "
-            f"counties outside a metropolitan CBSA). Metro counties are being treated "
-            f"as rural — the CBSA crosswalk and MARPP GeoFips are not lining up."
+            f"{share_state:.1%} of counties have rpp_geo_level == 'state' "
+            f"(bound {config.RPP_STATE_LEVEL_MAX_SHARE:.0%}): rural counties are on the "
+            f"statewide blend, so BEA's state non-metro portions (PARPP) didn't load."
         ))
 
     # Roughly 1,100-1,200 of ~3,144 counties sit in a metropolitan CBSA. If

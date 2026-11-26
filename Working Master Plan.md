@@ -43,6 +43,7 @@ no-monetization line stands.
 | 12 | Find a place by name (counties, cities, neighborhoods, ZIPs) with its outline on the map | 2026-11-10 |
 | 13 | Hosting moved from Vercel to a Cloudflare Worker (2026-11-13); Vercel removed, PR previews on workers.dev | 2026-11-25 |
 | 14a, 14c | Crime out of ranking and filters; climate on area pages | 2026-11-13 |
+| 14b | Rural cost of living from BEA's state non-metro figures (`PARPP`), not the state blend | 2026-11-25 |
 
 Details of each are in `docs/plan-archive.md` §9 under the same phase number.
 
@@ -58,32 +59,6 @@ Each item is built by a subagent, reviewed in the main session, and checked by h
 owner before merging. "Backend" means a Worker script on `/api/*`. The app keeps working
 offline, and a backend feature may be off or limited offline and says so.
 
-- [ ] **14b. Rural cost of living: use BEA's state non-metro figures.** Measured
-      2026-11-25: BEA *does* publish each state's non-metro portion (Regional table
-      `PARPP`, GeoFips `{state}999`, all five components, 2020–2024). Earlier checks looked
-      only at `SARPP` and `MARPP`. So nothing has to be derived. Measured on the 2024 values:
-      non-metro counties (1,958) change by a median 0.9% and up to 9.6%; in the lower 48,
-      730 counties move more than 5 percentile points and 226 move more than 10 (up to 40:
-      Graham AZ 79th instead of 39th cheapest, and Texas counties with no ACS rent go from
-      97.1 to 87.8). States shift as a block: AZ −6.8%, MN −5.6%, NM −3.7%, OR +2.3%. The
-      national check improves (non-metro mean 88.5 against BEA's 88.7, was 89.1; rents
-      60.4 against 59.9, was 62.4). Build:
-      - `etl/sources/bea.py`: fetch `PARPP` for `{st}999`; BEA returns 0 where a state has
-        no non-metro portion (DE, DC, NJ, RI), so treat 0 as missing. Non-metro counties get
-        level `nonmetro`, source `{st}999`.
-      - `etl/rpp_local.py`: a non-metro county's parent is its state's non-metro counties
-        (reference rent over those only), not the whole state. Keep fitting b and g on
-        metros only.
-      - Where there is no portion (Sussex, DE: non-metro in our metro list, while BEA
-        counts all of Delaware as metro), keep the state value and say "state estimate" on
-        the county page. Fix the place page's wording ("BEA publishes it for metro areas and
-        states only").
-      - Update `validate.py`'s state-share check, `etl/test_offline.py`, the `bea.py`
-        docstring and AGENTS.md; then `python -m etl.patch` (or a rebuild) and the
-        results audit.
-      Deriving it (state minus metros, weighted by income) was tried first and rejected:
-      the subtraction amplifies weighting error ~10× (national check off by 1.7 points; CA
-      swung 7 points between two reasonable weightings).
 - [ ] **14d. Climate like a place I know.** Pick a county, and score others by how close their
       monthly high, low and precipitation curves are (`climate.json` already has every
       county's 12 months).

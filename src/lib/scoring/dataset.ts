@@ -13,7 +13,7 @@ import { COMPUTED_METRIC_KEYS, METRIC_KEYS, STATE_METRIC_KEYS, type MetricKey } 
 export const PAYLOAD_FORMAT = "counties-columnar-v1";
 
 /** Text columns kept for display: the nearest major airport (IATA code) and 500k+ metro (name). */
-// rpp_source_geo: the metro (or state) whose price parity a county carries.
+// rpp_source_geo: the metro, state non-metro portion, or state whose price parity a county carries.
 export const TEXT_COLUMNS = [
   "nearest_airport", "nearest_metro", "rpp_source_geo",
   // FEMA's own rating words (etl/sources/nri.py), beside the loss-rate percentiles we rank.
@@ -41,7 +41,7 @@ export const INFO_COLUMNS = [
   "white_share", "hispanic_share", "black_share", "asian_share", "other_race_share", "diversity_index", "gini_index",
   // The two parts of racial equality (etl/sources/equality.py).
   "income_parity", "integration",
-  // The metro's or state's published cost of living, before the county's own rents (etl/rpp_local.py).
+  // The metro's, state non-metro portion's or state's published cost of living, before the county's own rents (etl/rpp_local.py).
   "rpp_all_parent",
   // Taxes inputs (Phase 10 follow-up, 2026-10-13): today's typical home (Zillow, etl/sources/
   // zillow_county.py) and what a new buyer pays in property tax over all owners (etl/sources/newbuyer.py).
@@ -64,7 +64,10 @@ export interface CountyDataset {
   fips: string[];
   countyName: string[];
   state: string[];
-  /** `metro` when cost of living is the county's own metro; `state` when it is the statewide figure. */
+  /**
+   * `metro` when cost of living is the county's own metro; `nonmetro` when it is its state's
+   * non-metro portion; `state` when BEA has no portion and it is the statewide figure.
+   */
   rppGeoLevel: (string | null)[];
   /** One array per metric, `NaN` where the value is unknown. */
   values: Record<MetricKey, Float64Array>;

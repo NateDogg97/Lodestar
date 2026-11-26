@@ -258,16 +258,22 @@ SPOT_CHECK_FIPS = {
 # this and sailed through as a WARN.
 SOURCE_JOIN_FAIL_BELOW = 0.05
 
-# validate.py: share of counties allowed to carry rpp_geo_level == "state".
+# validate.py: share of counties allowed outside a metro RPP (rpp_geo_level
+# "nonmetro" or "state").
 #
-# DERIVED, NOT GUESSED. Counties outside a METROPOLITAN CBSA take the
-# statewide RPP by design (BEA publishes no per-state non-metro portion —
-# see sources/bea.py). Per the 2023 OMB delineations that is 3,144 - 1,252
-# = 1,892 counties, ~60%; the actual first-run figure was 1,958 (62%), the
-# difference being metro counties whose CBSA lacks a MARPP row. If the
-# share climbs past this bound, the CBSA crosswalk and MARPP have stopped
-# lining up and metro counties are silently being treated as rural. FAIL.
-RPP_STATE_LEVEL_MAX_SHARE = 0.66
+# DERIVED, NOT GUESSED. Counties outside a METROPOLITAN CBSA take their state's
+# non-metro portion (or, rarely, the statewide RPP — see sources/bea.py). Per
+# the 2023 OMB delineations that is 3,144 - 1,252 = 1,892 counties, ~60%; the
+# actual first-run figure was 1,958 (62%), the difference being metro counties
+# whose CBSA lacks a MARPP row. If the share climbs past this bound, the CBSA
+# crosswalk and MARPP have stopped lining up and metro counties are silently
+# being treated as rural. FAIL.
+RPP_OUTSIDE_METRO_MAX_SHARE = 0.66
+
+# validate.py: share of counties allowed on the statewide RPP (rpp_geo_level
+# "state"): only those in a state BEA has no non-metro portion for (Sussex, DE
+# in 2024: 1 county). More means PARPP's portions didn't load. FAIL.
+RPP_STATE_LEVEL_MAX_SHARE = 0.01
 
 # Plausible ranges per metric. A value outside these does not fail the build,
 # but it is reported loudly. Tuned to be generous.

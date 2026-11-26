@@ -5,9 +5,10 @@ Cost of living below the metro: each county's own rents in BEA's index.
     python -m etl.rpp_local --check       # print the fit and the check, write nothing
 
 WHY (plan §9 Phase 10a, 2026-10-12)
-    BEA publishes RPP for metros and states only (etl/sources/bea.py), so every
-    county outside a metro took its whole state's index — a blend that includes
-    the state's metros. That isn't just coarse, it orders places wrongly: Teton
+    BEA publishes RPP for metros, states and each state's non-metro portion
+    (etl/sources/bea.py), never for a county. Until 2026-11-25 (plan 14b) we
+    used the whole state's index outside metros — a blend that includes the
+    state's metros. That isn't just coarse, it orders places wrongly: Teton
     County, WY (Jackson, median home $1.37M) read 92.7, cheaper than four in five
     US areas, because Wyoming as a whole is cheap. Non-metro counties averaged
     95.3 against BEA's own national non-metro figure of 88.7.
@@ -16,9 +17,11 @@ THE METHOD (docs/plan-archive.md §4 "Making cost of living work below metro lev
     Housing rents are the part that varies within a metro or state, and the part
     we can see by county: BEA builds its rents index from ACS rents.
 
-    1. Parent: the county's metro (rpp_geo_level "metro"), or its state. A
-       state's index covers all of its counties, so its reference rent is taken
-       over all of them.
+    1. Parent: the county's metro (rpp_geo_level "metro"), its state's
+       non-metro portion ("nonmetro"), or, where BEA has no portion, its state
+       ("state"). The reference rent is taken over the counties the parent's
+       index covers: the metro's, the state's non-metro ones, or all of the
+       state's.
     2. Rents:  rents_county = rents_parent × (rent_county / rent_parent) ** b
        rent_parent is the population-weighted geometric mean of the parent's
        county ACS rents; b is fitted across metros (log RPP rents on log rent).
@@ -34,14 +37,17 @@ THE METHOD (docs/plan-archive.md §4 "Making cost of living work below metro lev
 THE CHECK
     BEA publishes one non-metro figure, for the whole country (GeoFips 00999).
     The method is not fitted to it, so the population-weighted mean of the
-    localized non-metro counties landing near it is an honest test. 2026-10-12:
-    89.1 against BEA's 88.7 for all items (was 95.3), 62.6 against 59.9 for rents.
+    localized non-metro counties landing near it is an honest test. 2026-10-12,
+    on state parents: 89.1 against BEA's 88.7 for all items (was 95.3), 62.6
+    against 59.9 for rents. 2026-11-25, on the state non-metro portions: 88.5
+    and 60.4.
 
 COLUMNS
     rpp_all, rpp_rents         localized (what the app ranks and shows)
     rpp_all_parent,            the parent's published BEA values, kept so the
     rpp_rents_parent           step is repeatable on a published file and
-                               auditable ("Wyoming 92.7, Teton 107.8")
+                               auditable ("Wyoming non-metro 91.6, Teton 107.3").
+                               A new BEA fetch must drop them first (etl/patch.py)
     real_income                recomputed from the localized rpp_all
 """
 
@@ -64,7 +70,11 @@ NONMETRO_GEOFIPS = "00999"
 
 
 def _parent(df: pd.DataFrame) -> pd.Series:
-    return np.where(df["rpp_geo_level"] == "metro", "M:" + df["rpp_source_geo"].astype(str), "S:" + df["state"])
+    """The index a county inherits: its metro, its state's non-metro portion, or its state."""
+    level = df["rpp_geo_level"]
+    return np.select([level == "metro", level == "nonmetro"],
+                     ["M:" + df["rpp_source_geo"].astype(str), "N:" + df["state"]],
+                     "S:" + df["state"])
 
 
 def _log_rent_mean(g: pd.DataFrame) -> float:
@@ -92,6 +102,7 @@ def localize(df: pd.DataFrame) -> pd.DataFrame:
 
     ref: dict[str, float] = {}
     for key in parent[known].unique():
+        # A state's index covers every county in it; a metro's or portion's, its own.
         members = df[df["state"] == key[2:]] if key.startswith("S:") else df[parent == key]
         ref[key] = _log_rent_mean(members)
     rent_ref = parent.map(ref)
@@ -177,7 +188,7 @@ def main() -> int:
     mine = {c: float(np.average(non[c].dropna(), weights=w[non[c].notna()])) for c in ("rpp_all", "rpp_rents")}
     print(f"non-metro, population-weighted: all items {mine['rpp_all']:.1f}, rents {mine['rpp_rents']:.1f}"
           + (f"  |  BEA national non-metro: {check['rpp_all']:.1f}, {check['rpp_rents']:.1f}" if check else ""))
-    for fips in ("56039", "08097", "16013", "25019", "36061", "36005"):
+    for fips in ("56039", "08097", "16013", "25019", "36061", "36005", "48301", "04009"):
         r = out[out["fips"] == fips]
         if len(r):
             r = r.iloc[0]

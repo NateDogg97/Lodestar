@@ -274,9 +274,17 @@ function Stat({
  */
 function CostOfLivingNote({ value, data, index }: { value: number; data: CountyDataset; index: number }) {
   const diff = Math.round(Math.abs(value - 100) * 10) / 10;
-  const where = data.rppGeoLevel[index] === "metro" ? "metro" : "state";
+  const level = data.rppGeoLevel[index];
+  const state = data.state[index];
   const area = data.text.rpp_source_geo[index];
   const parent = data.info.rpp_all_parent[index];
+  // What the county's rents are measured against: the counties its parent figure covers (etl/rpp_local.py).
+  const against =
+    level === "metro"
+      ? `its metro’s${area ? ` (${area})` : ""}`
+      : level === "nonmetro"
+        ? `those of ${state}’s other counties outside a metro`
+        : `all of ${state}’s`;
   return (
     <>
       <p>
@@ -293,12 +301,18 @@ function CostOfLivingNote({ value, data, index }: { value: number; data: CountyD
       <CostParts data={data} index={index} />
       <p className="mt-2">
         Covers rent, goods, utilities and services (BEA Regional Price Parities, 2024). BEA publishes it for metro
-        areas and states only, so the rent part here is this county&rsquo;s own: its Census rents against{" "}
-        {where === "metro" ? `its metro’s${area ? ` (${area})` : ""}` : `all of ${area ?? "its state"}’s`}
+        areas and for each state&rsquo;s counties outside a metro, not for single counties, so the rent part here is
+        this county&rsquo;s own: its Census rents against {against}
         {Number.isFinite(parent) && Math.abs(parent - value) >= 0.05
           ? `, whose figure is ${formatValue("rpp_all", parent)}.`
           : "."}
       </p>
+      {level === "state" && (
+        <p className="mt-2">
+          <strong>State estimate:</strong> BEA counts all of {state} as metro, so it has no figure for counties
+          outside one. This county starts from the whole state&rsquo;s instead.
+        </p>
+      )}
     </>
   );
 }
