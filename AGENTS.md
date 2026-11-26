@@ -41,7 +41,8 @@ Record new decisions and open questions in the plan, not in chat.
   `public/.assetsignore` keeps a locally built `data/tracts` out of a deploy, and the committed
   `.env.production` sets `NEXT_PUBLIC_DATA_URL`. Pushes to main deploy it
   (`.github/workflows/deploy.yml`). The apex-to-www redirect and "Always Use HTTPS" are
-  Cloudflare dashboard settings. Vercel (`vercel.json`) is only the rollback until removed.
+  Cloudflare dashboard settings. Each pull request gets a preview: `.github/workflows/preview.yml`
+  uploads a Worker version (not deployed) and comments its `pr-<n>-lodestar…workers.dev` link.
 - `src/lib/scoring/` — the scoring engine (see *Scoring* below). Pure TS, no UI imports; tests beside it.
 - `src/components/finder/` — the UI: filters modal, results list, place view, and
   `county-map.tsx` (MapLibre).

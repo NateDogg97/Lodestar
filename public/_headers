@@ -10,6 +10,6 @@
 /_next/static/*
   Cache-Control: public, max-age=31536000, immutable
 
-# HTTPS only (the same value Vercel sent).
+# HTTPS only.
 /*
   Strict-Transport-Security: max-age=63072000

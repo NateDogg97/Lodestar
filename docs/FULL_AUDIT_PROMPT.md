@@ -34,7 +34,7 @@ and go find them with evidence, not opinions. Fix them, verify the fix, and reco
 
 ## What already exists (don't redo it — build on it, and check it)
 
-**Architecture.** Next.js 16 (App Router, prerendered static pages on Vercel — no server logic; read
+**Architecture.** Next.js 16 (App Router, prerendered static pages on a Cloudflare Worker — no server logic; read
 `node_modules/next/dist/docs/` before writing Next code — it differs from your training data),
 React 19, TypeScript, Tailwind 4, MapLibre, Serwist PWA, Vitest. No backend: the browser scores
 everything over static files. A Python/pandas ETL (`etl/`) builds the data.
